@@ -154,3 +154,11 @@ h1 { margin: 0; font-size: 20px; }
 .news a:hover { color: var(--accent); }
 .news span { color: var(--muted); font-size: 10px; }
 @media (max-width: 700px) { .frame-grid, .scanner, .reasons { grid-template-columns: 1fr; } }
+
+.ai-card .primary:disabled { opacity: .6; cursor: wait; }
+.ai-verdict { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 8px; }
+.ai-verdict strong { font-size: 26px; letter-spacing: .02em; }
+.ai-verdict span { color: var(--muted); font-size: 13px; }
+.ai-verdict.long strong { color: var(--up); }
+.ai-verdict.short strong { color: var(--down); }
+.ai-verdict.flat strong { color: var(--accent); }
