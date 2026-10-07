@@ -71,12 +71,13 @@ def main():
                     ct //= 1000
                 rows.append([t, x[1], x[2], x[3], x[4], x[5], ct, x[7], x[8]])
         rows.sort(key=lambda r: r[0])
-        path = OUT / f"{sym}_{a.interval}.csv"
+        name = f"{sym}-PERP" if a.market == "futures" else sym
+        path = OUT / f"{name}_{a.interval}.csv"
         with path.open("w", newline="") as f:
             w = csv.writer(f)
             w.writerow(HEADER)
             w.writerows(rows)
-        manifest[f"{sym}_{a.interval}"] = {
+        manifest[f"{name}_{a.interval}"] = {
             "source": f"{BASES[a.market]}/{sym}/{a.interval}/",
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
             "months": [got[0], got[-1]] if got else None,

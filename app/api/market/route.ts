@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 
   try {
     const [cs, tk, fr, oi, btc1h] = await Promise.all([
-      candles(inst, bar, 120),
+      candles(inst, bar, 300), // enough history for EMA200 in the setup detectors
       ticker(inst),
       funding(inst),
       openInterest(inst),

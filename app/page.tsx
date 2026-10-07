@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import playbook from "@/lib/playbook.json";
+import { context, detect, SETUP_INFO } from "@/lib/setups";
 
 type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; closed: boolean };
 type Market = {
@@ -161,6 +163,112 @@ const FINDINGS = [
   ["Khung thời gian", "15m lỗ nặng nhất vì nhiều lệnh; 4h tốt hơn rõ rệt nhưng chưa ổn định qua các năm."],
 ];
 
+type Stats = { n: number; winRate?: number; expR?: number; medianRiskPct?: number; symbolsPositive?: number; yearsPositive?: number };
+type FeeStats = Record<"taker" | "maker", { train: Stats; test: Stats }>;
+const BOOK = playbook as unknown as { setups: Record<string, Record<string, Record<string, FeeStats>>> };
+const BAR_KEY: Record<string, string> = { "15m": "15m", "1H": "1h" };
+const MULTS = ["1.0", "1.5", "2.0"];
+
+function hasEdge(s: { train: Stats; test: Stats }) {
+  return (s.train.expR ?? -1) > 0 && (s.test.expR ?? -1) > 0 && s.test.n >= 50 && (s.train.symbolsPositive ?? 0) >= 0.6;
+}
+
+function Guidance({ candles, bar, fetchedAt }: { candles: Candle[]; bar: string; fetchedAt: number }) {
+  const [fee, setFee] = useState<"taker" | "maker">("taker");
+  const closed = useMemo(() => candles.filter((c) => c.closed), [candles]);
+  const signals = useMemo(() => detect(closed, 3), [closed]);
+  const ctx = useMemo(() => context(closed), [closed]);
+  const price = candles[candles.length - 1].c;
+  const key = BAR_KEY[bar];
+  const d = price > 1000 ? 1 : price > 1 ? 2 : 6;
+
+  return (
+    <section className="card">
+      <header className="card-head">
+        <h2>Hướng dẫn · {vnTime(fetchedAt)}</h2>
+        <div className="seg">
+          <button className={fee === "taker" ? "on" : ""} onClick={() => setFee("taker")}>Lệnh market</button>
+          <button className={fee === "maker" ? "on" : ""} onClick={() => setFee("maker")}>Lệnh limit</button>
+        </div>
+      </header>
+
+      <p className="ctx">
+        Bối cảnh: giá {ctx.aboveEma200 ? "trên" : "dưới"} EMA200 ({fmt(ctx.ema200, d)}) → xu hướng {ctx.aboveEma200 ? "tăng" : "giảm"} ·
+        RSI14 {ctx.rsi.toFixed(0)} · biên độ nến (ATR) {(ctx.atrPct * 100).toFixed(2)}% ·
+        vùng 48 nến {fmt(ctx.low48, d)} – {fmt(ctx.high48, d)}
+      </p>
+
+      {!key && <p className="verdict neutral">Khung 4h chưa có thống kê (chỉ đo 15m và 1h). Chuyển sang 15m hoặc 1h để có hướng dẫn.</p>}
+
+      {key && signals.length === 0 && (
+        <p className="verdict neutral">Không có setup nào trong 3 nến gần nhất. <b>Đứng ngoài, chờ setup.</b> Vào lệnh không có setup chính là vào lệnh ngẫu nhiên, mà ngẫu nhiên thì thua phí.</p>
+      )}
+
+      {key && signals.map((s, idx) => {
+        const st = BOOK.setups[s.setup]?.[key];
+        const rnd = BOOK.setups[`random:${s.setup}`]?.[key];
+        const risk = Math.abs(price - s.stop);
+        const riskPct = risk / price;
+        const stale = s.side > 0 ? price <= s.stop : price >= s.stop;
+        const best = st ? MULTS.reduce((a, m) => ((st[m][fee].train.expR ?? -9) > (st[a][fee].train.expR ?? -9) ? m : a), MULTS[0]) : null;
+        const edge = best && st ? hasEdge(st[best][fee]) : false;
+        return (
+          <article key={idx} className="signal">
+            <header>
+              <span className={`pill ${s.side > 0 ? "long" : "short"}`}>{s.side > 0 ? "LONG" : "SHORT"}</span>
+              <h3>{SETUP_INFO[s.setup].title}</h3>
+              <span className="muted">{s.barsAgo === 0 ? "nến vừa đóng" : `${s.barsAgo} nến trước`} ({vnTime(s.barTime)})</span>
+            </header>
+            <p className="muted">{SETUP_INFO[s.setup].desc}</p>
+            {stale ? (
+              <p className="verdict bad">Giá đã chạm mức dừng lỗ của setup ({fmt(s.stop, d)}). Setup đã hỏng, bỏ qua.</p>
+            ) : (
+              <>
+                <div className="levels">
+                  <div><span>Vào (giá hiện tại)</span><b>{fmt(price, d)}</b></div>
+                  <div><span>Dừng lỗ</span><b className="neg">{fmt(s.stop, d)}</b><em>{(riskPct * 100).toFixed(2)}%</em></div>
+                  {MULTS.map((m) => (
+                    <div key={m}><span>Chốt lời {m.replace(".0", "")}R</span><b className="pos">{fmt(price + s.side * +m * risk, d)}</b><em>{(riskPct * +m * 100).toFixed(2)}%</em></div>
+                  ))}
+                </div>
+                {st ? (
+                  <table className="stats-table">
+                    <thead><tr><th>Chốt lời</th><th>Thắng</th><th>Lời TB / lệnh</th><th>2026</th><th>Coin có lãi</th><th>Ngẫu nhiên</th></tr></thead>
+                    <tbody>
+                      {MULTS.map((m) => {
+                        const x = st[m][fee];
+                        const r = rnd?.[m]?.[fee].train;
+                        return (
+                          <tr key={m} className={m === best ? "best" : ""}>
+                            <td>{m.replace(".0", "")}R</td>
+                            <td>{x.train.winRate != null ? `${(x.train.winRate * 100).toFixed(0)}%` : "—"}</td>
+                            <td className={(x.train.expR ?? 0) > 0 ? "pos" : "neg"}>{x.train.expR?.toFixed(3) ?? "—"}R</td>
+                            <td className={(x.test.expR ?? 0) > 0 ? "pos" : "neg"}>{x.test.expR?.toFixed(3) ?? "—"}R ({x.test.n})</td>
+                            <td>{x.train.symbolsPositive != null ? `${(x.train.symbolsPositive * 100).toFixed(0)}%` : "—"}</td>
+                            <td className="muted">{r?.expR?.toFixed(3) ?? "—"}R</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : <p className="muted">Chưa có thống kê cho setup này.</p>}
+                {st && best && (
+                  <p className={`verdict ${edge ? "good" : "bad"}`}>
+                    {edge
+                      ? <>Có lợi thế thống kê với chốt lời {best.replace(".0", "")}R: {st[best][fee].train.n} lệnh 2023–2025, lời TB {st[best][fee].train.expR}R/lệnh sau phí, 2026 vẫn dương. Nếu vào, giữ đúng dừng lỗ.</>
+                      : <>Chưa có lợi thế: sau phí, setup này không thắng ổn định qua các năm và các coin (lời TB tốt nhất {st[best][fee].train.expR}R/lệnh). <b>Nên đứng ngoài</b> hoặc chỉ vào lệnh rất nhỏ.</>}
+                  </p>
+                )}
+              </>
+            )}
+          </article>
+        );
+      })}
+      <p className="note">1R = khoảng cách từ giá vào tới dừng lỗ. &quot;Lời TB 0,1R&quot; nghĩa là mỗi lệnh trung bình lời 10% số tiền bạn chấp nhận mất. Thống kê đo trên 20 coin Binance perp, đóng lệnh trước 0h.</p>
+    </section>
+  );
+}
+
 export default function Home() {
   const [inst, setInst] = useState(INSTRUMENTS[0].id);
   const [bar, setBar] = useState(BARS[0].id);
@@ -179,13 +287,10 @@ export default function Home() {
     }
   }, [inst, bar]);
 
+  // load once when the coin/timeframe changes; afterwards only on "Phân tích"
   useEffect(() => {
     const first = setTimeout(load, 0);
-    const id = setInterval(load, 15000);
-    return () => {
-      clearTimeout(first);
-      clearInterval(id);
-    };
+    return () => clearTimeout(first);
   }, [load]);
 
   const tk = data?.ticker;
@@ -200,7 +305,7 @@ export default function Home() {
           <span className="logo" aria-hidden>✦</span>
           <div>
             <h1>Northstar Crypto Lab</h1>
-            <p>Dữ liệu thật từ OKX · cập nhật mỗi 15 giây</p>
+            <p>Nến thật từ OKX · đối chiếu với thống kê 20 coin 2023–2026</p>
           </div>
         </div>
         <div className="controls">
@@ -214,6 +319,7 @@ export default function Home() {
               <button key={b.id} className={bar === b.id ? "on" : ""} onClick={() => setBar(b.id)}>{b.label}</button>
             ))}
           </div>
+          <button className="primary" onClick={load}>Phân tích</button>
         </div>
       </header>
 
@@ -246,6 +352,7 @@ export default function Home() {
       </section>
 
       <div className="grid">
+        <div className="main-col">
         <section className="card chart-card">
           <header className="card-head">
             <h2>{label} · {BARS.find((b) => b.id === bar)!.label}</h2>
@@ -253,8 +360,10 @@ export default function Home() {
               {shown?.volumeRatio != null ? `Khối lượng nến vừa đóng: ${shown.volumeRatio.toFixed(1)}× trung bình` : ""}
             </span>
           </header>
-          {shown && shown.candles.length > 0 ? <CandleChart candles={shown.candles} /> : <div className="empty">Đang tải nến…</div>}
+          {shown && shown.candles.length > 0 ? <CandleChart candles={shown.candles.slice(-120)} /> : <div className="empty">Đang tải nến…</div>}
         </section>
+        {shown && <Guidance candles={shown.candles} bar={bar} fetchedAt={shown.fetchedAt} />}
+        </div>
 
         <aside className="side">
           <section className="card">
