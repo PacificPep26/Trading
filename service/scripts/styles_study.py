@@ -109,9 +109,14 @@ def stats(rows):
 
 
 def main():
+    global FEE_MARKET, FEE_LIMIT
     ap = argparse.ArgumentParser()
     ap.add_argument("--intervals", nargs="+", default=["1h", "4h"])
+    ap.add_argument("--fee-market", type=float, default=FEE_MARKET, help="round trip, e.g. 0.0004 for a zero-fee exchange (spread/slippage only)")
+    ap.add_argument("--fee-limit", type=float, default=FEE_LIMIT)
+    ap.add_argument("--out", default=str(OUT))
     a = ap.parse_args()
+    FEE_MARKET, FEE_LIMIT = a.fee_market, a.fee_limit
     files = sorted(DATA_DIR.glob("*-PERP_1h.csv"))
     base = {f.name.split("-PERP")[0]: load(f.name.split("_")[0], "1h", include_holdout=True) for f in files}
     out = {"symbols": sorted(base), "fees": {"market": FEE_MARKET, "limit": FEE_LIMIT}, "results": []}
@@ -169,8 +174,8 @@ def main():
         rnd = stats([x for x in random_rows if x[3] <= 2025])
         out.setdefault("random", {})[interval] = rnd
         print(f"{interval} random 1.5R market      | train n={rnd['n']:6d} win={rnd['winRate']:.0%} expR={rnd['expR']:+.3f}\n")
-    OUT.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-    print("wrote", OUT)
+    Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("wrote", a.out)
 
 
 if __name__ == "__main__":
