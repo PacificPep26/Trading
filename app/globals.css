@@ -162,3 +162,11 @@ h1 { margin: 0; font-size: 20px; }
 .ai-verdict.long strong { color: var(--up); }
 .ai-verdict.short strong { color: var(--down); }
 .ai-verdict.flat strong { color: var(--accent); }
+
+.table-wrap { overflow-x: auto; }
+.watch-table td, .watch-table th { white-space: nowrap; }
+.style-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.style-stats span { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.sizing { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 8px 0 12px; }
+.sizing label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.sizing input { width: 120px; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 8px; font: inherit; }
