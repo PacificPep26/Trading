@@ -1,0 +1,14 @@
+.next/
+node_modules/
+__pycache__/
+.venv/
+.env
+.env.*
+!.env.example
+*.py[cod]
+*.sqlite3
+.DS_Store
+.pytest_cache/
+*.db
+# market data and YouTube transcripts stay local (size + copyright)
+data/
