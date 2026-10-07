@@ -11,6 +11,10 @@ async function get<T>(path: string): Promise<T> {
   return body.data;
 }
 
+export async function publicGet<T>(path: string): Promise<T> {
+  return get<T>(path);
+}
+
 export async function candles(instId: string, bar: string, limit = 120): Promise<Candle[]> {
   const rows = await get<string[][]>(`/market/candles?instId=${instId}&bar=${bar}&limit=${limit}`);
   // OKX returns newest first: [ts, o, h, l, c, vol(contracts), volCcy(coin), volQuote, confirm]
@@ -32,4 +36,14 @@ export async function funding(instId: string) {
 export async function openInterest(instId: string) {
   const [d] = await get<Record<string, string>[]>(`/public/open-interest?instType=SWAP&instId=${instId}`);
   return { coins: +d.oiCcy, usd: +d.oiUsd };
+}
+
+export async function longShortRatio(ccy: string, period = "1H") {
+  const rows = await get<string[][]>(`/rubik/stat/contracts/long-short-account-ratio?ccy=${ccy}&period=${period}`);
+  return rows.slice(0, 24).map((r) => ({ t: +r[0], ratio: +r[1] }));
+}
+
+export async function openInterestHistory(ccy: string, period = "1H") {
+  const rows = await get<string[][]>(`/rubik/stat/contracts/open-interest-volume?ccy=${ccy}&period=${period}`);
+  return rows.slice(0, 24).map((r) => ({ t: +r[0], oiUsd: +r[1], volumeUsd: +r[2] }));
 }
