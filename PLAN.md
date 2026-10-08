@@ -48,7 +48,7 @@ Phòng thí nghiệm kiểm chứng kỹ thuật trading crypto: nạp kiến th
 
 ## Quyết định đã chốt
 
-- Crypto perpetual (không còn forex/MT5; code bridge MT5 trong `service/app/` chưa dọn).
+- Crypto perpetual (không còn forex/MT5; code bridge MT5 đã xóa 2026-10-08).
 - Dữ liệu lịch sử: Binance Data Vision (`data/crypto/*-PERP_15m.csv`, 21 coin từ 2023). Giá trực tiếp: OKX public API; MEXC public API (`contract.mexc.com`) có phí từng hợp đồng.
 - Không huấn luyện model; kho tri thức + backtest. Tiêu chuẩn "đánh được": lãi sau phí 2023–25 với t≥3, 2026 vẫn lãi, ≥60% coin lãi, ≥300 lệnh.
 - Mục "Non-negotiable safety constraints" đã bị chủ dự án yêu cầu xóa khỏi CONTEXT.md (2026-10-07). API vị thế không có mật khẩu theo quyết định chủ dự án.
@@ -65,7 +65,7 @@ Phòng thí nghiệm kiểm chứng kỹ thuật trading crypto: nạp kiến th
 | 6 | Web: phân tích, bảng 4h, nhật ký vị thế | Xong, đang chạy trên Railway |
 | 7 | Bot cảnh báo Telegram cho setup 4h | Chưa làm (cần token BotFather do chủ dự án tạo) |
 | 8 | Chuyển nguồn giá web sang MEXC | Chưa làm |
-| 9 | Dọn code/README còn nhắc MT5 | Chưa làm |
+| 9 | Dọn code/README còn nhắc MT5 | Xong (2026-10-08) |
 
 ## Kiến thức nền
 

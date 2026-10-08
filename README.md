@@ -34,5 +34,3 @@ python -m pytest tests\test_backtest.py
 ```
 
 `data/` (candles, transcripts database) is git-ignored and rebuilt by the scripts. Transcripts are for personal study only.
-
-The legacy MT5 bridge in `service/app/` is no longer used (MT5 was removed).

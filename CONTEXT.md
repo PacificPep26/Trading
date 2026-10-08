@@ -14,7 +14,6 @@ Phòng thí nghiệm cá nhân về giao dịch hợp đồng vĩnh cửu crypto
 - `service/backtest/`: bộ khung backtest + định nghĩa các kiểu vào lệnh (`patterns.py`, `setups.py`, `structure.py`).
 - `service/scripts/`: tải dữ liệu, các nghiên cứu, `market_brief.py` (phân tích nhanh trong chat).
 - `data/` (không lên git): nến Binance perp 15m/1h 2023–2026, transcript, sách, bảng phí MEXC.
-- `service/app/main.py`, `tests/test_mt5_bridge.py`: bridge MetaTrader 5 cũ, **không còn dùng**.
 
 ## Quy ước
 
