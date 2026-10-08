@@ -6,7 +6,8 @@ const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX",
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
 const BUSINESS_WS = "wss://ws.okx.com:8443/ws/v5/business"; // candle channels live here
 const M15 = 15 * 60_000;
-const NOTIONAL = 40 * 15; // owner's usual 40$ margin at 15x
+const MARGIN = 40, LEV = 15, NOTIONAL = MARGIN * LEV; // owner's usual 40$ margin at 15x
+const RISK_4H = 3; // 4h stops are 4-8% away: size the position so the stop costs ~3$
 const MAX_STOP = 0.012; // stop farther than 1.2% does not fit 15x (rule from the trend-riding plan)
 
 type Bar = { t: number; o: number; h: number; l: number; c: number; v: number };
@@ -216,7 +217,7 @@ export default function LiveScanner() {
     </p>
     {error && <p className="verdict bad">{error}</p>}
     <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP1 · TP2</th><th>Lỗ/lời @15x</th><th>Dòng lệnh</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP1 · TP2</th><th>Cỡ lệnh · lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
       <tbody>{plans.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
@@ -229,7 +230,10 @@ export default function LiveScanner() {
           <td>{l?.zone ? `${fmt(l.zone[0])} – ${fmt(l.zone[1])}` : l ? fmt(l.entry) : "—"}{l?.zone && p.key === "enter" && <small>vào {fmt(l.entry)}</small>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
-          <td>{l ? <>−{(NOTIONAL * (riskPct + 0.001)).toFixed(1)}$ / +{(NOTIONAL * (1.5 * riskPct - 0.001)).toFixed(1)}$</> : "—"}</td>
+          <td>{!l ? "—" : p.kind === "zone" ? <>15x ({NOTIONAL}$)<small>−{(NOTIONAL * (riskPct + 0.001)).toFixed(1)}$ / +{(NOTIONAL * (1.5 * riskPct - 0.001)).toFixed(1)}$</small></> : (() => {
+            const notional = RISK_4H / (riskPct + 0.001), lev = notional / MARGIN;
+            return <>{lev < 1 ? `${notional.toFixed(0)}$ (<1x)` : `≤ ${lev.toFixed(1)}x`}<small className="neg">KHÔNG dùng 15x: thanh lý trước dừng lỗ</small><small>−{RISK_4H}$ / +{(notional * (1.5 * riskPct - 0.001)).toFixed(1)}$</small></>;
+          })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
         </tr>;
       })}</tbody>
