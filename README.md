@@ -20,7 +20,7 @@ Deployed on Railway with `npm run build` / `npm run start`.
 ## Research scripts (Python, local)
 
 ```powershell
-python -m pip install -r service\requirements-dev.txt yt-dlp youtube-transcript-api
+python -m pip install -r service\requirements-dev.txt
 python service\scripts\download_klines.py SOLUSDT --interval 15m --start 2023-01 --market futures
 python -m service.scripts.run_backtest trend_volume --symbols SOLUSDT --interval 4h --fee 0
 python -m service.scripts.intraday_study --interval 15m
