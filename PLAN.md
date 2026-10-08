@@ -74,4 +74,4 @@ Overfitting / data snooping (nhiều giả thuyết → hiệu chỉnh), năm ki
 ## Đang mở (cập nhật mỗi ngày)
 
 - **SOL (2026-10-08)**: 4h & 1h giảm, đi ngang 115,14–117,17. Kế hoạch A: limit short 117,0, SL 117,4, TP 116,4 / 115,15 (chưa đặt lúc 10h16). Kế hoạch B: nến 1h đóng dưới 115,14 → hủy A, short khi hồi 115,3–115,5, SL 116,0, mục tiêu 112,5–113. Không đuổi giá giữa vùng.
-- **LINK BOS 4h short** (từ 2026-10-07, vào 13,373, SL 14,14, TP 12,22): chỉ là tín hiệu, chưa rõ chủ dự án có vào không.
+- **LINK BOS 4h short mới** (2026-10-08 11h, ~13,16, SL 14,14, TP 11,68 / 11,19): chủ dự án định vào 10x với ký quỹ ~4$ (mất ~3$ ở SL).
