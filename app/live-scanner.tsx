@@ -106,6 +106,16 @@ export default function LiveScanner() {
   const tradesRef = useRef<Record<string, Trade[]>>({});
   const prevKey = useRef<Record<string, Key>>({});
 
+  // remember "notifications on" across reloads (per browser)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        if (localStorage.getItem("scanner-notify") === "1" && typeof Notification !== "undefined" && Notification.permission === "granted") setNotify(true);
+      } catch { /* storage blocked: user can press the button again */ }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   // structural levels: 4h setups + 1h pullback zones, refreshed every 60s
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +215,7 @@ export default function LiveScanner() {
     <header className="card-head">
       <h2>Scanner live · 21 coin</h2>
       <div className="live-head">
-        <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); } }}>
+        <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
           {notify ? "Đã bật thông báo" : "Bật thông báo"}
         </button>
         <span className={`live-state ${connection}`}>{connection === "live" ? "● LIVE OKX" : connection === "connecting" ? "Đang kết nối…" : "Đang kết nối lại…"}</span>
