@@ -2,7 +2,7 @@
 
 Lệnh thật, kế hoạch trong ngày và chấm điểm sau đó. Mới nhất ở trên.
 
-- **2026-10-08 11h14**: **Đã vào LINK SHORT** (OKX): 27,8 LINK @13,138, 10x cô lập, ký quỹ 36,52$ (gần hết tài khoản, chủ dự án chọn dù được khuyên 3–5 LINK), thanh lý 14,35, **TP 12,2 (~+26$) / SL 14,14 (~-28$)**. Quản lý đề xuất: chạm ~12,64 (0,5R) thì dời SL về 13,14 (có thể chốt nửa); không đóng tay khi hồi về 13,4–13,5; chạm SL thì nghỉ hết ngày.
+- **2026-10-08 11h14**: **Đã vào LINK SHORT** (OKX): 27,8 LINK @13,138, 10x cô lập, ký quỹ 36,52$ (gần hết tài khoản, chủ dự án chọn dù được khuyên 3–5 LINK), thanh lý 14,35, **TP 12,2 (~+26$) / SL 14,14 (~-28$)**. Quản lý đề xuất: chạm ~12,64 (0,5R) thì dời SL về 13,14 (có thể chốt nửa); không đóng tay khi hồi về 13,4–13,5; chạm SL thì nghỉ hết ngày. 11h20: đã đặt thêm **trailing stop** OKX (kích hoạt 12,64, callback 3,9%, 27,8 LINK) để tự dời điểm đóng về ~13,13 khi chạm 12,64; SL 14,14 + TP 12,2 giữ nguyên. Giá lúc đó ~12,96–13,01.
 
 - **2026-10-08 ~11h10**: Scanner live báo **LINK BOS 4h SHORT: VÀO NGAY** (nến 4h 7h–11h đóng ~13,16 thủng đáy cấu trúc). Dừng lỗ 14,14 (+7,5%), TP 1,5R 11,68, TP 2R 11,19. Chủ dự án muốn dùng 10x → đề xuất ký quỹ ~4$ (vị thế ~40$, mất ~3$ nếu chạm SL; +4,5$/+6$ ở TP1/TP2), không dùng cả 40$ (mất ~30$ ở SL). Chờ giá khớp thực tế.
 

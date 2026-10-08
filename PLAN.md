@@ -74,4 +74,4 @@ Overfitting / data snooping (nhiều giả thuyết → hiệu chỉnh), năm ki
 ## Đang mở (cập nhật mỗi ngày)
 
 - **SOL (2026-10-08)**: 4h & 1h giảm, đi ngang 115,14–117,17. Kế hoạch A: limit short 117,0, SL 117,4, TP 116,4 / 115,15 (chưa đặt lúc 10h16). Kế hoạch B: nến 1h đóng dưới 115,14 → hủy A, short khi hồi 115,3–115,5, SL 116,0, mục tiêu 112,5–113. Không đuổi giá giữa vùng.
-- **LINK SHORT đang mở** (2026-10-08 11h14): 27,8 LINK @13,138, 10x, TP 12,2 / SL 14,14 (+26$ / -28$). Chạm ~12,64 → dời SL về 13,14.
+- **LINK SHORT đang mở** (2026-10-08 11h14): 27,8 LINK @13,138, 10x, TP 12,2 / SL 14,14 (+26$ / -28$). Đã đặt trailing stop (kích hoạt 12,64, callback 3,9%) thay cho việc dời SL tay.
