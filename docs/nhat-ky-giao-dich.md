@@ -2,6 +2,8 @@
 
 Lệnh thật, kế hoạch trong ngày và chấm điểm sau đó. Mới nhất ở trên.
 
+- **2026-10-08 11h14**: **Đã vào LINK SHORT** (OKX): 27,8 LINK @13,138, 10x cô lập, ký quỹ 36,52$ (gần hết tài khoản, chủ dự án chọn dù được khuyên 3–5 LINK), thanh lý 14,35, **TP 12,2 (~+26$) / SL 14,14 (~-28$)**. Quản lý đề xuất: chạm ~12,64 (0,5R) thì dời SL về 13,14 (có thể chốt nửa); không đóng tay khi hồi về 13,4–13,5; chạm SL thì nghỉ hết ngày.
+
 - **2026-10-08 ~11h10**: Scanner live báo **LINK BOS 4h SHORT: VÀO NGAY** (nến 4h 7h–11h đóng ~13,16 thủng đáy cấu trúc). Dừng lỗ 14,14 (+7,5%), TP 1,5R 11,68, TP 2R 11,19. Chủ dự án muốn dùng 10x → đề xuất ký quỹ ~4$ (vị thế ~40$, mất ~3$ nếu chạm SL; +4,5$/+6$ ở TP1/TP2), không dùng cả 40$ (mất ~30$ ở SL). Chờ giá khớp thực tế.
 
 - **2026-10-08 ~9h30**: SOL đi ngang 115,14–117,17 sau cú giảm; OI phẳng (~405 triệu $), tỷ lệ tài khoản long/short tăng 1,86 → 2,07. Kiểm tra quá khứ (1.327 trường hợp giống vậy, 21 coin): phá lên 49% (trung vị +2,1%/12h), phá xuống 48% (-2,9%) → không có lợi thế về hướng. Kế hoạch **limit SHORT SOL 117,0** (lúc 10h16 chủ dự án cho biết **chưa đặt**; đề xuất đặt kèm TP/SL + cảnh báo giá 115,10 / 116,90; 11h kiểm tra nến 1h), 15x, ~5,1 SOL, SL 117,4 (theo giá mark, ~-2,1$), TP1 116,4 (50%, rồi dời SL về 117,0), TP2 115,15 (~+6,3$ cả lệnh). Hủy nếu nến 1h đóng dưới 115,14 trước khi khớp; xem lại nếu chưa khớp tới 20h.
