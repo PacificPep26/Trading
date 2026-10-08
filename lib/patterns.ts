@@ -26,7 +26,7 @@ function atrSeries(cs: Candle[]) {
   return out;
 }
 
-function swings(cs: Candle[]) {
+export function swings(cs: Candle[]) {
   const highs: number[] = [], lows: number[] = [];
   for (let k = W; k < cs.length - W; k++) {
     let hi = true, lo = true;

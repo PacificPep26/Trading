@@ -6,7 +6,7 @@ Start with [PLAN.md](PLAN.md) (current conclusions, what was tested, open plans)
 
 ## Web dashboard (Next.js)
 
-The dashboard refreshes every 60 seconds and combines 15m/1h/4h context, OI history, long/short ratio, conditional TP-before-SL statistics, entry timing, a setup scanner, and optional Postgres-backed position tracking. Configure `DATABASE_URL` to save positions; market analysis remains available when Postgres is unavailable.
+The dashboard combines 15m/1h/4h context, OI history, long/short ratio, conditional TP-before-SL statistics, entry timing, a setup scanner, and optional Postgres-backed position tracking. A browser-side OKX WebSocket scanner streams tickers, five-level order books, and rolling 30-second trades for the 21-coin watchlist; it only marks an entry when a backtested 4h setup and live flow agree. Configure `DATABASE_URL` to save positions; market analysis remains available when Postgres is unavailable.
 
 Also: a 4h watchlist of the two best-tested setups (BOS, double top/bottom) across 21 coins with entry/stop/targets and leverage sized from the amount you accept to lose; an optional Claude analysis panel (needs `ANTHROPIC_API_KEY`). Live OKX public data (no API key): candles 15m/1h/4h, funding, open interest, BTC 1h move, alerts (volume spike ≥3×, BTC 1h move ≥1%, funding ≥0.03%), and a position calculator (PnL at TP/SL with fees, risk/reward, break-even win rate, estimated liquidation).
 

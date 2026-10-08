@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import AiCard from "./ai-card";
+import LiveScanner from "./live-scanner";
 import WatchlistCard from "./watchlist-card";
 
 type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; closed: boolean };
@@ -79,6 +80,7 @@ export default function Home() {
       <section className="card"><header className="card-head"><h2>{coin} · {bar.replace("H","h")}</h2>{shown&&<span className="muted">Volume {shown.volumeRatio.toFixed(2)}× · RSI {shown.rsi.toFixed(0)} · ATR {fmt(shown.atr)}</span>}</header>{candles.length?<CandleChart candles={candles}/>:<div className="empty">Đang tải nến…</div>}</section>
       {shown&&<section className="card"><header className="card-head"><h2>Bối cảnh đa khung</h2><span className="muted">Cập nhật {data&&vnTime(data.fetchedAt)}</span></header><div className="frame-grid">{Object.values(data!.frames).map((f)=><article key={f.bar}><h3>{f.bar.replace("H","h")}</h3><p className={f.close>=f.ema200?"pos":"neg"}>{f.close>=f.ema200?"Trên":"Dưới"} EMA200 {fmt(f.ema200)}</p><p>RSI {f.rsi.toFixed(0)} · Volume {f.volumeRatio.toFixed(2)}×</p><p>Hỗ trợ {fmt(f.support)} · Kháng cự {fmt(f.resistance)}</p>{Math.abs(f.impulseAtr)>=1.5&&<p className="warn-text">Có nến sâu {Math.abs(f.impulseAtr).toFixed(1)} ATR, {f.impulseBarsAgo} nến trước</p>}</article>)}</div></section>}
       <WatchlistCard />
+      <LiveScanner />
       <AiCard inst={`${coin}-USDT-SWAP`} />
       <section className="card"><header className="card-head"><h2>Quét điểm vào mới</h2></header><div className="scanner">{(data?.scanner??[]).map((s)=><article key={s.side} className={`signal ${s.qualified?"qualified":""}`}><header><span className={`pill ${s.side}`}>{s.side.toUpperCase()}</span><h3>{s.verdict}</h3></header><p>{s.timing.text}</p><div className="levels"><div><span>Entry tham chiếu</span><b>{fmt(s.entry)}</b></div><div><span>SL cấu trúc</span><b>{fmt(s.stop)}</b></div>{s.best&&<div><span>TP tốt nhất · {s.best.rr}R</span><b>{fmt(s.best.tp)}</b></div>}</div><ProbabilityView value={s.best?.probability??null}/></article>)}</div></section>
       {pa&&<section className={`card decision ${pa.tone}`}><header className="card-head"><h2>Đánh giá lệnh đang nhập</h2><strong className="decision-tag">{pa.action}</strong></header><ProbabilityView value={pa.probability}/><p className="timing">{pa.timing.text}</p><div className="metrics"><div><span>Lãi tại TP sau phí</span><b className="pos">+{fmt(pa.win)}$</b></div><div><span>Lỗ tại SL sau phí</span><b className="neg">{fmt(pa.loss)}$</b></div><div><span>RR sau phí</span><b>{fmt(pa.rrAfterFee,2)}</b></div><div><span>Tỷ lệ hòa vốn</span><b>{(pa.breakeven*100).toFixed(1)}%</b></div><div><span>PNL chưa phí</span><b className={pa.unrealized>=0?"pos":"neg"}>{fmt(pa.unrealized)}$</b></div></div><div className="reasons"><div><h3>Ủng hộ</h3>{pa.supports.map((x)=><p key={x}>✓ {x}</p>)}</div><div><h3>Rủi ro</h3>{pa.risks.map((x)=><p key={x}>⚠ {x}</p>)}</div></div></section>}

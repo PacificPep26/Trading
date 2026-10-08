@@ -15,7 +15,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - Nhận xét lệnh đang chạy: nêu mức giá làm hỏng lý do vào lệnh; **không liệt kê rủi ro ngắn hạn kiểu "giá có thể hồi"** (lần trước làm chủ dự án thoát sớm một lệnh short đúng hướng).
 - Không hứa dự đoán; luôn kèm số liệu kiểm chứng.
 
-**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web` + `Postgres`; deploy bằng `railway up --service web --ci --detach`). Trang tự tải lại mỗi 60 giây. Có: phân tích nhiều khung, bảng "Coin đáng chú ý · 4h" (BOS / hai đỉnh-hai đáy, giá vào, dừng lỗ, chốt lời, đòn bẩy theo số tiền chấp nhận mất), nhật ký vị thế, nút AI (cần `ANTHROPIC_API_KEY`, hiện **không dùng**). GitHub `PacificPep26/Trading` (public; `data/` không lên git).
+**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web` + `Postgres`; deploy bằng `railway up --service web --ci --detach`). Trang tự tải lại mỗi 60 giây. **Scanner live** (WebSocket OKX, mỗi giây): báo VÀO NGAY / CHỜ / BỎ QUA cho 21 coin theo vùng hồi 1h và setup 4h, kèm vào/SL/TP và thông báo trình duyệt. Có: phân tích nhiều khung, bảng "Coin đáng chú ý · 4h" (BOS / hai đỉnh-hai đáy, giá vào, dừng lỗ, chốt lời, đòn bẩy theo số tiền chấp nhận mất), nhật ký vị thế, nút AI (cần `ANTHROPIC_API_KEY`, hiện **không dùng**). GitHub `PacificPep26/Trading` (public; `data/` không lên git).
 
 ## Kết luận hiện tại: đánh thế nào
 
