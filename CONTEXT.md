@@ -1,6 +1,6 @@
 # Ngữ cảnh cho trợ lý AI
 
-**Đọc [PLAN.md](PLAN.md) trước** (chủ dự án, cách đánh hiện tại, những gì đã kiểm chứng, việc đang mở). File này chỉ ghi quy ước kỹ thuật.
+**Đọc [PLAN.md](PLAN.md) trước**, và khi phân tích/đề xuất lệnh thì làm đúng [docs/quy-trinh-phan-tich.md](docs/quy-trinh-phan-tich.md) (chủ dự án, cách đánh hiện tại, những gì đã kiểm chứng, việc đang mở). File này chỉ ghi quy ước kỹ thuật.
 
 ## Dự án là gì
 
