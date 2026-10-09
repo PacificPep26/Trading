@@ -5,7 +5,8 @@ import { candles } from "@/lib/okx";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const MARGIN = Number(process.env.ALERT_MARGIN ?? 10); // owner's margin per trade ($)
-const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 57); // account; risk 10% per trade, ★ trades only, TP 1R (owner's choice)
+const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 57);
+const BOLD = (process.env.ALERT_MODE ?? "bold") === "bold"; // owner's LINK style: all 4h signals, whole margin x10, TP 0.75R
 
 declare global {
   var telegramSent: Set<string> | undefined;
@@ -44,20 +45,21 @@ export async function scanAndAlert(): Promise<string[]> {
         if (s.state !== "triggered") continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.004 || risk > 0.08) continue;
-        if (s.style === "bos" && s.side < 0) continue;
-        if (s.style === "double_top_bottom" && !(btc === s.side && own === s.side)) continue;
-        if (own !== s.side) continue; // only ★ trades (coin with its daily trend)
+        if (!BOLD) {
+          if (s.style === "bos" && s.side < 0) continue;
+          if (s.style === "double_top_bottom" && !(btc === s.side && own === s.side)) continue;
+          if (own !== s.side) continue; // only ★ trades (coin with its daily trend)
+        }
         const key = `${coin}:${s.style}:${s.side}:${a.lastBarTime}`;
         if (sent.has(key)) continue;
         sent.add(key);
-        const R = Math.abs(s.entry - s.stop), lev = Math.min(20, (CAPITAL * 0.1) / (MARGIN * risk)), notional = MARGIN * lev, riskUsd = notional * risk;
+        const R = Math.abs(s.entry - s.stop), lev = BOLD ? Math.min(10, Math.floor(0.85 / risk)) : Math.min(20, (CAPITAL * 0.1) / (MARGIN * risk)), notional = MARGIN * lev, riskUsd = notional * risk;
         out.push(
           `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}${own === s.side ? " · ★ coin cùng xu hướng ngày" : ""}\n` +
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
           `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%) · THOÁT SỚM nếu nến 4h đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-          `TP: nửa ở ${f(s.entry + s.side * 0.5 * R)} (0,5R) → dời SL về giá vào · nửa ở ${f(s.entry + s.side * R)} (1R)
-` +
-          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ nếu chạm cả hai TP (≈7,5% vốn); chạm 0,5R rồi quay về = hòa vốn`,
+          (BOLD ? `TP ${f(s.entry + s.side * 0.75 * R)} (0,75R)\n` : `TP: nửa ở ${f(s.entry + s.side * 0.5 * R)} (0,5R) → dời SL về giá vào · nửa ở ${f(s.entry + s.side * R)} (1R)\n`) +
+          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ ở TP`,
         );
       }
     } catch (e) {

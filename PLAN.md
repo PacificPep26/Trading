@@ -19,6 +19,8 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 ## Kết luận hiện tại: đánh thế nào (LUẬT DUY NHẤT, thống nhất 2026-10-09)
 
+**Chế độ đang dùng (chủ dự án chọn 2026-10-09 trưa): "Kiểu hôm qua"** = mọi tín hiệu 4h (BOS long + short, hai đỉnh/hai đáy, không lọc xu hướng ngày), toàn bộ ký quỹ (~36$) x10 (tự hạ nếu thanh lý trước SL), TP 0,75R, vẫn ghi mức thoát sớm. Đã nói rõ: backtest cho rủi ro cỡ này sụt rất sâu/cháy, BOS short không có lợi thế. Chế độ "An toàn" (bên dưới) vẫn chọn được trên web (ô Kiểu) và bot (ALERT_MODE=safe).
+
 **Chỉ vào lệnh khi có tín hiệu 4h đã kiểm chứng, vừa xác nhận bằng nến 4h đóng cửa: BOS LONG, hoặc hai đỉnh/hai đáy CÙNG xu hướng ngày (BTC và coin so với EMA50 ngày: trên → chỉ hai đáy LONG, dưới → chỉ hai đỉnh SHORT). BOS SHORT = không đánh.** (cập nhật 2026-10-09) Không có tín hiệu 4h = không vào lệnh. Scanner trên web chỉ còn báo đúng hai kiểu này.
 
 - **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
