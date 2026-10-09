@@ -28,7 +28,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
 - Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
-- **Cỡ lệnh** (chủ dự án chọn trước mắt, 2026-10-09): **chạm SL mất 5$, ký quỹ 10$, đòn bẩy = 5 ÷ (10 × khoảng SL), tối đa x20** (SL 7,6% → x6,6; 5% → x10). Lời: lệnh thường 0,5R ≈ +2,5$, lệnh ★ 1R ≈ +5$. Khi forward test tốt / vốn tăng → nâng lên 10–20$ (đã tính sẵn). Telegram: ALERT_LOSS / ALERT_MARGIN trên Railway.
+- **Cỡ lệnh** (chủ dự án chọn trước mắt, 2026-10-09): **mục tiêu lời ~5$/lệnh** → lệnh ★ (TP 1R) chịu mất 5$, lệnh thường (TP 0,5R) chịu mất 10$; ký quỹ 20$; đòn bẩy = mất ÷ (20 × khoảng SL), tối đa x20. Telegram: ALERT_PROFIT / ALERT_MARGIN trên Railway.
 
 ## Đã / chưa backtest
 

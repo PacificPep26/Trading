@@ -5,7 +5,7 @@ import { candles } from "@/lib/okx";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const MARGIN = Number(process.env.ALERT_MARGIN ?? 10); // owner's margin per trade ($)
-const LOSS = Number(process.env.ALERT_LOSS ?? 5); // $ lost at the stop; leverage derived per trade
+const PROFIT = Number(process.env.ALERT_PROFIT ?? 5); // target $ at TP; loss at stop = PROFIT / TP-in-R
 
 declare global {
   var telegramSent: Set<string> | undefined;
@@ -49,7 +49,7 @@ export async function scanAndAlert(): Promise<string[]> {
         const key = `${coin}:${s.style}:${s.side}:${a.lastBarTime}`;
         if (sent.has(key)) continue;
         sent.add(key);
-        const R = Math.abs(s.entry - s.stop), lev = Math.min(20, LOSS / (MARGIN * risk)), notional = MARGIN * lev, riskUsd = notional * risk;
+        const tpR = own === s.side ? 1 : 0.5, R = Math.abs(s.entry - s.stop), lev = Math.min(20, PROFIT / tpR / (MARGIN * risk)), notional = MARGIN * lev, riskUsd = notional * risk;
         out.push(
           `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}${own === s.side ? " · ★ coin cùng xu hướng ngày" : ""}\n` +
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +

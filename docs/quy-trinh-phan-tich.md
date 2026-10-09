@@ -17,7 +17,7 @@ Dùng khi chủ dự án hỏi "check X", "vào được không", "quét coin", 
 **Không bao giờ đề xuất** các kiểu đã kiểm chứng là lỗ: vùng hồi 1h, Fibonacci, bật hỗ trợ/kháng cự, VWAP, bắt đáy sau cú quét, đu sóng 15m đòn bẩy cao, chốt ngay trên nền cũ, đuổi giá. Nếu chủ dự án hỏi một kiểu chưa có trong bảng kiểm chứng → nói rõ "chưa backtest", đề nghị backtest trước, không đưa giá vào.
 
 ## Bước 3: tính cỡ lệnh (luôn kèm theo)
-- Cỡ lệnh chủ dự án dùng: **chịu mất 5$ ở SL, ký quỹ 10$ → đòn bẩy = 5 ÷ (10 × khoảng SL), tối đa x20**; nếu vốn giảm, đề nghị hạ mức chịu mất (≤ 1/3 vốn) (khuyến nghị gốc: rủi ro 2,5% vốn) (vốn hiện tại do chủ dự án báo; mặc định ~40–57$).
+- Cỡ lệnh chủ dự án dùng: **mục tiêu lời 5$: lệnh ★ chịu mất 5$, lệnh thường chịu mất 10$; ký quỹ 20$; đòn bẩy = mất ÷ (20 × khoảng SL), tối đa x20**; nếu vốn giảm, đề nghị hạ mức chịu mất (≤ 1/3 vốn) (khuyến nghị gốc: rủi ro 2,5% vốn) (vốn hiện tại do chủ dự án báo; mặc định ~40–57$).
 - `khoảng SL = |entry − stop| / entry`; `vị thế = rủi ro$ ÷ khoảng SL`; `đòn bẩy = vị thế ÷ ký quỹ dùng`.
 - Kiểm tra giá thanh lý (≈ entry × (1 ∓ 1/đòn bẩy)) nằm **xa hơn** SL.
 - Nêu số $: mất ở SL, lời ở TP 1,5R (và TP2 nếu có). Coin nhỏ: không quá ~5x; SOL/BTC/ETH tối đa 10–15x, nhưng đòn bẩy thực tế do khoảng SL quyết định.
