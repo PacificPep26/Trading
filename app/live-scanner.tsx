@@ -72,9 +72,9 @@ function beep() {
 export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
   const [levels, setLevels] = useState<LevelsData | null>(null);
-  const [capital, setCapital] = useState(57);
+  const [capital, setCapital] = useState(10); // margin per trade ($), used at LEV leverage
   useEffect(() => {
-    const t = setTimeout(() => { try { const v = Number(localStorage.getItem("scanner-capital")); if (v > 0) setCapital(v); } catch { /* ignore */ } }, 0);
+    const t = setTimeout(() => { try { const v = Number(localStorage.getItem("scanner-margin")); if (v > 0) setCapital(v); } catch { /* ignore */ } }, 0);
     return () => clearTimeout(t);
   }, []);
   const [tapes, setTapes] = useState<Record<string, Tape>>({});
@@ -198,7 +198,7 @@ export default function LiveScanner() {
   return <section className="card live-scanner">
     <header className="card-head">
       <h2>Scanner live · 21 coin</h2>
-      <div className="live-head"><label className="capital">Vốn $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-capital", String(v)); } catch { /* ignore */ } }} /></label>
+      <div className="live-head"><label className="capital">Ký quỹ $ (x10)<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ } }} /></label>
         <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
           {notify ? "Đã bật thông báo" : "Bật thông báo"}
         </button>
@@ -212,7 +212,7 @@ export default function LiveScanner() {
     {error && <p className="verdict bad">{error}</p>}
     {shown.length === 0 && <p className="verdict neutral"><b>Chưa có lệnh nào vào được.</b> Lần kiểm tra tới: {next4h(now)}. Khi có tín hiệu, trang này kêu và bot gửi Telegram.</p>}
     {shown.length > 0 && <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP (★ 1R · thường 0,5R)</th><th>Cỡ lệnh (rủi ro 2,5% vốn)</th><th>Dòng lệnh</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP (★ 1R · thường 0,5R)</th><th>Ký quỹ × 10 · lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
       <tbody>{shown.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
@@ -226,8 +226,8 @@ export default function LiveScanner() {
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{!l ? "—" : star(p) ? <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R (lệnh ★)</small></> : <><b>{fmt(l.tp1)}</b><small>0,5R (lệnh thường)</small></>}</td>
           <td>{!l ? "—" : (() => {
-            const risk = capital * 0.025, notional = risk / (riskPct + 0.001), lev = notional / capital;
-            return <>vị thế {notional.toFixed(0)}$ · {lev < 1 ? "<1x" : `${lev.toFixed(1)}x`}<small>−{risk.toFixed(1)}$ ở SL / +{(notional * (star(p) ? 1 : 0.5) * riskPct).toFixed(1)}$ ở TP</small></>;
+            const notional = capital * 10, loss = notional * riskPct, win = notional * (star(p) ? 1 : 0.5) * riskPct;
+            return <>{capital}$ × 10 = {notional.toFixed(0)}$<small>−{loss.toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small>{riskPct > 0.085 && <small className="neg">SL quá xa: x10 thanh lý trước SL → giảm đòn bẩy</small>}</>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
         </tr>;

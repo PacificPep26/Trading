@@ -4,8 +4,8 @@ import { analyse } from "@/lib/patterns";
 import { candles } from "@/lib/okx";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
-const RISK_PCT = 0.025; // risk per trade (PLAN.md)
-const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 57);
+const MARGIN = Number(process.env.ALERT_MARGIN ?? 10); // owner's margin per trade ($)
+const LEV = 10;
 
 declare global {
   var telegramSent: Set<string> | undefined;
@@ -49,13 +49,13 @@ export async function scanAndAlert(): Promise<string[]> {
         const key = `${coin}:${s.style}:${s.side}:${a.lastBarTime}`;
         if (sent.has(key)) continue;
         sent.add(key);
-        const R = Math.abs(s.entry - s.stop), riskUsd = CAPITAL * RISK_PCT, notional = riskUsd / risk;
+        const R = Math.abs(s.entry - s.stop), notional = MARGIN * LEV, riskUsd = notional * risk;
         out.push(
           `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}${own === s.side ? " · ★ coin cùng xu hướng ngày" : ""}\n` +
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
           `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
           `TP ${f(s.entry + s.side * (own === s.side ? 1 : 0.5) * R)} (${own === s.side ? "1R, lệnh ★" : "0,5R, lệnh thường"})\n` +
-          `Cỡ lệnh (vốn ${CAPITAL}$, rủi ro 2,5%): vị thế ~${notional.toFixed(0)}$ · đòn bẩy ${(notional / CAPITAL).toFixed(1)}x · mất ~${riskUsd.toFixed(1)}$ / lời ~${(riskUsd * (own === s.side ? 1 : 0.5)).toFixed(1)}$`,
+          `Ký quỹ ${MARGIN}$ × ${LEV} = ${notional}$ · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * (own === s.side ? 1 : 0.5)).toFixed(1)}$ ở TP${risk > 0.085 ? " · ⚠️ SL xa: x10 sẽ thanh lý trước SL, giảm đòn bẩy" : ""}`,
         );
       }
     } catch (e) {

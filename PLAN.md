@@ -28,7 +28,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
 - Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
-- **Cỡ lệnh: chạm SL mất ~2,5% vốn (≈1$ với 40$).** Mô phỏng 2023–2026: 7,5%/lệnh sụt vốn tới 93–96% (gần cháy), 2,5%/lệnh sụt tối đa ~55%, chuỗi thua dài nhất 13 lệnh. Kỳ vọng ~+0,04–0,05R/lệnh, ~6,5 lệnh/tuần.
+- **Cỡ lệnh** (chủ dự án chọn 2026-10-09): **ký quỹ 10$ × x10 = vị thế 100$** mỗi lệnh → chạm SL 4h (~5%) mất ~5$ (≈9% vốn 57$). Khuyến nghị cũ 2,5% vốn/lệnh (mô phỏng: 7,5%/lệnh từng sụt 96%); đã nói rõ rủi ro, chủ dự án vẫn chọn mức này. SL > 8,5% thì x10 thanh lý trước SL → giảm đòn bẩy.
 
 ## Đã / chưa backtest
 
