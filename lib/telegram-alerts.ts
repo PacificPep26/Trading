@@ -69,3 +69,44 @@ export async function scanAndAlert(): Promise<string[]> {
   for (const m of out) await send(m);
   return out;
 }
+
+const H4 = 4 * 3_600_000;
+const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
+declare global {
+  var telegramPreSent: Set<number> | undefined;
+}
+const preSent = (globalThis.telegramPreSent ??= new Set<number>());
+
+/** About 1h before each 4h close: list setups that could trigger at that close, so the owner can prepare. */
+export async function preAlert(now = Date.now()): Promise<string | null> {
+  const close = Math.floor(now / H4) * H4 + H4;
+  const left = close - now;
+  if (left > 65 * 60_000 || left < 40 * 60_000 || preSent.has(close)) return null;
+  preSent.add(close);
+  const btc = await dailyTrend("BTC");
+  const lines: string[] = [];
+  for (const coin of COINS) {
+    try {
+      const [a, own] = await Promise.all([analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)), coin === "BTC" ? btc : dailyTrend(coin)]);
+      for (const s of a.setups) {
+        if (s.state !== "pending") continue;
+        const risk = Math.abs(s.entry - s.stop) / s.entry;
+        if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.03) continue;
+        if (!BOLD && ((s.style === "bos" && s.side < 0) || own !== s.side || (s.style === "double_top_bottom" && btc !== s.side))) continue;
+        const R = Math.abs(s.entry - s.stop);
+        const lev = BOLD ? Math.min(10, Math.floor(0.85 / risk)) : Math.min(20, (CAPITAL * 0.1) / (MARGIN * risk));
+        lines.push(
+          `• ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} (${s.style === "bos" ? "BOS" : s.side > 0 ? "hai đáy" : "hai đỉnh"}${own === s.side ? ", ★" : ""}): ` +
+          `nến 4h đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (còn cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · ` +
+          `TP ${f(s.entry + s.side * (BOLD ? 0.75 : 0.5) * R)} · x${lev.toFixed(lev < 10 ? 1 : 0)}`,
+        );
+      }
+    } catch (e) {
+      console.error(`telegram pre ${coin}`, e);
+    }
+  }
+  const msg = `⏰ Nến 4h đóng lúc ${vnTime(close)} (còn ~${Math.round(left / 60_000)} phút)\n` +
+    (lines.length ? `Có thể kích hoạt (canh sẵn):\n${lines.join("\n")}\nChỉ vào sau khi nến ĐÓNG đúng điều kiện; bot sẽ báo lại nếu kích hoạt.` : "Không có coin nào sắp kích hoạt. Không cần canh.");
+  await send(msg);
+  return msg;
+}
