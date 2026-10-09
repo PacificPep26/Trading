@@ -13,7 +13,7 @@ const COINS = [
 ];
 
 const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
-const RISK_PER_TRADE = Number(process.env.ALERT_RISK_USD ?? 1.5); // Fixed risk ~$1.5 per trade (3.75% of $40)
+const RISK_PER_TRADE = Number(process.env.ALERT_RISK_USD ?? 5.0); // Fixed risk $5 per trade (1R ăn đúng $5)
 
 declare global {
   var telegramSent: Set<string> | undefined;
@@ -75,15 +75,15 @@ export async function scanAndAlert(): Promise<string[]> {
         const lev = Math.max(1, Math.min(20, Math.floor(notional / 10)));
         const margin = notional / lev;
 
-        const tp075 = s.entry + s.side * 0.75 * R;
-        const tp15 = s.entry + s.side * 1.5 * R;
+        const tp05 = s.entry + s.side * 0.5 * R;
+        const tp10 = s.entry + s.side * 1.0 * R;
 
         out.push(
           `🚨 [4H] ${coin} ${s.side > 0 ? "🟢 LONG (BOS)" : "🔴 SHORT (Hai đỉnh)"}${own === s.side ? " · ★ Thuận xu hướng ngày" : ""}\n` +
           `• Vào: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
           `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
           `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-          `• Chốt lời (TP): Chốt 50% ở ${f(tp075)} (0,75R) → dời SL về Entry → 50% còn lại ở ${f(tp15)} (1,5R)\n` +
+          `• Chốt lời (TP): TP1 (0,5R) ở ${f(tp05)} (+2,5$) → dời SL về Entry → TP2 (1R) ở ${f(tp10)} (đủ +5$)\n` +
           `• Vị thế: Ký quỹ ~${margin.toFixed(1)}$ · Đòn bẩy x${lev} (Notional ~${notional.toFixed(0)}$) · Mất ~${RISK_PER_TRADE}$ nếu dính SL`
         );
       }
@@ -105,13 +105,13 @@ export async function scanAndAlert(): Promise<string[]> {
         const lev = Math.max(1, Math.min(20, Math.floor(notional / 8)));
         const margin = notional / lev;
         const tp05 = s.entry - 0.5 * R;
-        const tp075 = s.entry - 0.75 * R;
+        const tp10 = s.entry - 1.0 * R;
 
         out.push(
           `⚡ [1H - LƯỚT NHANH] ${coin} 🔴 SHORT (Hai đỉnh 1h)\n` +
           `• Vào: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
           `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
-          `• TP lướt nhanh: ${f(tp05)} (0,5R - thắng 67%) hoặc ${f(tp075)} (0,75R)\n` +
+          `• TP lướt nhanh: ${f(tp05)} (0,5R ăn +2,5$) hoặc ${f(tp10)} (1R ăn +5$)\n` +
           `• Vị thế: Ký quỹ ~${margin.toFixed(1)}$ · Đòn bẩy x${lev} · Mất ~${RISK_PER_TRADE}$ nếu dính SL`
         );
       }

@@ -21,21 +21,21 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 Chủ dự án bỏ hoàn toàn kiểu đánh cũ (bỏ bold mode cược hết margin, bỏ BOS SHORT). Hệ thống được chuẩn hóa dựa trên backtest 0% phí MEXC (2023–2026):
 
-1. **Khung 4H (Đánh sóng lớn / Giữ 0,5 – 2 ngày)**:
+1. **Khung 4H (Đánh theo cấu trúc)**:
    - **BOS LONG**: khi nến 4h đóng vượt đỉnh cấu trúc. (BOS SHORT = KHÔNG ĐÁNH).
    - **Hai đỉnh SHORT**: khi nến 4h đóng xuyên qua neckline.
    - **Báo trước**: Bot Telegram gửi tin báo trước ~10 phút lúc 14:50, 18:50, 22:50, 02:50, 06:50, 10:50.
-   - **Chốt lời**: Chốt 50% ở 0,75R → dời SL về Entry (hòa vốn) → 50% còn lại gồng đến 1,5R (hoặc 2R).
+   - **Chốt lời (Mục tiêu 5$/lệnh)**: TP1 chốt 50% ở 0,5R (+2,5$) → dời SL về Entry (hòa vốn) → TP2 chốt ở 1,0R (đủ +5$).
    - **Thoát sớm**: Đóng lệnh ngay nếu nến 4h sau đóng ngược lại qua mức vừa phá.
 
 2. **Khung 1H (Đánh nhanh / Lướt trong ngày trên MEXC)**:
    - **CHỈ ĐÁNH**: **Hai đỉnh (Double Top - SHORT)** khi nến 1h đóng dưới neckline (backtest 0% phí thắng 66,9% ở 0,5R, t > 3,7).
    - Tuyệt đối **KHÔNG ĐÁNH lệnh LONG 1H** (vì nến 1h rất hay quét râu đỉnh rồi xả).
-   - **Chốt lời**: TP 0,5R – 0,75R ăn nhanh.
+   - **Chốt lời**: TP 0,5R (+2,5$) hoặc 1,0R (+5$).
 
-3. **Quản lý vốn & Kỷ luật sống còn**:
-   - Vốn: ~40$. **Rủi ro mỗi lệnh: cố định ~1,5$ (3,75% vốn)**. Đòn bẩy tính từ khoảng cách SL để nếu dính SL chỉ mất đúng 1,5$.
-   - Thua 2 lệnh liên tiếp: nghỉ hết ngày, tuyệt đối không gỡ.
+3. **Quản lý vốn & Kỷ luật sống còn (Mục tiêu ~5$/lệnh)**:
+   - Vốn: ~40$. **Rủi ro mỗi lệnh: cố định 5$ (12,5% vốn)** để khi chạm 1R ăn đúng **+5$**. Đòn bẩy tính tự động từ khoảng cách SL để dính SL chỉ mất đúng 5$.
+   - Thua 2 lệnh liên tiếp (-10$): nghỉ hết ngày, tuyệt đối không gỡ.
    - Sàn: Ưu tiên MEXC (0% phí giao dịch). Bot lấy giá OKX để quét nến.
 
 ## Đã / chưa backtest
