@@ -198,3 +198,5 @@ h1 { margin: 0; font-size: 20px; }
 .kb .terms div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
 .kb dt { font-weight: 700; }
 .kb dd { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.capital { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.capital input { width: 70px; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 8px; padding: 6px 8px; font: inherit; }

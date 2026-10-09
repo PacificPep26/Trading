@@ -27,8 +27,8 @@ Dùng khi chủ dự án hỏi "check X", "vào được không", "quét coin", 
 ```
 Kết luận: VÀO / THEO DÕI / KHÔNG ĐÁNH / ĐỨNG NGOÀI  (giờ dữ liệu)
 Lý do: <tín hiệu 4h nào, xu hướng ngày BTC & coin>
-Lệnh: LONG/SHORT COIN · vào … · SL … · TP: LONG nửa ở 0,5R (rồi SL về giá vào) + nửa ở 1,5R; SHORT cả ở 1R
-Cỡ lệnh: vị thế …$ · đòn bẩy …x · mất …$ ở SL · lời …$ ở TP1
+Lệnh: LONG/SHORT COIN · vào … · SL … · TP 0,5R (cả lệnh, mặc định) · nếu muốn: 1,5R
+Cỡ lệnh: vị thế …$ · đòn bẩy …x · mất …$ ở SL · lời …$ ở TP 0,5R · sàn: MEXC nếu coin phí 0%
 Kế hoạch hỏng khi: <một điều kiện, ví dụ nến 4h đóng trên …>
 ```
 

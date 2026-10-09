@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
-const MARGIN = 40; // owner's usual margin
-const RISK_4H = 3; // 4h stops are 4-8% away: size the position so the stop costs ~3$
 
 type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null };
 type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number; daily?: number }[]; btcDaily?: number };
@@ -27,9 +25,10 @@ const ORDER: Record<Key, number> = { enter: 0, wait: 1, skip: 2 };
 // identical to rejection() in service/backtest/patterns.py
 
 function targets(side: 1 | -1, price: number, stop: number, structural: number) {
-  const r = Math.abs(stop - price), tp1 = price + side * 1.5 * r;
-  const tp2 = side * (structural - tp1) > 0 ? structural : price + side * 2.5 * r;
-  return { entry: price, stop, tp1, tp2 };
+  // agreed exit (PLAN.md): take the whole trade at 0.5R; 1.5R shown as the optional larger target
+  const r = Math.abs(stop - price);
+  void structural;
+  return { entry: price, stop, tp1: price + side * 0.5 * r, tp2: price + side * 1.5 * r };
 }
 
 // 4h candles close at 00/04/08/12/16/20 UTC = 07/11/15/19/23/03 Vietnam time
@@ -42,7 +41,7 @@ function next4h(now: number) {
 
 function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, now: number): Plan {
   const title = s.style === "bos" ? "Phá cấu trúc (BOS) 4h" : "Hai đỉnh / hai đáy 4h";
-  const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, levels: { entry: s.entry, stop: s.stop, tp1: s.tp15, tp2: s.tp2 } };
+  const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, levels: { entry: s.entry, stop: s.stop, tp1: s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop), tp2: s.tp15 } };
   const p = tape.price;
   if (s.blocked) return { ...base, key: "skip", text: "KHÔNG ĐÁNH", reason: s.blocked };
   if (!p) return { ...base, key: "wait", text: "ĐANG LẤY GIÁ", reason: "Chờ WebSocket" };
@@ -59,7 +58,7 @@ function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, n
   if (now - barClose > 4 * 3_600_000) return { ...base, key: "skip", text: "HẾT HẠN", reason: "Tín hiệu từ nến 4h trước, đã qua một nến" };
   const r0 = Math.abs(s.entry - s.stop);
   if (s.side * (p - s.entry) > 0.5 * r0) return { ...base, key: "skip", text: "ĐÃ CHẠY", reason: "Giá đã đi quá 0,5R từ điểm kích hoạt, không đuổi" };
-  if (s.side * (p - s.tp15) >= 0) return { ...base, key: "skip", text: "ĐÃ TỚI TP", reason: "Đã chạm chốt lời 1,5R" };
+  if (s.side * (p - (s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop))) >= 0) return { ...base, key: "skip", text: "ĐÃ TỚI TP", reason: "Đã chạm chốt lời 0,5R" };
   return { ...base, key: "enter", text: "VÀO NGAY", reason: "Nến 4h vừa đóng xác nhận setup", levels: targets(s.side, p, s.stop, s.tp2) };
 }
 
@@ -73,6 +72,11 @@ function beep() {
 export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
   const [levels, setLevels] = useState<LevelsData | null>(null);
+  const [capital, setCapital] = useState(57);
+  useEffect(() => {
+    const t = setTimeout(() => { try { const v = Number(localStorage.getItem("scanner-capital")); if (v > 0) setCapital(v); } catch { /* ignore */ } }, 0);
+    return () => clearTimeout(t);
+  }, []);
   const [tapes, setTapes] = useState<Record<string, Tape>>({});
   const [connection, setConnection] = useState<"connecting" | "live" | "retrying">("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -190,7 +194,7 @@ export default function LiveScanner() {
   return <section className="card live-scanner">
     <header className="card-head">
       <h2>Scanner live · 21 coin</h2>
-      <div className="live-head">
+      <div className="live-head"><label className="capital">Vốn $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-capital", String(v)); } catch { /* ignore */ } }} /></label>
         <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
           {notify ? "Đã bật thông báo" : "Bật thông báo"}
         </button>
@@ -203,7 +207,7 @@ export default function LiveScanner() {
     </p>
     {error && <p className="verdict bad">{error}</p>}
     <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP1 · TP2</th><th>Cỡ lệnh · lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP 0,5R · 1,5R</th><th>Cỡ lệnh (rủi ro 2,5% vốn)</th><th>Dòng lệnh</th></tr></thead>
       <tbody>{plans.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
@@ -217,8 +221,8 @@ export default function LiveScanner() {
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
           <td>{!l ? "—" : (() => {
-            const notional = RISK_4H / (riskPct + 0.001), lev = notional / MARGIN;
-            return <>{lev < 1 ? `${notional.toFixed(0)}$ (<1x)` : `≤ ${lev.toFixed(1)}x`}<small className="neg">KHÔNG dùng 15x: thanh lý trước dừng lỗ</small><small>−{RISK_4H}$ / +{(notional * (1.5 * riskPct - 0.001)).toFixed(1)}$</small></>;
+            const risk = capital * 0.025, notional = risk / (riskPct + 0.001), lev = notional / capital;
+            return <>vị thế {notional.toFixed(0)}$ · {lev < 1 ? "<1x" : `${lev.toFixed(1)}x`}<small>−{risk.toFixed(1)}$ ở SL / +{(notional * (0.5 * riskPct - 0.001)).toFixed(1)}$ ở 0,5R</small></>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
         </tr>;
@@ -229,7 +233,7 @@ export default function LiveScanner() {
       return t ? `${c} (4h ${t.trend4h > 0 ? "tăng" : t.trend4h < 0 ? "giảm" : "ngang"}, 1h ${t.trend1h > 0 ? "tăng" : t.trend1h < 0 ? "giảm" : "ngang"})` : c;
     }).join(", ")}.</p>}
     <p className="note">
-      Kiểm chứng 2023–2026 (21 coin): BOS 4h ≈ +0,04R/lệnh, thắng ~47% với phí MEXC; hai đỉnh/hai đáy 4h ≈ +0,02R. Lợi thế mỏng: luôn đặt dừng lỗ, đòn bẩy suy ra từ khoảng cách dừng lỗ. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
+      Kiểm chứng 2023–2026 (21 coin, phí MEXC): chốt 0,5R thắng ~62%, ≈ +0,02R/lệnh (phí OKX gần hòa vốn → ưu tiên coin phí 0% trên MEXC). Lợi thế mỏng: luôn đặt dừng lỗ, đòn bẩy suy ra từ khoảng cách dừng lỗ. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
     </p>
   </section>;
 }

@@ -8,7 +8,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 ## Đọc trước tiên (tóm tắt để không phải nhớ lại cuộc trò chuyện)
 
-**Chủ dự án**: giao dịch hợp đồng vĩnh cửu USDT, chủ yếu SOL (còn xem HYPE, BTC, ETH, LINK…). Dùng OKX, có tài khoản MEXC (nhiều coin phí 0%). Lưu ý: Nghị định 284/2026 (hiệu lực 1/9/2026) chưa cấp phép sàn ngoại; mạng nhà chủ dự án đã chặn DNS mọi tên miền MEXC từ 2026-10-07 → dữ liệu trực tiếp lấy từ OKX (giá futures OKX/MEXC lệch < 0,01%). Vốn ~40$, thích đòn bẩy 15–20x, muốn lời 5–10$/lệnh (sau này vốn lớn hơn: cố định ~10$/lệnh). Có gói Claude Pro: **phân tích theo yêu cầu ngay trong chat**, không dùng API trả phí.
+**Chủ dự án**: giao dịch hợp đồng vĩnh cửu USDT, chủ yếu SOL (còn xem HYPE, BTC, ETH, LINK…). **Đã chuyển sang MEXC (2026-10-09), giao dịch không phí.** Giá phân tích vẫn lấy từ OKX (lệch MEXC < 0,01%). Lưu ý: Nghị định 284/2026 (hiệu lực 1/9/2026) chưa cấp phép sàn ngoại; mạng nhà chủ dự án đã chặn DNS mọi tên miền MEXC từ 2026-10-07 → dữ liệu trực tiếp lấy từ OKX (giá futures OKX/MEXC lệch < 0,01%). Vốn ~40$, thích đòn bẩy 15–20x, muốn lời 5–10$/lệnh (sau này vốn lớn hơn: cố định ~10$/lệnh). Có gói Claude Pro: **phân tích theo yêu cầu ngay trong chat**, không dùng API trả phí.
 
 **Cách làm việc với Claude trong chat**
 - "quét coin" / "phân tích SOL" → chạy `python -m service.scripts.market_brief [COIN]` (giá thật OKX; xu hướng, đỉnh/đáy, setup đã kiểm chứng ở 4h/1h/15m), rồi trả lời: LONG / SHORT / ĐỨNG NGOÀI + vào / dừng lỗ / chốt lời / mức làm hỏng kế hoạch.
@@ -23,7 +23,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 - **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
 - **SL**: ở cấu trúc 4h (thường cách 4–8%). **Đòn bẩy suy ra từ SL**, không chọn trước: chạm SL không được mất quá số tiền đã định (~3–5$ với vốn 40$; lệnh LINK 8/10 chủ dự án chọn mất tối đa ~28$).
-- **Chốt** (chủ dự án muốn chốt nhanh, 2026-10-09): **LONG: chốt nửa ở 0,5R → dời SL về giá vào → nửa còn lại 1,5R** (thắng 62%, +0,028R). **SHORT (hai đỉnh): chốt cả ở 1R** (+0,058R, tốt nhất). Chốt hết ở 0,5R vẫn dương nhưng chỉ ~+0,02R.
+- **Chốt** (chủ dự án chọn, 2026-10-09: "không ham nhiều"): **chốt cả lệnh ở 0,5R, cả LONG lẫn SHORT** (thắng ~62%; +0,019R long / +0,023R short với phí MEXC; với phí OKX gần hòa vốn → **bắt buộc ưu tiên coin phí 0% trên MEXC, lệnh limit khi được**). Muốn lời hơn: long chốt nửa 0,5R + nửa 1,5R (+0,028R), short 1R (+0,058R).
 - **Giữ**: nửa ngày – 2 ngày; không đóng tay vì giá đi ngang buổi trưa; phiên tối (sau 20h30) thường chạy mạnh.
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
