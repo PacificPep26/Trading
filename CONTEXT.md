@@ -18,6 +18,6 @@ Phòng thí nghiệm cá nhân về giao dịch hợp đồng vĩnh cửu crypto
 ## Quy ước
 
 - Mọi giá và quyết định dựa trên dữ liệu thật có thời điểm; lỗi thì hiện rõ, không bịa giá.
-- Backtest: chỉ dùng nến đã đóng, vào lệnh ở giá mở nến sau, dừng lỗ được tính trước khi cùng nến chạm cả hai, luôn tính phí + trượt giá, so với vào lệnh ngẫu nhiên, 2026 là năm kiểm tra.
+- Backtest: chỉ dùng nến đã đóng, vào lệnh ở giá mở nến sau, dừng lỗ được tính trước khi cùng nến chạm cả hai. Chủ dự án giao dịch trên sàn MEXC miễn phí giao dịch (0% phí sàn) -> backtest/thống kê tính theo 0% phí sàn (zero-fee); 2026 là năm kiểm tra.
 - Không lưu key/secret trong code hay git (repo GitHub là public). Biến môi trường để trên Railway.
 - Trả lời chủ dự án bằng tiếng Việt, dứt khoát, kèm số liệu kiểm chứng; không hứa dự đoán.
