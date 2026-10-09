@@ -112,8 +112,13 @@ export async function scanAndAlert(): Promise<string[]> {
         const tp05 = s.entry - 0.5 * R;
         const tp10 = s.entry - 1.0 * R;
 
+        const isStar1h = own === -1; // Cùng xu hướng ngày giảm
+        const header1h = isStar1h
+          ? `🌟 [KÈO ĐẸP 1H ★★★] ${coin} 🔴 SHORT (Hai đỉnh 1h)\n🔥 THUẬN XU HƯỚNG NGÀY GIẢM (Tỷ lệ thắng cao 67%, ăn nhanh +2,5$ đến +5$)`
+          : `⚡ [1H - LƯỚT NHANH] ${coin} 🔴 SHORT (Hai đỉnh 1h)`;
+
         out.push(
-          `⚡ [1H - LƯỚT NHANH] ${coin} 🔴 SHORT (Hai đỉnh 1h)\n` +
+          `${header1h}\n` +
           `• Vào: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
           `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
           `• TP lướt nhanh: ${f(tp05)} (0,5R ăn +2,5$) hoặc ${f(tp10)} (1R ăn +5$)\n` +
@@ -157,12 +162,11 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
 
   for (const coin of COINS) {
     try {
+      const own = coin === "BTC" ? btc : await dailyTrend(coin);
+
       // 1. Quét 4h nếu đang ở slot 4h (khoảng cách <= 1.2%)
       if (is4hSlot) {
-        const [a4, own] = await Promise.all([
-          analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)),
-          coin === "BTC" ? btc : dailyTrend(coin)
-        ]);
+        const a4 = analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300));
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
           const risk = Math.abs(s.entry - s.stop) / s.entry;
@@ -194,8 +198,9 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         const notional = RISK_PER_TRADE / risk;
         const lev = Math.max(1, Math.min(20, Math.floor(notional / 8)));
 
+        const isStar1h = own === -1;
         lines1h.push(
-          `• ${coin} 🔴 SHORT (Hai đỉnh 1h): nến 1h đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${lev}`
+          `• ${coin} 🔴 SHORT (Hai đỉnh 1h)${isStar1h ? " ⭐ [KÈO ĐẸP 1H ★★★]" : ""}: nến 1h đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${lev}`
         );
       }
     } catch (e) {
