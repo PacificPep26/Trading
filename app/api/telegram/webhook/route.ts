@@ -68,13 +68,30 @@ async function analyzeCoin(coin: string): Promise<string> {
     text += `• *Xu hướng Ngày (${coin}):* ${trendDay}\n`;
     text += `• *Bối cảnh BTC Ngày:* ${btcText}\n\n`;
 
-    // Check setups
-    const validSetups = a4.setups.filter((s) => isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily));
+    // Check setups with strict risk and distance filter
+    const validSetups = a4.setups.filter((s) => {
+      if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) return false;
+      const risk = Math.abs(s.entry - s.stop) / s.entry;
+      // SL must be between 0.4% and 8.0% (isolated x10 liquidates at 10%)
+      if (risk < 0.004 || risk > 0.08) return false;
+      // If pending, must be close to entry (within 1.5%)
+      if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) return false;
+      return true;
+    });
 
     if (validSetups.length === 0) {
       text += `🎯 *Kết luận:* *ĐỨNG NGOÀI (CHƯA CÓ ĐIỂM VÀO)*\n`;
-      text += `Hiện tại ${coin} chưa xuất hiện mô hình nến 4H hợp lệ (BOS LONG hoặc Hai đỉnh SHORT cùng trend ngày).\n`;
-      text += `💡 *Lời khuyên:* Không FOMO vào nến 15m. Kiên nhẫn đợi nến 4H kế đóng lúc ${next4hTime()}.\n`;
+      text += `Hiện tại ${coin} không có tín hiệu nến 4H hợp lệ.\n`;
+      const rawSetup = a4.setups[0];
+      if (rawSetup) {
+        const rawRisk = Math.abs(rawSetup.entry - rawSetup.stop) / rawSetup.entry;
+        if (rawRisk > 0.08) {
+          text += `⚠️ *Cảnh báo rủi ro:* Khoảng cách dừng lỗ quá rộng (${(rawRisk * 100).toFixed(1)}% > 8%). Đánh x10 sẽ bị *cháy tài khoản trước khi chạm SL*. Tuyệt đối không vào!\n`;
+        } else if (Math.abs(rawSetup.distancePct) > 0.015) {
+          text += `📌 Giá còn cách xa mức phá vỡ (${(Math.abs(rawSetup.distancePct) * 100).toFixed(1)}% > 1.5%), chưa có điểm kích hoạt.\n`;
+        }
+      }
+      text += `\n💡 *Lời khuyên:* Không FOMO đu đỉnh/đu đáy. Kiên nhẫn chờ nến 4H kế đóng lúc ${next4hTime()}.\n`;
     } else {
       const s = validSetups[0];
       const riskPct = Math.abs(s.entry - s.stop) / s.entry;
@@ -113,10 +130,12 @@ async function scanWatchlist(): Promise<string> {
       const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
       const a = analyse(c4);
       for (const s of a.setups) {
-        if (isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) {
-          const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-          candidates.push(`• *${c}* ${side} (${s.style.toUpperCase()}) - ${s.state === "triggered" ? "VÀO NGAY" : "Đang chờ"}`);
-        }
+        if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) continue;
+        const risk = Math.abs(s.entry - s.stop) / s.entry;
+        if (risk < 0.004 || risk > 0.08) continue;
+        if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) continue;
+        const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
+        candidates.push(`• *${c}* ${side} (${s.style.toUpperCase()}) - ${s.state === "triggered" ? "VÀO NGAY" : "Đang chờ sát mức phá"}`);
       }
     } catch {}
   }
@@ -238,3 +257,4 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({ ok: true, message: "Telegram webhook endpoint is active." });
 }
+
