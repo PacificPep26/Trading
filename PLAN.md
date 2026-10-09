@@ -15,19 +15,19 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - Nhận xét lệnh đang chạy: nêu mức giá làm hỏng lý do vào lệnh; **không liệt kê rủi ro ngắn hạn kiểu "giá có thể hồi"** (lần trước làm chủ dự án thoát sớm một lệnh short đúng hướng).
 - Không hứa dự đoán; luôn kèm số liệu kiểm chứng.
 
-**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web` + `Postgres`; deploy bằng `railway up --service web --ci --detach`). Trang tự tải lại mỗi 60 giây. **Scanner live** (WebSocket OKX, mỗi giây): báo VÀO NGAY / CHỜ / BỎ QUA cho 21 coin theo vùng hồi 1h và setup 4h, kèm vào/SL/TP và thông báo trình duyệt. Có: phân tích nhiều khung, bảng "Coin đáng chú ý · 4h" (BOS / hai đỉnh-hai đáy, giá vào, dừng lỗ, chốt lời, đòn bẩy theo số tiền chấp nhận mất), nhật ký vị thế, nút AI (cần `ANTHROPIC_API_KEY`, hiện **không dùng**). GitHub `PacificPep26/Trading` (public; `data/` không lên git).
+**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web` + `Postgres`; deploy bằng `railway up --service web --ci --detach`). Trang tự tải lại mỗi 60 giây. **Scanner live** (WebSocket OKX, mỗi giây): báo VÀO NGAY / CHỜ / BỎ QUA cho 21 coin, **chỉ setup 4h**, kèm vào/SL/TP và thông báo trình duyệt. Có: phân tích nhiều khung, bảng "Coin đáng chú ý · 4h" (BOS / hai đỉnh-hai đáy, giá vào, dừng lỗ, chốt lời, đòn bẩy theo số tiền chấp nhận mất), nhật ký vị thế, nút AI (cần `ANTHROPIC_API_KEY`, hiện **không dùng**). GitHub `PacificPep26/Trading` (public; `data/` không lên git).
 
-## Kết luận hiện tại: đánh thế nào
+## Kết luận hiện tại: đánh thế nào (LUẬT DUY NHẤT, thống nhất 2026-10-09)
 
-Đã kiểm chứng trên 21 coin Binance perp, 2023–2026 (2026 dùng làm năm kiểm tra), đã trừ phí, so với vào lệnh ngẫu nhiên. Đơn vị R = số tiền chấp nhận mất mỗi lệnh.
+**Chỉ vào lệnh khi có tín hiệu 4h đã kiểm chứng: BOS (phá cấu trúc theo xu hướng) hoặc hai đỉnh / hai đáy, vừa xác nhận bằng nến 4h đóng cửa.** Không có tín hiệu 4h = không vào lệnh. Scanner trên web chỉ còn báo đúng hai kiểu này.
 
-1. **Khung 15m / 1h: không có cách vào lệnh nào có lời**, kể cả phí 0%. Lướt nhanh đòn bẩy cao = thua dần (bộ luật đu sóng 20x: 2686 lệnh, -0,29$/lệnh, SOL cháy 40$ 4 lần).
-2. **Khung 4h là nơi duy nhất gần có lãi**: phá cấu trúc (BOS) +0,03R (OKX) / +0,04R (MEXC, 71% coin lãi); hai đỉnh/hai đáy +0,01 / +0,02R (2026 +0,06 đến +0,09R). Lợi thế mỏng, **chưa đạt tiêu chuẩn thống kê** (t≈1,4 < 3).
-3. **Phí quyết định rất nhiều** → dùng MEXC, ưu tiên coin taker 0%: XRP, DOGE, LINK, ADA, AVAX, ARB, PEPE, INJ, LTC, DOT, APT, OP, TIA, NEAR. SOL/ETH 0,01%, BTC/HYPE 0,02%. Lệnh limit 0% mọi coin.
-4. **Đòn bẩy không tạo lợi thế, chỉ phóng to kết quả.** Ở 4h dừng lỗ cách 4–8% → với 40$ và chấp nhận mất 2$, vị thế ~40$ (~1x), lời ~3$ ở 1,5R. Mục tiêu 10$/lệnh hợp lý khi vốn ~500$ (rủi ro 1,5%/lệnh).
-
-**Cách đánh khuyến nghị (theo số liệu)**: chờ BOS hoặc hai đỉnh/hai đáy khung 4h trên coin phí 0% (xem bảng 4h trên web hoặc hỏi "quét coin") → vào khi nến 4h đóng qua mức → dừng lỗ ở cấu trúc → chốt 1,5–2R → mỗi lệnh chịu mất 1–2$ (tối đa ~5$) → đòn bẩy suy ra từ khoảng cách dừng lỗ → giữ 0,5–2 ngày.
-**Nếu chủ dự án vẫn đánh nhanh 15–20x**: dừng lỗ ≤1,2%, mỗi lệnh mất ≤8–10$, chốt nửa ở 1,5R rồi dời dừng lỗ về giá vào, **thua 2 lệnh thì nghỉ hết ngày**, không nạp thêm để gỡ. Số liệu cho thấy kiểu này lỗ dài hạn.
+- **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
+- **SL**: ở cấu trúc 4h (thường cách 4–8%). **Đòn bẩy suy ra từ SL**, không chọn trước: chạm SL không được mất quá số tiền đã định (~3–5$ với vốn 40$; lệnh LINK 8/10 chủ dự án chọn mất tối đa ~28$).
+- **Chốt**: 1,5R, hoặc chốt nửa ở 0,5R → dời SL về giá vào → nửa còn lại 1,5R (thắng 62%). Có thể dùng trailing stop OKX.
+- **Giữ**: nửa ngày – 2 ngày; không đóng tay vì giá đi ngang buổi trưa; phiên tối (sau 20h30) thường chạy mạnh.
+- **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
+- Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
+- Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
 
 ## Đã / chưa backtest
 

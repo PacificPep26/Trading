@@ -5,10 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
 const BUSINESS_WS = "wss://ws.okx.com:8443/ws/v5/business"; // candle channels live here
-const M15 = 15 * 60_000;
 const MARGIN = 40, LEV = 15, NOTIONAL = MARGIN * LEV; // owner's usual 40$ margin at 15x
 const RISK_4H = 3; // 4h stops are 4-8% away: size the position so the stop costs ~3$
-const MAX_STOP = 0.012; // stop farther than 1.2% does not fit 15x (rule from the trend-riding plan)
 
 type Bar = { t: number; o: number; h: number; l: number; c: number; v: number };
 type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number };
@@ -30,38 +28,11 @@ const clock = (v: number) => (v ? new Date(v).toLocaleTimeString("vi-VN", { time
 const ORDER: Record<Key, number> = { enter: 0, wait: 1, skip: 2 };
 
 // identical to rejection() in service/backtest/patterns.py
-function rejection(c: Bar, side: 1 | -1) {
-  const body = Math.abs(c.c - c.o);
-  return side > 0 ? c.c > c.o && Math.min(c.o, c.c) - c.l >= Math.max(body, 1e-12) : c.c < c.o && c.h - Math.max(c.o, c.c) >= Math.max(body, 1e-12);
-}
 
 function targets(side: 1 | -1, price: number, stop: number, structural: number) {
   const r = Math.abs(stop - price), tp1 = price + side * 1.5 * r;
   const tp2 = side * (structural - tp1) > 0 ? structural : price + side * 2.5 * r;
   return { entry: price, stop, tp1, tp2 };
-}
-
-function zonePlan(z: Zone, tape: Tape, bar: Bar | null, now: number): Plan {
-  const base = { id: `${z.coin}-zone`, coin: z.coin, kind: "zone" as const, side: z.side, title: "Hồi về vùng 1h (4h & 1h cùng xu hướng)" };
-  const zone: [number, number] = [z.zoneLow, z.zoneHigh];
-  const p = tape.price;
-  if (!p) return { ...base, key: "wait", text: "ĐANG LẤY GIÁ", reason: "Chờ WebSocket" };
-  if (z.side < 0 ? p >= z.stop : p <= z.stop) return { ...base, key: "skip", text: "BỎ QUA", reason: `Kế hoạch hỏng: giá đã vượt dừng lỗ ${fmt(z.stop)}` };
-  if (z.stopPct > MAX_STOP) return { ...base, key: "skip", text: "BỎ QUA", reason: `Dừng lỗ cách ${pct(z.stopPct)} (> 1,2%), không hợp 15x` };
-
-  const fresh = bar && now - (bar.t + M15) < M15;
-  const touched = bar && (z.side < 0 ? bar.h >= z.zoneLow : bar.l <= z.zoneHigh);
-  if (bar && fresh && touched && rejection(bar, z.side)) {
-    const r0 = Math.abs(z.stop - bar.c);
-    if (z.side * (p - bar.c) > 0.5 * r0) return { ...base, key: "skip", text: "ĐÃ CHẠY", reason: `Nến 15m từ chối lúc ${clock(bar.t + M15)} nhưng giá đã chạy quá 0,5R, không đuổi`, levels: { ...targets(z.side, bar.c, z.stop, z.target2), zone } };
-    return { ...base, key: "enter", text: "VÀO NGAY", reason: `Nến 15m đóng ${clock(bar.t + M15)} chạm vùng và từ chối`, levels: { ...targets(z.side, p, z.stop, z.target2), zone } };
-  }
-  const inZone = p >= z.zoneLow * 0.9985 && p <= z.zoneHigh * 1.0015;
-  if (inZone) return { ...base, key: "wait", text: "CHỜ NẾN 15M", reason: "Giá đang trong vùng, chờ nến 15m đóng cửa từ chối", levels: { ...targets(z.side, z.side < 0 ? z.zoneLow : z.zoneHigh, z.stop, z.target2), zone } };
-  const dist = z.side < 0 ? (z.zoneLow - p) / p : (p - z.zoneHigh) / p;
-  const lv = { ...targets(z.side, z.side < 0 ? z.zoneLow : z.zoneHigh, z.stop, z.target2), zone };
-  if (dist > 0 && dist <= 0.01) return { ...base, key: "wait", text: "CHỜ", reason: `Cách vùng ${pct(dist)}: chờ giá ${z.side < 0 ? "hồi lên" : "hồi xuống"}`, levels: lv };
-  return { ...base, key: "skip", text: "BỎ QUA", reason: `Cách vùng ${pct(Math.abs(dist))}, không đuổi giá`, levels: lv };
 }
 
 function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, now: number): Plan {
@@ -186,9 +157,6 @@ export default function LiveScanner() {
     const out: Plan[] = [];
     for (const coin of COINS) {
       const tape = tapes[coin] ?? emptyTape();
-      const lv = levels?.rows.find((r) => r.coin === coin);
-      const bar = bars[coin] ?? (lv?.last15m ?? null);
-      if (lv?.zone) out.push(zonePlan(lv.zone, tape, bar, now));
       const w = watch?.coins.find((c) => c.coin === coin);
       for (const s of w?.setups ?? []) out.push(fourHourPlan(coin, s, tape, w!.lastBarTime, now));
     }
@@ -200,7 +168,7 @@ export default function LiveScanner() {
       return (p.kind === "4h" ? 2 : 0) + (FREE.has(p.coin) ? 1 : 0) - Math.min(dist * 20, 1.5);
     };
     return out.sort((a, b) => ORDER[a.key] - ORDER[b.key] || score(b) - score(a));
-  }, [tapes, bars, levels, watch, now]);
+  }, [tapes, watch, now]);
 
   // notify on transitions into VÀO NGAY
   useEffect(() => {
@@ -230,7 +198,7 @@ export default function LiveScanner() {
     </header>
     <p className="muted">
       Giá, sổ lệnh 5 mức, giao dịch 30 giây và nến 15m qua WebSocket (cập nhật mỗi giây); vùng giá tính lại mỗi 60 giây{levels ? ` (lần cuối ${clock(levels.computedAt)})` : ""}.
-      <b> VÀO NGAY</b> chỉ khi: nến 15m đóng cửa từ chối trong vùng hồi 1h, hoặc nến 4h vừa đóng xác nhận BOS / hai đỉnh-hai đáy, và giá chưa chạy quá 0,5R.
+      <b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận BOS / hai đỉnh-hai đáy (2 kiểu duy nhất gần có lãi qua kiểm chứng) và giá chưa chạy quá 0,5R. Đã bỏ kiểu vùng hồi 1h (lỗ -0,11R/lệnh trên 5.471 lệnh).
     </p>
     {error && <p className="verdict bad">{error}</p>}
     <div className="table-wrap"><table className="stats-table live-table">
