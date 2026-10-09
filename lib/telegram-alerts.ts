@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse } from "@/lib/patterns";
+import { analyse, swings } from "@/lib/patterns";
 import { candles, ticker } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -275,3 +275,67 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
   }
   return null;
 }
+
+const radarSent = new Map<string, number>();
+
+/**
+ * Radar tự động: quét liên tục mỗi 5 phút, báo động khi coin lọt vào vùng tiệm cận <= 1.0% Đỉnh cũ / Đáy cũ
+ */
+export async function proximityRadarAlert(): Promise<string | null> {
+  const alerts: string[] = [];
+  const now = Date.now();
+
+  for (const coin of COINS) {
+    try {
+      await new Promise((r) => setTimeout(r, 50));
+      const [c4, tLive] = await Promise.all([
+        candles(`${coin}-USDT-SWAP`, "4H", 60),
+        ticker(`${coin}-USDT-SWAP`).catch(() => null),
+      ]);
+      const { highs, lows } = swings(c4);
+      if (!highs.length || !lows.length || !tLive) continue;
+
+      const lastHigh = c4[highs.at(-1)!].h;
+      const lastLow = c4[lows.at(-1)!].l;
+      const livePrice = tLive.last;
+
+      const distHigh = (lastHigh - livePrice) / livePrice;
+      const distLow = (livePrice - lastLow) / livePrice;
+
+      // 1. Áp sát Đỉnh cũ (cách <= 1.0% hoặc vừa nhú qua <= 0.3%)
+      if (distHigh >= -0.003 && distHigh <= 0.010) {
+        const key = `RADAR:HIGH:${coin}:${lastHigh}`;
+        const lastSent = radarSent.get(key) ?? 0;
+        if (now - lastSent > 2 * 3_600_000) {
+          radarSent.set(key, now);
+          const pct = (Math.abs(distHigh) * 100).toFixed(2);
+          alerts.push(
+            `🏔️ *${coin}* đang ở \`${f(livePrice)}\` ➔ Sát ĐỈNH CŨ \`${f(lastHigh)}\` (cách *${pct}%*)!\n` +
+            `👉 *Mở chart canh:* Rút râu xả (Pinbar) ➔ Canh SHORT; Nến 1H đóng vượt ➔ Canh LONG.`
+          );
+        }
+      }
+
+      // 2. Áp sát Đáy cũ (cách <= 1.0% hoặc vừa nhúng qua <= 0.3%)
+      if (distLow >= -0.003 && distLow <= 0.010) {
+        const key = `RADAR:LOW:${coin}:${lastLow}`;
+        const lastSent = radarSent.get(key) ?? 0;
+        if (now - lastSent > 2 * 3_600_000) {
+          radarSent.set(key, now);
+          const pct = (Math.abs(distLow) * 100).toFixed(2);
+          alerts.push(
+            `🏖️ *${coin}* đang ở \`${f(livePrice)}\` ➔ Sát ĐÁY CŨ \`${f(lastLow)}\` (cách *${pct}%*)!\n` +
+            `👉 *Mở chart canh:* Rút chân pinbar ➔ Canh LONG bắt đáy; Nến đóng thủng ➔ Canh SHORT.`
+          );
+        }
+      }
+    } catch {}
+  }
+
+  if (!alerts.length) return null;
+
+  const msg = `🧭 *[RADAR TỰ ĐỘNG: TIỆM CẬN ĐỈNH / ĐÁY]*\n\n${alerts.join("\n\n")}\n\n💡 Nhắn tên coin (ví dụ: \`${COINS[0]}\`) để xem thông số SL/TP!`;
+  await send(msg);
+  return msg;
+}
+
