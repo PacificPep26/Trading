@@ -85,7 +85,8 @@ async function analyzeCoin(coin: string): Promise<string> {
     const validSetups4h = a4.setups.filter((s) => {
       if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) return false;
       const risk = Math.abs(s.entry - s.stop) / s.entry;
-      if (risk < 0.004 || risk > 0.08) return false;
+      // Min SL 1.5%, Max SL 6%
+      if (risk < 0.015 || risk > 0.06) return false;
       if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) return false;
       return true;
     });
@@ -94,7 +95,7 @@ async function analyzeCoin(coin: string): Promise<string> {
     const validSetups1h = a1.setups.filter((s) => {
       if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) return false;
       const risk = Math.abs(s.entry - s.stop) / s.entry;
-      if (risk < 0.003 || risk > 0.04) return false;
+      if (risk < 0.015 || risk > 0.04) return false;
       if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) return false;
       return true;
     });
@@ -176,7 +177,7 @@ async function scanWatchlist(): Promise<string> {
       for (const s of a4.setups) {
         if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.004 || risk > 0.08) continue;
+        if (risk < 0.015 || risk > 0.06) continue;
         if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = getStyleName(s.style, s.side, "4H");
@@ -187,7 +188,7 @@ async function scanWatchlist(): Promise<string> {
       for (const s of a1.setups) {
         if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.003 || risk > 0.04) continue;
+        if (risk < 0.015 || risk > 0.04) continue;
         if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = getStyleName(s.style, s.side, "1H");

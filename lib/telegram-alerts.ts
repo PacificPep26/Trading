@@ -6,7 +6,7 @@
 import fs from "fs";
 import path from "path";
 import { analyse } from "@/lib/patterns";
-import { candles } from "@/lib/okx";
+import { candles, ticker } from "@/lib/okx";
 import {
   isAllowedSetup,
   isWatchSetup,
@@ -117,14 +117,20 @@ export async function scanAndAlert(): Promise<string[]> {
         if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
 
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.004 || risk > 0.08) continue;
+        // Min SL 1.5% (tránh nhiễu, tránh phí sàn nuốt lãi), Max SL 6% (an toàn cho x10)
+        if (risk < 0.015 || risk > 0.06) continue;
 
         const key = `4H:${coin}:${s.style}:${s.side}:${a4.lastBarTime}`;
         if (sent.has(key)) continue;
 
+        // Bỏ qua nếu giá live đã chạy quá xa điểm vào (> 0.25%)
+        const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+        if (tLive && Math.abs(tLive.last - s.entry) / s.entry > 0.0025) continue;
+
         const R = Math.abs(s.entry - s.stop);
         const sizing = calculateSizing(CAPITAL, risk);
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+        if (pnl.winTp1 < 2.0) continue; // Không bõ công giao dịch
         const tp05 = s.entry + s.side * 0.5 * R;
         const tp10 = s.entry + s.side * R;
 
@@ -153,13 +159,19 @@ export async function scanAndAlert(): Promise<string[]> {
       for (const s of a1.setups) {
         if (s.state !== "triggered" || !isWatchSetup(s.style, s.side, "1H")) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.003 || risk > 0.04) continue;
+        // Min SL 1.5% đến 4.0% cho 1H
+        if (risk < 0.015 || risk > 0.04) continue;
         const key = `WATCH:1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
         if (sent.has(key)) continue;
+
+        // Bỏ qua nếu giá live đã chạy quá xa điểm vào (> 0.25%)
+        const tLive1h = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+        if (tLive1h && Math.abs(tLive1h.last - s.entry) / s.entry > 0.0025) continue;
 
         const R = Math.abs(s.entry - s.stop);
         const sizing = calculateSizing(CAPITAL, risk);
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+        if (pnl.winTp1 < 1.5) continue; // Phải bõ công lướt sóng
         const tp05 = s.entry + s.side * 0.5 * R;
         const tp10 = s.entry + s.side * R;
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
@@ -229,7 +241,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
           if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
 
           const risk = Math.abs(s.entry - s.stop) / s.entry;
-          if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.015) continue;
+          if (risk < 0.015 || risk > 0.06 || Math.abs(s.distancePct) > 0.015) continue;
 
           const sizing = calculateSizing(CAPITAL, risk);
           const isStar = isStarSetup(s.side, own, btc);
@@ -247,7 +259,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
       for (const s of a1.setups) {
         if (s.state !== "pending" || !isWatchSetup(s.style, s.side, "1H")) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.003 || risk > 0.04 || Math.abs(s.distancePct) > 0.012) continue;
+        if (risk < 0.015 || risk > 0.04 || Math.abs(s.distancePct) > 0.012) continue;
         const sizing = calculateSizing(CAPITAL, risk);
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = s.style === "bos" ? "BOS 1H" : s.style === "pinbar_reversal" ? "Pinbar 1H" : (s.side > 0 ? "Hai đáy 1H" : "Hai đỉnh 1H");
