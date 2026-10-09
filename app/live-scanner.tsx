@@ -204,7 +204,7 @@ export default function LiveScanner() {
           <td>{p.title}</td>
           <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
-          <td>{l ? fmt(l.entry) : "—"}</td>
+          <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
           <td>{!l ? "—" : (() => {

@@ -188,3 +188,4 @@ h1 { margin: 0; font-size: 20px; }
 .more-tools > summary { cursor: pointer; color: var(--muted); font-size: 14px; }
 .more-tools[open] > summary { margin-bottom: 12px; }
 .more-tools > section, .more-tools > .stats { margin-top: 16px; }
+.live-table td, .live-table th { text-align: left; }
