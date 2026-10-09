@@ -188,6 +188,9 @@ export default function LiveScanner() {
     }
   }, [plans, notify]);
 
+  // only tradeable / watchable plans go in the table; rule-blocked ones are listed below it
+  const shown = plans.filter((p) => p.text !== "KHÔNG ĐÁNH");
+  const blocked = plans.filter((p) => p.text === "KHÔNG ĐÁNH");
   const idle = COINS.filter((c) => !plans.some((p) => p.coin === c));
   const trendOf = (coin: string) => levels?.rows.find((r) => r.coin === coin);
 
@@ -206,9 +209,10 @@ export default function LiveScanner() {
       {watch?.btcDaily ? <b>Xu hướng ngày BTC: {watch.btcDaily > 0 ? "TĂNG (ưu tiên LONG)" : "GIẢM (chỉ hai đỉnh SHORT)"}. </b> : null}<b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận <b>BOS LONG</b> hoặc <b>hai đỉnh/hai đáy cùng xu hướng ngày</b> (BTC và coin so với EMA50 ngày), và giá chưa chạy quá 0,5R. BOS SHORT và lệnh ngược xu hướng ngày ghi KHÔNG ĐÁNH. Đã bỏ kiểu vùng hồi 1h (lỗ -0,11R/lệnh trên 5.471 lệnh).
     </p>
     {error && <p className="verdict bad">{error}</p>}
-    <div className="table-wrap"><table className="stats-table live-table">
+    {shown.length === 0 && <p className="verdict neutral"><b>Chưa có lệnh nào vào được.</b> Lần kiểm tra tới: {next4h(now)}. Khi có tín hiệu, trang này kêu và bot gửi Telegram.</p>}
+    {shown.length > 0 && <div className="table-wrap"><table className="stats-table live-table">
       <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP 0,5R · 1,5R</th><th>Cỡ lệnh (rủi ro 2,5% vốn)</th><th>Dòng lệnh</th></tr></thead>
-      <tbody>{plans.map((p) => {
+      <tbody>{shown.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
         const flowWith = p.side > 0 ? tape.tradeBuy : 1 - tape.tradeBuy;
@@ -227,13 +231,14 @@ export default function LiveScanner() {
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
         </tr>;
       })}</tbody>
-    </table></div>
-    {idle.length > 0 && <p className="muted">Không có kế hoạch (4h và 1h không cùng xu hướng, không có setup 4h): {idle.map((c) => {
+    </table></div>}
+    {blocked.length > 0 && <p className="muted">Bị luật loại (không đánh): {blocked.map((p) => `${p.coin} ${p.side > 0 ? "LONG" : "SHORT"} – ${p.reason}`).join("; ")}.</p>}
+    {idle.length > 0 && <p className="muted">Chưa có cấu trúc 4h (xu hướng 4h / 1h): {idle.map((c) => {
       const t = trendOf(c);
       return t ? `${c} (4h ${t.trend4h > 0 ? "tăng" : t.trend4h < 0 ? "giảm" : "ngang"}, 1h ${t.trend1h > 0 ? "tăng" : t.trend1h < 0 ? "giảm" : "ngang"})` : c;
     }).join(", ")}.</p>}
     <p className="note">
-      Kiểm chứng 2023–2026 (21 coin, phí MEXC): chốt 0,5R thắng ~62%, ≈ +0,02R/lệnh (phí OKX gần hòa vốn → ưu tiên coin phí 0% trên MEXC). Lợi thế mỏng: luôn đặt dừng lỗ, đòn bẩy suy ra từ khoảng cách dừng lỗ. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
+      Kiểm chứng 2023–2026 (21 coin, phí 0%): chốt 0,5R thắng ~62%, ≈ +0,02R/lệnh. Trên 18 coin khác chưa từng dùng để chọn luật: ≈ 0 → lợi thế chưa chắc chắn, giữ rủi ro nhỏ. Lợi thế mỏng: luôn đặt dừng lỗ, đòn bẩy suy ra từ khoảng cách dừng lỗ. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
     </p>
   </section>;
 }
