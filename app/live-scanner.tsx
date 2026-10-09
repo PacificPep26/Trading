@@ -217,7 +217,7 @@ export default function LiveScanner() {
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
         const flowWith = p.side > 0 ? tape.tradeBuy : 1 - tape.tradeBuy;
         return <tr key={p.id} className={p.key === "enter" ? "live-enter" : ""}>
-          <td><b>{p.coin}</b> <span className={`pill ${p.side > 0 ? "long" : "short"}`}>{p.side > 0 ? "LONG" : "SHORT"}</span></td>
+          <td><b>{p.coin}</b> <span className={`pill ${p.side > 0 ? "long" : "short"}`}>{p.side > 0 ? "LONG" : "SHORT"}</span>{(() => { const d = watch?.coins.find((c) => c.coin === p.coin)?.daily; return d === p.side ? <small className="pos">★ coin cùng xu hướng ngày (tốt nhất)</small> : d ? <small>coin ngược xu hướng ngày</small> : null; })()}</td>
           <td>{p.title}</td>
           <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
