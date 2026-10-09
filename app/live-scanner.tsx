@@ -192,7 +192,14 @@ export default function LiveScanner() {
       const w = watch?.coins.find((c) => c.coin === coin);
       for (const s of w?.setups ?? []) out.push(fourHourPlan(coin, s, tape, w!.lastBarTime, now));
     }
-    return out.sort((a, b) => ORDER[a.key] - ORDER[b.key]);
+    // within the same verdict: tested 4h setups first, then fee-free coins on MEXC, then the closest plan
+    const FREE = new Set(["XRP", "DOGE", "LINK", "ADA", "AVAX", "ARB", "PEPE", "INJ", "LTC", "DOT", "APT", "OP", "TIA", "NEAR"]);
+    const score = (p: Plan) => {
+      const l = p.levels, price = (tapes[p.coin] ?? emptyTape()).price;
+      const dist = l && price ? Math.abs(price / l.entry - 1) : 1;
+      return (p.kind === "4h" ? 2 : 0) + (FREE.has(p.coin) ? 1 : 0) - Math.min(dist * 20, 1.5);
+    };
+    return out.sort((a, b) => ORDER[a.key] - ORDER[b.key] || score(b) - score(a));
   }, [tapes, bars, levels, watch, now]);
 
   // notify on transitions into VÀO NGAY
