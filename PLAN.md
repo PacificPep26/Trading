@@ -19,7 +19,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 ## Kết luận hiện tại: đánh thế nào (LUẬT DUY NHẤT, thống nhất 2026-10-09)
 
-**Chỉ vào lệnh khi có tín hiệu 4h đã kiểm chứng: BOS (phá cấu trúc theo xu hướng) hoặc hai đỉnh / hai đáy, vừa xác nhận bằng nến 4h đóng cửa.** Không có tín hiệu 4h = không vào lệnh. Scanner trên web chỉ còn báo đúng hai kiểu này.
+**Chỉ vào lệnh khi có tín hiệu 4h đã kiểm chứng, vừa xác nhận bằng nến 4h đóng cửa: BOS LONG, hoặc hai đỉnh/hai đáy CÙNG xu hướng ngày (BTC và coin so với EMA50 ngày: trên → chỉ hai đáy LONG, dưới → chỉ hai đỉnh SHORT). BOS SHORT = không đánh.** (cập nhật 2026-10-09) Không có tín hiệu 4h = không vào lệnh. Scanner trên web chỉ còn báo đúng hai kiểu này.
 
 - **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
 - **SL**: ở cấu trúc 4h (thường cách 4–8%). **Đòn bẩy suy ra từ SL**, không chọn trước: chạm SL không được mất quá số tiền đã định (~3–5$ với vốn 40$; lệnh LINK 8/10 chủ dự án chọn mất tối đa ~28$).
@@ -28,6 +28,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
 - Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
+- **Cỡ lệnh: chạm SL mất ~2,5% vốn (≈1$ với 40$).** Mô phỏng 2023–2026: 7,5%/lệnh sụt vốn tới 93–96% (gần cháy), 2,5%/lệnh sụt tối đa ~55%, chuỗi thua dài nhất 13 lệnh. Kỳ vọng ~+0,04–0,05R/lệnh, ~6,5 lệnh/tuần.
 
 ## Đã / chưa backtest
 

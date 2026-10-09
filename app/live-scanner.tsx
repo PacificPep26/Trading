@@ -7,8 +7,8 @@ const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
 const MARGIN = 40; // owner's usual margin
 const RISK_4H = 3; // 4h stops are 4-8% away: size the position so the stop costs ~3$
 
-type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number };
-type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number }[] };
+type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null };
+type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number; daily?: number }[]; btcDaily?: number };
 type LevelsData = { rows: { coin: string; trend4h: number; trend1h: number }[]; computedAt: number };
 type Tape = { price: number; bid: number; ask: number; bookBuy: number; tradeBuy: number; tradeVolume: number; ts: number };
 type Trade = { ts: number; side: "buy" | "sell"; size: number };
@@ -44,6 +44,7 @@ function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, n
   const title = s.style === "bos" ? "Phá cấu trúc (BOS) 4h" : "Hai đỉnh / hai đáy 4h";
   const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, levels: { entry: s.entry, stop: s.stop, tp1: s.tp15, tp2: s.tp2 } };
   const p = tape.price;
+  if (s.blocked) return { ...base, key: "skip", text: "KHÔNG ĐÁNH", reason: s.blocked };
   if (!p) return { ...base, key: "wait", text: "ĐANG LẤY GIÁ", reason: "Chờ WebSocket" };
   if (s.side > 0 ? p <= s.stop : p >= s.stop) return { ...base, key: "skip", text: "BỎ QUA", reason: "Giá đã vượt dừng lỗ" };
   if (s.state === "pending") {
@@ -198,7 +199,7 @@ export default function LiveScanner() {
     </header>
     <p className="muted">
       Giá, sổ lệnh 5 mức và giao dịch 30 giây qua WebSocket (mỗi giây); tín hiệu 4h và xu hướng tính lại mỗi 60 giây{levels ? ` (lần cuối ${clock(levels.computedAt)})` : ""}.
-      <b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận BOS / hai đỉnh-hai đáy (2 kiểu duy nhất gần có lãi qua kiểm chứng) và giá chưa chạy quá 0,5R. Đã bỏ kiểu vùng hồi 1h (lỗ -0,11R/lệnh trên 5.471 lệnh).
+      {watch?.btcDaily ? <b>Xu hướng ngày BTC: {watch.btcDaily > 0 ? "TĂNG (ưu tiên LONG)" : "GIẢM (chỉ hai đỉnh SHORT)"}. </b> : null}<b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận <b>BOS LONG</b> hoặc <b>hai đỉnh/hai đáy cùng xu hướng ngày</b> (BTC và coin so với EMA50 ngày), và giá chưa chạy quá 0,5R. BOS SHORT và lệnh ngược xu hướng ngày ghi KHÔNG ĐÁNH. Đã bỏ kiểu vùng hồi 1h (lỗ -0,11R/lệnh trên 5.471 lệnh).
     </p>
     {error && <p className="verdict bad">{error}</p>}
     <div className="table-wrap"><table className="stats-table live-table">

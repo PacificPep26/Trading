@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: `service/scripts/rule_study.py`: luật mới (BOS 4h LONG + hai đỉnh/đáy cùng xu hướng ngày BTC & coin, EMA50 ngày), 21 coin, 1221 lệnh (~6,5/tuần, giữ TB 37h), có trượt 0,04% + funding 0,01%/8h. Phí OKX: +0,038R (t=1,4); MEXC: +0,052R (t=2,0). Năm: 2023 +0,06, 2024 +0,07, **2025 âm (-0,03/-0,01)**, 2026 +0,07–0,08R. Tài khoản 40$: rủi ro 3$/lệnh (7,5%) **cháy trong 2023** (chuỗi thua 12 lệnh, nhiều lệnh mở cùng lúc); 7,5% vốn/lệnh sụt tối đa 93–96%; **1$ hoặc 2,5% vốn/lệnh: sụt tối đa 53–67%, 40$ → 87–140$ sau ~3,6 năm**. Test đối chiếu Python ↔ scanner TS (`tests/test_parity.py`) khớp trên cả 21 coin. Scanner thêm lọc xu hướng ngày (BOS SHORT, ngược xu hướng ngày → KHÔNG ĐÁNH).
+
 - **2026-10-09**: `service/scripts/regime_study.py` (long hay short theo bối cảnh; bối cảnh = giá đóng ngày so với EMA50 ngày của BTC và của coin): **BOS LONG dương ở mọi bối cảnh** (+0,04 đến +0,105R; tốt nhất khi coin trên EMA50 ngày +0,105R t=2,2). **BOS SHORT ≈ 0 ở mọi bối cảnh** (-0,03 đến -0,01R). **Hai đỉnh/hai đáy chỉ tốt khi cùng chiều xu hướng ngày**: SHORT khi BTC & coin dưới EMA50 ngày +0,083R (2026 +0,146R); LONG khi BTC trên EMA50 ngày +0,079R (2026 +0,143R); ngược chiều ≈ 0. Mẫu nhỏ (170–550 lệnh/nhóm), chưa đạt t≥3.
 
 - **2026-10-09**: Tách theo chiều (4h, phí MEXC, chốt 1,5R, 21 coin): **BOS LONG +0,073R (t=+2,3, 848 lệnh, 2026 +0,091R)**; BOS SHORT -0,015R (2026 -0,056R). Hai đỉnh/hai đáy: LONG +0,033R, SHORT +0,034R. Bật hỗ trợ/kháng cự: SHORT +0,021R (2026 -0,088R), LONG -0,117R. Fibonacci+xác nhận: cả hai chiều âm. → lợi thế BOS 4h chủ yếu ở chiều LONG (giai đoạn 2023–2026 crypto tăng nhiều; có thể là thiên lệch thị trường).
