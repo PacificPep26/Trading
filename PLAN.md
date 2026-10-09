@@ -76,7 +76,7 @@ Phòng thí nghiệm kiểm chứng kỹ thuật trading crypto: nạp kiến th
 | 4 | Bộ khung backtest + 7 script nghiên cứu | Xong (xem bảng trên) |
 | 5 | Trích kỹ thuật từ transcript/sách thành luật | Chưa làm (6 sách Gutenberg ở `data/books/`) |
 | 6 | Web: phân tích, bảng 4h, nhật ký vị thế | Xong, đang chạy trên Railway |
-| 7 | Bot cảnh báo Telegram cho setup 4h | Chưa làm (cần token BotFather do chủ dự án tạo) |
+| 7 | Bot cảnh báo Telegram cho setup 4h | Xong (Telegram Bot @VictorHuynh_trading_bot + Railway API cron `/api/cron/telegram`) |
 | 8 | Chuyển nguồn giá web sang MEXC | Chưa làm |
 | 9 | Dọn code/README còn nhắc MT5 | Xong (2026-10-08) |
 
