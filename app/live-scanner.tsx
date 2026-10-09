@@ -225,9 +225,9 @@ export default function LiveScanner() {
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
           <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
-          <td className="pos">{!l ? "—" : <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R</small></>}</td>
+          <td className="pos">{!l ? "—" : <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>nửa ở 0,5R → SL về giá vào</small><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>nửa ở 1R</small></>}</td>
           <td>{!l ? "—" : (() => {
-            const lossUsd = equity * 0.1, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * riskPct;
+            const lossUsd = equity * 0.1, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * riskPct * 0.75; // half at 0.5R + half at 1R
             return <><b>x{lev.toFixed(lev < 10 ? 1 : 0)}</b> · {capital}$ ký quỹ ({notional.toFixed(0)}$)<small>−{(notional * riskPct).toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small></>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>

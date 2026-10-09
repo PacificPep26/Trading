@@ -29,7 +29,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
 - Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
-- **Chủ dự án chọn (2026-10-09): CHỈ đánh lệnh ★ (coin cùng xu hướng ngày với lệnh), TP 1R, chịu mất 10% vốn/lệnh → thắng ≈ +10% vốn.** Lệnh thường bỏ qua. Đã nói rõ: backtest ở 7,5–20% rủi ro/lệnh có sụt rất sâu / có thể cháy. Bắt buộc: thua 2 lệnh liên tiếp nghỉ; mỗi lệnh tính lại 10% theo vốn còn lại.
+- **Chủ dự án chọn (2026-10-09): CHỈ đánh lệnh ★ (coin cùng xu hướng ngày với lệnh), chịu mất 10% vốn/lệnh; chốt NỬA ở 0,5R → dời SL về giá vào → NỬA còn lại ở 1R** (thắng trọn ≈ +7,5% vốn; chạm 0,5R rồi quay về = +2,5% vốn). Lệnh thường bỏ qua. Đã nói rõ: backtest ở 7,5–20% rủi ro/lệnh có sụt rất sâu / có thể cháy. Bắt buộc: thua 2 lệnh liên tiếp nghỉ; mỗi lệnh tính lại 10% theo vốn còn lại.
 
 ## Đã / chưa backtest
 
