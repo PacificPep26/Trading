@@ -129,15 +129,16 @@ const H4 = 4 * 3_600_000;
 const H1 = 1 * 3_600_000;
 const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 
-/** Báo trước: nến 4h (~10 phút trước đóng) và nến 1h (~5-10 phút trước đóng khi có coin ngấp nghé) */
+/** Báo trước: ~5 phút trước khi nến đóng (chỉ báo khi coin áp sát mức kích hoạt <= 1%) */
 export async function preAlert(now = Date.now(), force = false): Promise<string | null> {
   const close4h = Math.floor(now / H4) * H4 + H4;
   const left4h = close4h - now;
   const close1h = Math.floor(now / H1) * H1 + H1;
   const left1h = close1h - now;
 
-  const is4hSlot = force || (left4h <= 15 * 60_000 && left4h >= 3 * 60_000);
-  const is1hSlot = !is4hSlot && (left1h <= 12 * 60_000 && left1h >= 2 * 60_000);
+  // Báo trước ~5 phút (từ phút 53 đến 58)
+  const is4hSlot = force || (left4h <= 7 * 60_000 && left4h >= 1 * 60_000);
+  const is1hSlot = !is4hSlot && (left1h <= 7 * 60_000 && left1h >= 1 * 60_000);
 
   if (!is4hSlot && !is1hSlot) return null;
 
@@ -151,7 +152,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
 
   for (const coin of COINS) {
     try {
-      // 1. Quét 4h nếu đang ở slot 4h
+      // 1. Quét 4h nếu đang ở slot 4h (khoảng cách <= 1.2%)
       if (is4hSlot) {
         const [a4, own] = await Promise.all([
           analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)),
@@ -160,7 +161,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
           const risk = Math.abs(s.entry - s.stop) / s.entry;
-          if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.03) continue;
+          if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.012) continue;
 
           // Chỉ lọc BOS LONG hoặc Hai đỉnh SHORT
           if (s.style === "bos" && s.side < 0) continue;
@@ -176,13 +177,13 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         }
       }
 
-      // 2. Quét 1h (Hai đỉnh SHORT) cho cả slot 4h lẫn slot 1h
+      // 2. Quét 1h (Hai đỉnh SHORT) khi còn cách <= 1.0%
       const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
       for (const s of a1.setups) {
         if (s.state !== "pending") continue;
         if (s.style !== "double_top_bottom" || s.side > 0) continue; // Chỉ Hai đỉnh SHORT
         const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.003 || risk > 0.04 || Math.abs(s.distancePct) > 0.02) continue;
+        if (risk < 0.003 || risk > 0.04 || Math.abs(s.distancePct) > 0.01) continue;
 
         const notional = RISK_PER_TRADE / risk;
         const lev = Math.max(1, Math.min(20, Math.floor(notional / 8)));
