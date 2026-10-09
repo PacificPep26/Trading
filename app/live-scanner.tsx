@@ -32,6 +32,14 @@ function targets(side: 1 | -1, price: number, stop: number, structural: number) 
   return { entry: price, stop, tp1, tp2 };
 }
 
+// 4h candles close at 00/04/08/12/16/20 UTC = 07/11/15/19/23/03 Vietnam time
+function next4h(now: number) {
+  const H4 = 4 * 3_600_000, close = Math.floor(now / H4) * H4 + H4, left = Math.max(0, close - now);
+  const h = Math.floor(left / 3_600_000), m = Math.floor((left % 3_600_000) / 60_000);
+  const at = new Date(close).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
+  return `nến 4h kế đóng lúc ${at} (còn ${h ? `${h}g` : ""}${m}p)`;
+}
+
 function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, now: number): Plan {
   const title = s.style === "bos" ? "Phá cấu trúc (BOS) 4h" : "Hai đỉnh / hai đáy 4h";
   const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, levels: { entry: s.entry, stop: s.stop, tp1: s.tp15, tp2: s.tp2 } };
@@ -204,7 +212,7 @@ export default function LiveScanner() {
           <td>{p.title}</td>
           <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
-          <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b></>}</td>
+          <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
           <td>{!l ? "—" : (() => {
