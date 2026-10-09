@@ -18,8 +18,8 @@ if hasattr(sys.stdout, "reconfigure"):
 from service.backtest.data import Candle
 from service.backtest.patterns import STYLES, build
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8671237237:AAHA_apGlj03UhrIsJfOQgVap4KtyTzNGbE")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "6282967183")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
 COINS = [
     "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",

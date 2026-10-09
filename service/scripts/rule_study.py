@@ -44,15 +44,19 @@ def trend_at(tr, t):
     return tr[1][i] if i >= 50 else 0
 
 
-def signals():
+def signals(hours=4, tp=1.5, only=None, exclude=None):
     btc = daily_trend(load("BTCUSDT-PERP", "1h", include_holdout=True))
     out = []
     for f in sorted(DATA_DIR.glob("*-PERP_1h.csv")):
         sym = f.name.split("-PERP")[0]
+        if (only and sym not in only) or (exclude and sym in exclude):
+            continue
         c1 = load(f.name.split("_")[0], "1h", include_holdout=True)
         own = daily_trend(c1)
-        cs = resample(c1, 4)
+        cs = resample(c1, hours)
         x = build(cs)
+        bar_ms = hours * 3_600_000
+        hold = max(1, 48 // hours)
         busy = 0
         for i in range(260, len(cs) - 2):
             if i <= busy:
@@ -62,20 +66,20 @@ def signals():
                 if not s:
                     continue
                 side = s["side"]
-                t = cs[i].t + H4
+                t = cs[i].t + bar_ms
                 if key == "bos" and side < 0:
                     continue
                 if key == "double_top_bottom" and not (trend_at(btc, t) == side and trend_at(own, t) == side):
                     continue
                 ref = cs[i + 1].o
                 R = abs(ref - s["stop"])
-                r = execute(cs, i, s, ref + side * 1.5 * R, 12, (0.004, 0.08))
+                r = execute(cs, i, s, ref + side * tp * R, hold, (0.004, 0.08))
                 if not r:
                     continue
                 gross, risk, _, year, k = r
-                hold_h = (k - i) * 4
+                hold_h = (k - i) * hours
                 out.append({"sym": sym, "style": key, "side": side, "gross": gross, "risk": risk, "year": year,
-                            "t_in": cs[i + 1].t, "t_out": cs[k].t + H4, "hold_h": hold_h})
+                            "t_in": cs[i + 1].t, "t_out": cs[k].t + bar_ms, "hold_h": hold_h})
                 busy = k
                 break
     return out
