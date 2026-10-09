@@ -8,8 +8,8 @@ Phòng thí nghiệm cá nhân về giao dịch hợp đồng vĩnh cửu crypto
 
 ## Cấu trúc
 
-- `app/`, `lib/`: web Next.js 16 (tiếng Việt), triển khai trên Railway. Đọc `node_modules/next/dist/docs/` trước khi sửa (bản Next này có thay đổi so với trước, xem `AGENTS.md`).
-  - `lib/okx.ts`: dữ liệu công khai OKX (không cần key). `lib/patterns.ts`, `lib/setups.ts`, `lib/analysis.ts`: bản TypeScript của các luật đã backtest, phải giữ **giống hệt** bản Python.
+- `app/`, `lib/`: web Next.js 16 (tiếng Việt), triển khai trên Railway. Chỉ một trang: `app/live-scanner.tsx` + API `/api/watchlist`, `/api/live/levels`. Đọc `node_modules/next/dist/docs/` trước khi sửa (bản Next này có thay đổi so với trước, xem `AGENTS.md`).
+  - `lib/okx.ts`: dữ liệu công khai OKX (không cần key). `lib/patterns.ts`: bản TypeScript của luật 4h đã backtest (BOS, hai đỉnh/hai đáy), phải giữ **giống hệt** bản Python.
   - `lib/*.json`: kết quả thống kê sinh từ script Python (không sửa tay).
 - `service/backtest/`: bộ khung backtest + định nghĩa các kiểu vào lệnh (`patterns.py`, `setups.py`, `structure.py`).
 - `service/scripts/`: tải dữ liệu, các nghiên cứu, `market_brief.py` (phân tích nhanh trong chat).

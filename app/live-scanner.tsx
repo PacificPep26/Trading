@@ -228,7 +228,7 @@ export default function LiveScanner() {
       return t ? `${c} (4h ${t.trend4h > 0 ? "tăng" : t.trend4h < 0 ? "giảm" : "ngang"}, 1h ${t.trend1h > 0 ? "tăng" : t.trend1h < 0 ? "giảm" : "ngang"})` : c;
     }).join(", ")}.</p>}
     <p className="note">
-      Kiểm chứng 2023–2026: kế hoạch vùng hồi 1h thắng ~39%, trung bình −0,29$/lệnh (chưa có lợi thế; dừng lỗ là bắt buộc). BOS 4h ≈ +0,04R/lệnh với phí MEXC. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
+      Kiểm chứng 2023–2026 (21 coin): BOS 4h ≈ +0,04R/lệnh, thắng ~47% với phí MEXC; hai đỉnh/hai đáy 4h ≈ +0,02R. Lợi thế mỏng: luôn đặt dừng lỗ, đòn bẩy suy ra từ khoảng cách dừng lỗ. Cột &quot;Dòng lệnh&quot; (giao dịch 30 giây, sổ lệnh) chỉ để tham khảo, chưa kiểm chứng, sổ lệnh có thể bị rút. Scanner không đặt lệnh.
     </p>
   </section>;
 }
