@@ -65,8 +65,8 @@ export async function scanAndAlert(): Promise<string[]> {
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
           `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%) · THOÁT SỚM nếu nến 4h đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
           (BOLD ? `TP ${f(s.entry + s.side * 0.75 * R)} (0,75R)\n` : `TP: nửa ở ${f(s.entry + s.side * 0.5 * R)} (0,5R) → dời SL về giá vào · nửa ở ${f(s.entry + s.side * R)} (1R)\n`) +
-          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ ở TP + `
-${odds(s.style, s.side)}`,
+          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ ở TP\n` +
+          odds(s.style, s.side),
         );
       }
     } catch (e) {
