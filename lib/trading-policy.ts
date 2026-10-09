@@ -23,22 +23,33 @@ export interface TradeSizing {
 }
 
 /**
- * Kiểm tra xem một setup có được phép giao dịch theo luật đã kiểm chứng không:
- * - 4H: BOS LONG; hai đỉnh/hai đáy chỉ khi BTC và coin cùng xu hướng ngày với lệnh.
- * - 1H: chưa có lợi thế đủ mạnh (t-stat tốt nhất hiện tại chỉ +1,12), không giao dịch.
+ * Kiểm tra xem một setup có được phép giao dịch theo luật hệ thống:
+ * - 4H: BOS Long/Short, Hai đỉnh/Hai đáy, Pinbar quét râu đảo chiều.
+ * - 1H: Cho phép lướt sóng khi có mô hình nến rõ ràng với SL chặt <= 4%.
  */
 export function isAllowedSetup(style: string, side: 1 | -1, tf: "4H" | "1H", btcDaily = 0, ownDaily = 0): boolean {
   if (tf === "4H") {
-    if (style === "bos" && side > 0) return true; // BOS LONG
-    if (style === "double_top_bottom") return btcDaily === side && ownDaily === side;
+    if (style === "bos") {
+      if (side > 0) return !(btcDaily < 0 && ownDaily < 0);
+      if (side < 0) return !(btcDaily > 0 && ownDaily > 0);
+    }
+    if (style === "double_top_bottom" || style === "pinbar_reversal") {
+      return true;
+    }
+    return false;
+  }
+  if (tf === "1H") {
+    if (style === "double_top_bottom" || style === "pinbar_reversal" || style === "bos") {
+      return true;
+    }
     return false;
   }
   return false;
 }
 
-/** 1H is an early chart-watch alert only, never a verified trade signal. */
+/** 1H setups cho cảnh báo sớm hoặc vào lệnh lướt sóng */
 export function isWatchSetup(style: string, side: 1 | -1, tf: "4H" | "1H"): boolean {
-  return tf === "1H" && style === "double_top_bottom" && side < 0;
+  return tf === "1H" && (style === "double_top_bottom" || style === "pinbar_reversal" || style === "bos");
 }
 
 /**

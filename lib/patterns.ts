@@ -5,7 +5,7 @@ import type { Candle } from "@/lib/okx";
 const W = 3;
 
 export type Setup = {
-  style: "bos" | "double_top_bottom";
+  style: "bos" | "double_top_bottom" | "pinbar_reversal";
   state: "triggered" | "pending";
   side: 1 | -1;
   entry: number; // triggered: next-bar reference (last close); pending: price that triggers the setup
@@ -96,6 +96,47 @@ export function analyse(all: Candle[]) {
       const bot = Math.min(cs[a].l, cs[b].l), stop = bot - 0.1 * atr, target = neck + (neck - bot);
       if (c.c > neck && neck >= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), target, level: neck, distancePct: 0 });
       else if (c.c <= neck && c.c > stop) setups.push({ style: "double_top_bottom", state: "pending", side: 1, entry: neck, stop, ...levels(1, neck, stop), target, level: neck, distancePct: neck / c.c - 1 });
+    }
+  }
+
+  // Pinbar / Râu nến đảo chiều tại vùng cản Swing (Liquidity Sweep)
+  if (highs.length && lows.length) {
+    const lastHigh = cs[highs.at(-1)!].h;
+    const lastLow = cs[lows.at(-1)!].l;
+    const range = c.h - c.l;
+    if (range > 0.4 * atr) {
+      // Bearish Pinbar: Râu trên dài >= 50% thân nến quét sát/vượt đỉnh cũ -> SHORT
+      const upperWick = c.h - Math.max(c.o, c.c);
+      const body = Math.abs(c.c - c.o);
+      if (upperWick >= 0.5 * range && body <= 0.4 * range && c.h >= lastHigh * 0.995) {
+        const stop = c.h + 0.05 * atr;
+        setups.push({
+          style: "pinbar_reversal",
+          state: "triggered",
+          side: -1,
+          entry: c.c,
+          stop,
+          ...levels(-1, c.c, stop),
+          level: c.h,
+          distancePct: 0,
+        });
+      }
+
+      // Bullish Pinbar: Râu dưới dài >= 50% thân nến quét sát/thủng đáy cũ rồi rút chân -> LONG
+      const lowerWick = Math.min(c.o, c.c) - c.l;
+      if (lowerWick >= 0.5 * range && body <= 0.4 * range && c.l <= lastLow * 1.005) {
+        const stop = c.l - 0.05 * atr;
+        setups.push({
+          style: "pinbar_reversal",
+          state: "triggered",
+          side: 1,
+          entry: c.c,
+          stop,
+          ...levels(1, c.c, stop),
+          level: c.l,
+          distancePct: 0,
+        });
+      }
     }
   }
 

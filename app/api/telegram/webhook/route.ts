@@ -30,16 +30,29 @@ function next4hTime(now = Date.now()) {
   return `${String(target.getUTCHours()).padStart(2, "0")}:00 (còn ~${Math.floor(m / 60)}h${m % 60}p)`;
 }
 
+const dailyCache = new Map<string, { trend: 1 | -1 | 0; exp: number }>();
+
 async function getDailyTrend(coin: string): Promise<1 | -1 | 0> {
+  const now = Date.now();
+  const cached = dailyCache.get(coin);
+  if (cached && cached.exp > now) return cached.trend;
   try {
     const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
     if (d.length < 60) return 0;
     let ema = d[0].c;
     for (const c of d) ema += (2 / 51) * (c.c - ema);
-    return d.at(-1)!.c > ema ? 1 : -1;
+    const trend: 1 | -1 | 0 = d.at(-1)!.c > ema ? 1 : -1;
+    dailyCache.set(coin, { trend, exp: now + 30 * 60_000 });
+    return trend;
   } catch {
     return 0;
   }
+}
+
+function getStyleName(style: string, side: 1 | -1, tf: "4H" | "1H") {
+  if (style === "bos") return side > 0 ? `BOS ${tf}` : `Gãy đáy BOS ${tf}`;
+  if (style === "pinbar_reversal") return `Pinbar quét râu ${tf}`;
+  return side > 0 ? `Hai đáy ${tf}` : `Hai đỉnh ${tf}`;
 }
 
 async function analyzeCoin(coin: string): Promise<string> {
@@ -68,39 +81,34 @@ async function analyzeCoin(coin: string): Promise<string> {
     text += `• *Xu hướng Ngày (${coin}):* ${trendDay}\n`;
     text += `• *Bối cảnh BTC Ngày:* ${btcText}\n\n`;
 
-    // Check setups with strict risk and distance filter
-    const validSetups = a4.setups.filter((s) => {
+    // 1. Check 4H setups
+    const validSetups4h = a4.setups.filter((s) => {
       if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) return false;
       const risk = Math.abs(s.entry - s.stop) / s.entry;
-      // SL must be between 0.4% and 8.0% (isolated x10 liquidates at 10%)
       if (risk < 0.004 || risk > 0.08) return false;
-      // If pending, must be close to entry (within 1.5%)
       if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) return false;
       return true;
     });
 
-    if (validSetups.length === 0) {
-      text += `🎯 *Kết luận:* *ĐỨNG NGOÀI (CHƯA CÓ ĐIỂM VÀO)*\n`;
-      text += `Hiện tại ${coin} không có tín hiệu nến 4H hợp lệ.\n`;
-      const rawSetup = a4.setups[0];
-      if (rawSetup) {
-        const rawRisk = Math.abs(rawSetup.entry - rawSetup.stop) / rawSetup.entry;
-        if (rawRisk > 0.08) {
-          text += `⚠️ *Cảnh báo rủi ro:* Khoảng cách dừng lỗ quá rộng (${(rawRisk * 100).toFixed(1)}% > 8%). Đánh x10 sẽ bị *cháy tài khoản trước khi chạm SL*. Tuyệt đối không vào!\n`;
-        } else if (Math.abs(rawSetup.distancePct) > 0.015) {
-          text += `📌 Giá còn cách xa mức phá vỡ (${(Math.abs(rawSetup.distancePct) * 100).toFixed(1)}% > 1.5%), chưa có điểm kích hoạt.\n`;
-        }
-      }
-      text += `\n💡 *Lời khuyên:* Không FOMO đu đỉnh/đu đáy. Kiên nhẫn chờ nến 4H kế đóng lúc ${next4hTime()}.\n`;
-    } else {
-      const s = validSetups[0];
+    // 2. Check 1H setups
+    const validSetups1h = a1.setups.filter((s) => {
+      if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) return false;
+      const risk = Math.abs(s.entry - s.stop) / s.entry;
+      if (risk < 0.003 || risk > 0.04) return false;
+      if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) return false;
+      return true;
+    });
+
+    if (validSetups4h.length > 0) {
+      const s = validSetups4h[0];
       const riskPct = Math.abs(s.entry - s.stop) / s.entry;
       const sizing = calculateSizing(CAPITAL, riskPct);
       const pnl = calculatePartialPnL(sizing.actualRiskUsd);
       const isStar = isStarSetup(s.side, ownDaily, btcDaily);
-
       const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-      text += `🎯 *TÍN HIỆU 4H:* *${sideStr} (${s.style === "bos" ? "BOS 4H" : "Hai đỉnh 4H"})* ${isStar ? "⭐ [KÈO ĐẸP ★★★]" : ""}\n`;
+      const styleStr = getStyleName(s.style, s.side, "4H");
+
+      text += `🎯 *TÍN HIỆU 4H (ĂN SÓNG LỚN):* *${sideStr} (${styleStr})* ${isStar ? "⭐ [KÈO ĐẸP ★★★]" : ""}\n`;
       text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 4H ĐÓNG"}\n`;
       text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
       text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
@@ -111,6 +119,38 @@ async function analyzeCoin(coin: string): Promise<string> {
       text += `• Ký quỹ: *${sizing.margin}$*\n`;
       text += `• Vị thế: *${sizing.notional}$*\n`;
       text += `• Rủi ro chạm SL: *-${sizing.actualRiskUsd}$*\n`;
+    } else if (validSetups1h.length > 0) {
+      const s = validSetups1h[0];
+      const riskPct = Math.abs(s.entry - s.stop) / s.entry;
+      const sizing = calculateSizing(CAPITAL, riskPct);
+      const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+      const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
+      const styleStr = getStyleName(s.style, s.side, "1H");
+
+      text += `⚡ *TÍN HIỆU 1H (LƯỚT SÓNG SỚM):* *${sideStr} (${styleStr})*\n`;
+      text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 1H ĐÓNG"}\n`;
+      text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
+      text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
+      text += `• *TP 1 (0.5R):* \`${f(s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop))}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
+      text += `• *TP 2 (1.0R):* \`${f(s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop))}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
+      text += `⚡ *THÔNG SỐ VÀO APP MEXC (VỐN ${CAPITAL}$):*\n`;
+      text += `• Đòn bẩy: *x${sizing.leverage} Isolated*\n`;
+      text += `• Ký quỹ: *${sizing.margin}$*\n`;
+      text += `• Vị thế: *${sizing.notional}$*\n`;
+      text += `• Rủi ro chạm SL: *-${sizing.actualRiskUsd}$*\n`;
+    } else {
+      text += `🎯 *Kết luận:* *ĐỨNG NGOÀI (CHƯA CÓ ĐIỂM VÀO)*\n`;
+      text += `Hiện tại ${coin} chưa xuất hiện mô hình nến hợp lệ đạt chuẩn quản lý rủi ro.\n`;
+      const rawSetup = a4.setups[0] ?? a1.setups[0];
+      if (rawSetup) {
+        const rawRisk = Math.abs(rawSetup.entry - rawSetup.stop) / rawSetup.entry;
+        if (rawRisk > 0.08) {
+          text += `⚠️ *Cảnh báo rủi ro:* Khoảng cách dừng lỗ quá rộng (${(rawRisk * 100).toFixed(1)}% > 8%). Đánh x10 sẽ bị *cháy tài khoản trước khi chạm SL*. Tuyệt đối không vào!\n`;
+        } else if (Math.abs(rawSetup.distancePct) > 0.015) {
+          text += `📌 Giá còn cách xa mức phá vỡ (${(Math.abs(rawSetup.distancePct) * 100).toFixed(1)}% > 1.5%), chưa có điểm kích hoạt.\n`;
+        }
+      }
+      text += `\n💡 *Lời khuyên:* Không FOMO đu đỉnh/đu đáy. Chờ nến 1H/4H xác nhận rõ ràng.\n`;
     }
 
     return text;
@@ -122,35 +162,55 @@ async function analyzeCoin(coin: string): Promise<string> {
 
 async function scanWatchlist(): Promise<string> {
   const btcDaily = await getDailyTrend("BTC");
-  const candidates: string[] = [];
+  const cand4h: string[] = [];
+  const cand1h: string[] = [];
 
   for (const c of COINS) {
     try {
       const ownDaily = await getDailyTrend(c);
-      const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
-      const a = analyse(c4);
-      for (const s of a.setups) {
+      const [c4, c1] = await Promise.all([
+        candles(`${c}-USDT-SWAP`, "4H", 60),
+        candles(`${c}-USDT-SWAP`, "1H", 60),
+      ]);
+      const a4 = analyse(c4);
+      for (const s of a4.setups) {
         if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.004 || risk > 0.08) continue;
         if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        candidates.push(`• *${c}* ${side} (${s.style.toUpperCase()}) - ${s.state === "triggered" ? "VÀO NGAY" : "Đang chờ sát mức phá"}`);
+        const styleStr = getStyleName(s.style, s.side, "4H");
+        cand4h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
+      }
+
+      const a1 = analyse(c1);
+      for (const s of a1.setups) {
+        if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) continue;
+        const risk = Math.abs(s.entry - s.stop) / s.entry;
+        if (risk < 0.003 || risk > 0.04) continue;
+        if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) continue;
+        const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
+        const styleStr = getStyleName(s.style, s.side, "1H");
+        cand1h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
       }
     } catch {}
   }
 
-  let text = `📡 *QUÉT NHANH 21 CẶP COIN (4H)*\n\n`;
+  let text = `📡 *QUÉT THỊ TRƯỜNG 21 CẶP COIN*\n\n`;
   text += `• *BTC Ngày:* ${btcDaily > 0 ? "TĂNG ↗ (ưu tiên LONG)" : "GIẢM ↘ (ưu tiên SHORT)"}\n`;
-  text += `• *Lần đóng nến 4H kế tiếp:* ${next4hTime()}\n\n`;
+  text += `• *Đóng nến 4H kế tiếp:* ${next4hTime()}\n\n`;
 
-  if (candidates.length === 0) {
-    text += `🟢 *Hiện tại:* Chưa có coin nào xuất hiện tín hiệu 4H hợp lệ.\n`;
-    text += `💡 Hệ thống vẫn đang tự động quét liên tục mỗi 5 phút. Khi có nến 4H đóng đạt chuẩn, bot sẽ chủ động nổ chuông báo cho bạn ngay!`;
+  if (cand4h.length > 0) {
+    text += `📌 *Sóng lớn 4H:*\n${cand4h.join("\n")}\n\n`;
+  }
+  if (cand1h.length > 0) {
+    text += `⚡ *Lướt sóng 1H:*\n${cand1h.join("\n")}\n\n`;
+  }
+  if (cand4h.length === 0 && cand1h.length === 0) {
+    text += `🟢 *Hiện tại:* Chưa có coin nào xuất hiện mô hình nến đạt chuẩn an toàn.\n`;
+    text += `💡 Hệ thống vẫn tự động quét liên tục mỗi 5 phút. Khi có nến đóng đạt chuẩn, bot sẽ chủ động nổ chuông báo ngay!`;
   } else {
-    text += `📌 *Các coin đang có tín hiệu / theo dõi:*\n`;
-    text += candidates.join("\n") + "\n\n";
-    text += `Nhắn tên coin (ví dụ: \`SOL\` hoặc \`BTC\`) để xem chi tiết điểm vào, SL, TP!`;
+    text += `Nhắn tên coin (ví dụ: \`DOGE\`, \`PEPE\`, \`TIA\`) để xem chi tiết điểm vào, SL, TP!`;
   }
 
   return text;
@@ -210,7 +270,18 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Scan market
-    if (lower.includes("kèo") || lower.includes("keo") || lower.includes("quét") || lower.includes("quet") || lower === "/scan" || lower.includes("thị trường")) {
+    if (
+      lower.includes("kèo") ||
+      lower.includes("keo") ||
+      lower.includes("quét") ||
+      lower.includes("quet") ||
+      lower.includes("thị trường") ||
+      lower.includes("thi truong") ||
+      lower.includes("top") ||
+      lower.includes("lọc") ||
+      lower.includes("loc") ||
+      lower === "/scan"
+    ) {
       const scanRes = await scanWatchlist();
       await sendTelegramReply(token, chatId, scanRes);
       return NextResponse.json({ ok: true });
