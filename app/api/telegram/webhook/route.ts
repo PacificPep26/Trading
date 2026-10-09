@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { candles, ticker } from "@/lib/okx";
-import { analyse } from "@/lib/patterns";
+import { analyse, swings } from "@/lib/patterns";
 import {
   isAllowedSetup,
   isStarSetup,
@@ -216,6 +216,57 @@ async function scanWatchlist(): Promise<string> {
   return text;
 }
 
+async function scanKeyLevels(): Promise<string> {
+  const nearHigh: string[] = [];
+  const nearLow: string[] = [];
+
+  for (const c of COINS) {
+    try {
+      const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
+      const { highs, lows } = swings(c4);
+      if (!highs.length || !lows.length) continue;
+      const lastHigh = c4[highs.at(-1)!].h;
+      const lastLow = c4[lows.at(-1)!].l;
+      const lastPrice = c4.at(-1)!.c;
+
+      const distHighPct = (lastHigh - lastPrice) / lastPrice;
+      const distLowPct = (lastPrice - lastLow) / lastPrice;
+
+      // Sắp chạm đỉnh cũ (còn cách <= 2.0% hoặc vừa nhú qua <= 0.5%)
+      if (distHighPct >= -0.005 && distHighPct <= 0.02) {
+        const pct = (Math.abs(distHighPct) * 100).toFixed(2);
+        nearHigh.push(`• *${c}* (Giá: \`${f(lastPrice)}\` ➔ Đỉnh: \`${f(lastHigh)}\`, cách *${pct}%*)`);
+      }
+
+      // Sắp chạm đáy cũ (còn cách <= 2.0% hoặc vừa nhúng qua <= 0.5%)
+      if (distLowPct >= -0.005 && distLowPct <= 0.02) {
+        const pct = (Math.abs(distLowPct) * 100).toFixed(2);
+        nearLow.push(`• *${c}* (Giá: \`${f(lastPrice)}\` ➔ Đáy: \`${f(lastLow)}\`, cách *${pct}%*)`);
+      }
+    } catch {}
+  }
+
+  let text = `🧭 *RADAR CANH ĐỈNH CŨ & ĐÁY CŨ (4H)*\n\n`;
+  text += `Dành cho bác mở chart canh bắt đảo chiều hoặc đánh breakout:\n\n`;
+
+  if (nearHigh.length > 0) {
+    text += `🏔️ *SẮP CHẠM ĐỈNH CŨ (Cản mạnh):*\n${nearHigh.join("\n")}\n`;
+    text += `👉 *Chiến thuật:* Quan sát nến 1H/4H. Nếu xuất hiện râu dài bị bán dội ngược ➔ Canh *SHORT*. Nếu nến đóng nến xanh vượt đỉnh dứt khoát ➔ Canh *LONG phá đỉnh*.\n\n`;
+  } else {
+    text += `🏔️ *Đỉnh cũ:* Hiện chưa có coin nào áp sát đỉnh cũ trong phạm vi 2%.\n\n`;
+  }
+
+  if (nearLow.length > 0) {
+    text += `🏖️ *SẮP CHẠM ĐÁY CŨ (Hỗ trợ mạnh):*\n${nearLow.join("\n")}\n`;
+    text += `👉 *Chiến thuật:* Quan sát nến 1H/4H. Nếu nến rút chân pinbar ➔ Canh *LONG bắt đáy*. Nếu nến đỏ đóng thủng đáy ➔ Canh *SHORT theo đà xả*.\n\n`;
+  } else {
+    text += `🏖️ *Đáy cũ:* Hiện chưa có coin nào áp sát đáy cũ trong phạm vi 2%.\n\n`;
+  }
+
+  text += `💡 Nhắn tên coin (ví dụ: \`SOL\` hoặc \`BTC\`) để xem chi tiết điểm vào, SL, TP!`;
+  return text;
+}
+
 async function sendTelegramReply(token: string, chatId: number | string, text: string) {
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -261,15 +312,30 @@ export async function POST(req: NextRequest) {
     if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh") {
       let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading của bạn.*\n\n`;
       welcome += `Bạn có thể nhắn trực tiếp với tôi bất cứ lúc nào trên điện thoại:\n\n`;
-      welcome += `• Nhắn tên coin (ví dụ: \`SOL\`, \`BTC\`, \`ETH\`, \`LINK\`) để tôi soi chi tiết xu hướng, cản và điểm vào.\n`;
-      welcome += `• Nhắn \`keo\` hoặc \`quét\` để quét toàn bộ 21 coin xem có kèo nào không.\n`;
+      welcome += `• Nhắn \`canh\` hoặc \`/canh\` để *bật Radar canh coin sắp chạm Đỉnh cũ / Đáy cũ*.\n`;
+      welcome += `• Nhắn \`keo\` hoặc \`quét\` để quét tín hiệu nến 4H và 1H.\n`;
+      welcome += `• Nhắn tên coin (ví dụ: \`SOL\`, \`BTC\`, \`TIA\`) để xem chi tiết thông số vào lệnh, SL, TP.\n`;
       welcome += `• Nhắn \`von\` hoặc \`luật\` để xem quy tắc quản lý vốn 40$ x10.\n`;
-      welcome += `• Hoặc hỏi bất kỳ câu hỏi nào về thị trường!\n`;
       await sendTelegramReply(token, chatId, welcome);
       return NextResponse.json({ ok: true });
     }
 
-    // 2. Scan market
+    // 2. Proximity Radar (Canh đỉnh cũ / đáy cũ)
+    if (
+      lower.includes("canh") ||
+      lower.includes("đỉnh") ||
+      lower.includes("dinh") ||
+      lower.includes("đáy") ||
+      lower.includes("day") ||
+      lower === "/canh" ||
+      lower === "/radar"
+    ) {
+      const radarRes = await scanKeyLevels();
+      await sendTelegramReply(token, chatId, radarRes);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 3. Scan market
     if (
       lower.includes("kèo") ||
       lower.includes("keo") ||
