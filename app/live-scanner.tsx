@@ -199,7 +199,7 @@ export default function LiveScanner() {
   return <section className="card live-scanner">
     <header className="card-head">
       <h2>Scanner live · 21 coin</h2>
-      <div className="live-head"><label className="capital">Muốn lời $<input inputMode="decimal" value={profitUsd} onChange={(e) => setProfitUsd(Number(e.target.value.replace(",", ".")) || 0)} /></label><label className="capital">Ký quỹ $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ } }} /></label>
+      <div className="live-head"><label className="capital">Lời ở 0,5R $<input inputMode="decimal" value={profitUsd} onChange={(e) => setProfitUsd(Number(e.target.value.replace(",", ".")) || 0)} /></label><label className="capital">Ký quỹ $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ } }} /></label>
         <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
           {notify ? "Đã bật thông báo" : "Bật thông báo"}
         </button>
@@ -227,7 +227,7 @@ export default function LiveScanner() {
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{!l ? "—" : star(p) ? <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R (lệnh ★)</small></> : <><b>{fmt(l.tp1)}</b><small>0,5R (lệnh thường)</small></>}</td>
           <td>{!l ? "—" : (() => {
-            const tpR = star(p) ? 1 : 0.5, lossUsd = profitUsd / tpR, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * tpR * riskPct;
+            const tpR = star(p) ? 1 : 0.5, lossUsd = profitUsd / 0.5, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * tpR * riskPct;
             return <><b>x{lev.toFixed(lev < 10 ? 1 : 0)}</b> · {capital}$ ký quỹ ({notional.toFixed(0)}$)<small>−{(notional * riskPct).toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small></>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
