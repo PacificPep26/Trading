@@ -84,15 +84,13 @@ declare global {
 }
 const preSent = (globalThis.telegramPreSent ??= new Set<string>());
 
-/** Heads-up before each 4h close (at ~60m and ~10m before close): list setups that could trigger at that close. */
+/** Heads-up ~10m before each 4h close: list setups that could trigger at that close. */
 export async function preAlert(now = Date.now(), force = false): Promise<string | null> {
   const close = Math.floor(now / H4) * H4 + H4;
   const left = close - now;
   let slot = "";
   if (force) {
     slot = "force";
-  } else if (left <= 65 * 60_000 && left >= 40 * 60_000) {
-    slot = "60m";
   } else if (left <= 15 * 60_000 && left >= 3 * 60_000) {
     slot = "10m";
   } else {
