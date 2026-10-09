@@ -1,11 +1,19 @@
 // Telegram signal alerts according to disciplined backtested rules:
-// 1. 4H Frame: BOS LONG & Double Top (SHORT) with early exit + TP 0.75R (50%) & 1.5R (50%).
-//    Includes 10-minute heads-up preview before each 4h close.
-// 2. 1H Frame: Double Top (SHORT) only (TP 0.5R - 0.75R fast scalping).
-// Risk per trade: ~$1.5 (~3.5% of $40 capital) so max drawdown is safely controlled.
+// 1. 4H Frame: BOS LONG & Double Top (SHORT) with early exit + TP 0.5R (50%) & 1.0R (50%).
+//    Includes 5-minute heads-up preview before each 4h close when coin is near level (<= 1.2%).
+// 2. 1H Frame: Double Top (SHORT) only (TP 0.5R - 1.0R fast scalping).
+// Uses unified trading policy from @/lib/trading-policy.
 
+import fs from "fs";
+import path from "path";
 import { analyse } from "@/lib/patterns";
 import { candles } from "@/lib/okx";
+import {
+  isAllowedSetup,
+  isStarSetup,
+  calculateSizing,
+  calculatePartialPnL,
+} from "@/lib/trading-policy";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -13,14 +21,38 @@ const COINS = [
 ];
 
 const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
-const RISK_PER_TRADE = Number(process.env.ALERT_RISK_USD ?? 5.0); // Fixed risk $5 per trade (1R ăn đúng $5)
+const RISK_PER_TRADE = Number(process.env.ALERT_RISK_USD ?? 5.0); // Target $5 at 1R
+
+const DEDUP_FILE = path.join(process.cwd(), "service", "telegram-sent.json");
+
+function loadDedup(): { sent: string[]; preSent: string[] } {
+  try {
+    if (fs.existsSync(DEDUP_FILE)) {
+      const data = JSON.parse(fs.readFileSync(DEDUP_FILE, "utf-8"));
+      return { sent: data.sent ?? [], preSent: data.preSent ?? [] };
+    }
+  } catch {}
+  return { sent: [], preSent: [] };
+}
+
+function saveDedup(sentSet: Set<string>, preSentSet: Set<string>) {
+  try {
+    const data = {
+      sent: Array.from(sentSet).slice(-300),
+      preSent: Array.from(preSentSet).slice(-300),
+    };
+    fs.writeFileSync(DEDUP_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch {}
+}
+
+const initialDedup = loadDedup();
 
 declare global {
   var telegramSent: Set<string> | undefined;
   var telegramPreSent: Set<string> | undefined;
 }
-const sent = (globalThis.telegramSent ??= new Set<string>());
-const preSent = (globalThis.telegramPreSent ??= new Set<string>());
+const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
+const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
 
 async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
@@ -32,20 +64,33 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
 
 const f = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
 
-export async function send(text: string) {
+export async function send(text: string): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN, chat = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chat) throw new Error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID chưa cấu hình");
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
-  });
-  if (!res.ok) throw new Error(`Telegram ${res.status}`);
+  if (!token || !chat) {
+    console.error("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID chưa cấu hình");
+    return false;
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+    });
+    if (!res.ok) {
+      console.error(`Telegram ${res.status}:`, await res.text());
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error("Telegram send error", e);
+    return false;
+  }
 }
 
 /** Scan 4H and 1H for disciplined setups. */
 export async function scanAndAlert(): Promise<string[]> {
   const btc = await dailyTrend("BTC");
+  const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
   for (const coin of COINS) {
@@ -58,72 +103,70 @@ export async function scanAndAlert(): Promise<string[]> {
       // 1. Quét 4H (BOS LONG & Hai đỉnh SHORT)
       for (const s of a4.setups) {
         if (s.state !== "triggered") continue;
+        if (!isAllowedSetup(s.style, s.side, "4H")) continue;
+
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.004 || risk > 0.08) continue;
 
-        // Luật chuẩn: BOS CHỈ LONG; Hai đỉnh CHỈ SHORT
-        if (s.style === "bos" && s.side < 0) continue;
-        if (s.style === "double_top_bottom" && s.side > 0) continue; // Bỏ hai đáy 1h/4h kém hơn
-
         const key = `4H:${coin}:${s.style}:${s.side}:${a4.lastBarTime}`;
         if (sent.has(key)) continue;
-        sent.add(key);
 
         const R = Math.abs(s.entry - s.stop);
-        // Định cỡ vị thế theo số tiền chấp nhận mất (RISK_PER_TRADE)
-        const notional = RISK_PER_TRADE / risk;
-        const lev = Math.max(1, Math.min(20, Math.floor(notional / 10)));
-        const margin = notional / lev;
+        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+        const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
         const tp05 = s.entry + s.side * 0.5 * R;
         const tp10 = s.entry + s.side * 1.0 * R;
 
-        const isStar = own === s.side;
+        const isStar = isStarSetup(s.side, own, btc);
         const header = isStar
           ? `🌟 [KÈO ĐẸP ★★★ - ĂN SÓNG LỚN] 4H ${coin} ${s.side > 0 ? "🟢 LONG (BOS 4H)" : "🔴 SHORT (Hai đỉnh 4H)"}\n🔥 THUẬN XU HƯỚNG NGÀY (Cùng trend lớn, tiềm năng ăn sóng 4-6% như LINK hôm qua!)`
           : `🚨 [4H] ${coin} ${s.side > 0 ? "🟢 LONG (BOS)" : "🔴 SHORT (Hai đỉnh)"}`;
 
-        out.push(
-          `${header}\n` +
-          `• Vào: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
-          `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
-          `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-          `• Chốt lời (TP): TP1 (0,5R) ở ${f(tp05)} (+2,5$) → dời SL về Entry → TP2 (1R) ở ${f(tp10)} (đủ +5$)${isStar ? " (Có thể gồng thêm theo trend)" : ""}\n` +
-          `• Vị thế: Ký quỹ ~${margin.toFixed(1)}$ · Đòn bẩy x${lev} (Notional ~${notional.toFixed(0)}$) · Mất ~${RISK_PER_TRADE}$ nếu dính SL`
-        );
+        itemsToSend.push({
+          key,
+          msg:
+            `${header}\n` +
+            `• Vào: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
+            `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
+            `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
+            `• Chốt lời (TP): TP1 (0,5R) chốt 50%: +${pnl.winTp1.toFixed(2)}$ (dời SL hòa) → TP2 (1R) chốt 50%: +${pnl.winTp2.toFixed(2)}$ (Tổng 2 TP: +${pnl.totalWin.toFixed(2)}$, hoặc chốt 100% ở 1R để đủ +${sizing.actualRiskUsd}$)${isStar ? " (Có thể gồng thêm theo trend)" : ""}\n` +
+            `• Vị thế: Ký quỹ ~${sizing.margin}$ · Đòn bẩy x${sizing.leverage} (Notional ~${sizing.notional}$) · Mất ~${sizing.actualRiskUsd}$ nếu dính SL${sizing.isCapped ? " (đã giới hạn vốn)" : ""}`
+        });
       }
 
       // 2. Quét 1H (CHỈ HAI ĐỈNH SHORT - Đánh nhanh lướt sóng trên MEXC)
       const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
       for (const s of a1.setups) {
         if (s.state !== "triggered") continue;
-        if (s.style !== "double_top_bottom" || s.side > 0) continue; // Chỉ Hai đỉnh SHORT
+        if (!isAllowedSetup(s.style, s.side, "1H")) continue;
+
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.003 || risk > 0.04) continue;
 
         const key = `1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
         if (sent.has(key)) continue;
-        sent.add(key);
 
         const R = Math.abs(s.entry - s.stop);
-        const notional = RISK_PER_TRADE / risk;
-        const lev = Math.max(1, Math.min(20, Math.floor(notional / 8)));
-        const margin = notional / lev;
+        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+
         const tp05 = s.entry - 0.5 * R;
         const tp10 = s.entry - 1.0 * R;
 
-        const isStar1h = own === -1; // Cùng xu hướng ngày giảm
+        const isStar1h = isStarSetup(-1, own, btc);
         const header1h = isStar1h
           ? `🌟 [KÈO ĐẸP 1H ★★★] ${coin} 🔴 SHORT (Hai đỉnh 1h)\n🔥 THUẬN XU HƯỚNG NGÀY GIẢM (Tỷ lệ thắng cao 67%, ăn nhanh +2,5$ đến +5$)`
           : `⚡ [1H - LƯỚT NHANH] ${coin} 🔴 SHORT (Hai đỉnh 1h)`;
 
-        out.push(
-          `${header1h}\n` +
-          `• Vào: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
-          `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
-          `• TP lướt nhanh: ${f(tp05)} (0,5R ăn +2,5$) hoặc ${f(tp10)} (1R ăn +5$)\n` +
-          `• Vị thế: Ký quỹ ~${margin.toFixed(1)}$ · Đòn bẩy x${lev} · Mất ~${RISK_PER_TRADE}$ nếu dính SL`
-        );
+        itemsToSend.push({
+          key,
+          msg:
+            `${header1h}\n` +
+            `• Vào: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
+            `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
+            `• TP lướt nhanh: 0,5R ăn +${(sizing.actualRiskUsd * 0.5).toFixed(2)}$ hoặc 1R ăn +${sizing.actualRiskUsd}$\n` +
+            `• Vị thế: Ký quỹ ~${sizing.margin}$ · Đòn bẩy x${sizing.leverage} (Notional ~${sizing.notional}$) · Mất ~${sizing.actualRiskUsd}$ nếu dính SL${sizing.isCapped ? " (đã giới hạn vốn)" : ""}`
+        });
       }
 
     } catch (e) {
@@ -131,7 +174,15 @@ export async function scanAndAlert(): Promise<string[]> {
     }
   }
 
-  for (const m of out) await send(m);
+  // Gửi tin nhắn và CHỈ đánh dấu sent khi thành công (tránh mất tín hiệu khi mạng lỗi)
+  for (const item of itemsToSend) {
+    const ok = await send(item.msg);
+    if (ok) {
+      sent.add(item.key);
+      saveDedup(sent, preSent);
+      out.push(item.msg);
+    }
+  }
   return out;
 }
 
@@ -154,7 +205,6 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
 
   const key = is4hSlot ? `4H:${close4h}` : `1H:${close1h}`;
   if (!force && preSent.has(key)) return null;
-  preSent.add(key);
 
   const btc = await dailyTrend("BTC");
   const lines4h: string[] = [];
@@ -169,20 +219,17 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         const a4 = analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300));
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
+          if (!isAllowedSetup(s.style, s.side, "4H")) continue;
+
           const risk = Math.abs(s.entry - s.stop) / s.entry;
           if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.012) continue;
 
-          // Chỉ lọc BOS LONG hoặc Hai đỉnh SHORT
-          if (s.style === "bos" && s.side < 0) continue;
-          if (s.style === "double_top_bottom" && s.side > 0) continue;
+          const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+          const isStar = isStarSetup(s.side, own, btc);
 
-          const notional = RISK_PER_TRADE / risk;
-          const lev = Math.max(1, Math.min(20, Math.floor(notional / 10)));
-
-          const isStar = own === s.side;
           lines4h.push(
             `• ${coin} ${s.side > 0 ? "🟢 LONG (BOS 4h)" : "🔴 SHORT (Hai đỉnh 4h)"}${isStar ? " ⭐ [KÈO ĐẸP ★★★ ĂN SÓNG LỚN]" : ""}: ` +
-            `nến 4h đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${lev}`
+            `nến 4h đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${sizing.leverage}`
           );
         }
       }
@@ -191,16 +238,16 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
       const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
       for (const s of a1.setups) {
         if (s.state !== "pending") continue;
-        if (s.style !== "double_top_bottom" || s.side > 0) continue; // Chỉ Hai đỉnh SHORT
+        if (!isAllowedSetup(s.style, s.side, "1H")) continue;
+
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.003 || risk > 0.04 || Math.abs(s.distancePct) > 0.01) continue;
 
-        const notional = RISK_PER_TRADE / risk;
-        const lev = Math.max(1, Math.min(20, Math.floor(notional / 8)));
+        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+        const isStar1h = isStarSetup(-1, own, btc);
 
-        const isStar1h = own === -1;
         lines1h.push(
-          `• ${coin} 🔴 SHORT (Hai đỉnh 1h)${isStar1h ? " ⭐ [KÈO ĐẸP 1H ★★★]" : ""}: nến 1h đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${lev}`
+          `• ${coin} 🔴 SHORT (Hai đỉnh 1h)${isStar1h ? " ⭐ [KÈO ĐẸP 1H ★★★]" : ""}: nến 1h đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${sizing.leverage}`
         );
       }
     } catch (e) {
@@ -229,6 +276,11 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
       `\nChỉ vào lệnh sau khi nến 1h ĐÓNG NẾN; bot sẽ báo lại khi kích hoạt.`;
   }
 
-  await send(msg);
-  return msg;
+  const ok = await send(msg);
+  if (ok) {
+    preSent.add(key);
+    saveDedup(sent, preSent);
+    return msg;
+  }
+  return null;
 }

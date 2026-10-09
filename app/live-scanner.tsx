@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { calculateSizing, calculatePartialPnL } from "@/lib/trading-policy";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
@@ -60,7 +61,7 @@ function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, n
   const r0 = Math.abs(s.entry - s.stop);
   if (s.side * (p - s.entry) > 0.5 * r0) return { ...base, key: "skip", text: "ĐÃ CHẠY", reason: "Giá đã đi quá 0,5R từ điểm kích hoạt, không đuổi" };
   if (s.side * (p - (s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop))) >= 0) return { ...base, key: "skip", text: "ĐÃ TỚI TP", reason: "Đã chạm chốt lời 1R" };
-  return { ...base, key: "enter", text: "VÀO NGAY", reason: "Nến 4h vừa đóng xác nhận setup", levels: targets(s.side, p, s.stop, s.tp2) };
+  return { ...base, key: "enter", text: "VÀO NGAY", reason: "Nến 4h vừa đóng xác nhận setup", levels: targets(s.side, s.entry, s.stop, s.tp2) };
 }
 
 function beep() {
@@ -288,16 +289,25 @@ export default function LiveScanner() {
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
           <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
-          <td className="pos">{!l ? "—" : mode === "disciplined" ? <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>0,5R (chốt nửa: +{(riskUsd * 0.25).toFixed(1)}$)</small><b>{fmt(l.entry + p.side * 1.0 * Math.abs(l.entry - l.stop))}</b><small>1R (đủ +{riskUsd}$)</small></> : mode === "bold" ? <><b>{fmt(l.entry + p.side * 0.75 * Math.abs(l.entry - l.stop))}</b><small>0,75R</small></> : <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>nửa ở 0,5R → SL về giá vào</small><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>nửa ở 1R</small></>}</td>
+          <td className="pos">{!l ? "—" : mode === "disciplined" ? (() => {
+            const sizing = calculateSizing(equity, riskUsd, riskPct);
+            const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+            return <>
+              <b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b>
+              <small>50% ở 0,5R (+{pnl.winTp1.toFixed(2)}$ · dời SL hòa)</small>
+              <b>{fmt(l.entry + p.side * 1.0 * Math.abs(l.entry - l.stop))}</b>
+              <small>50% ở 1R (+{pnl.winTp2.toFixed(2)}$ · Tổng +{pnl.totalWin.toFixed(2)}$)</small>
+            </>;
+          })() : mode === "bold" ? <><b>{fmt(l.entry + p.side * 0.75 * Math.abs(l.entry - l.stop))}</b><small>0,75R</small></> : <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>nửa ở 0,5R → SL về giá vào</small><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>nửa ở 1R</small></>}</td>
           <td>{!l ? "—" : (() => {
             if (mode === "disciplined") {
-              const riskDollar = riskUsd > 0 ? riskUsd : 5;
-              const notional = riskDollar / riskPct;
-              const lev = Math.min(20, Math.max(2, Math.floor(0.7 / riskPct)));
-              const margin = notional / lev;
-              const win05 = riskDollar * 0.5;
-              const win10 = riskDollar * 1.0;
-              return <><b>x{lev.toFixed(0)}</b> · {margin.toFixed(1)}$ ký quỹ ({notional.toFixed(0)}$ vị thế)<small className="neg">−{riskDollar.toFixed(1)}$ ở SL</small><small className="pos">+{win05.toFixed(1)}$ ở 0,5R · +{win10.toFixed(1)}$ ở 1R</small></>;
+              const sizing = calculateSizing(equity, riskUsd, riskPct);
+              const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+              return <>
+                <b>x{sizing.leverage}</b> · {sizing.margin}$ ký quỹ ({sizing.notional}$ vị thế)
+                <small className="neg">−{sizing.actualRiskUsd}$ ở SL{sizing.isCapped ? " (đã giới hạn theo vốn)" : ""}</small>
+                <small className="pos">+{pnl.winTp1.toFixed(2)}$ ở 0,5R · +{pnl.totalWin.toFixed(2)}$ ở 2 TP</small>
+              </>;
             }
             const lev = mode === "bold" ? Math.min(10, Math.floor(0.85 / riskPct)) : Math.min(20, (equity * 0.1) / (capital * riskPct));
             const notional = capital * lev, win = notional * riskPct * 0.75;

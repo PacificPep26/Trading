@@ -17,6 +17,8 @@ const STATS = Object.fromEntries(
     .map((r) => [r.style, { n: r.train.n, winRate: r.train.winRate, expR: r.train.expR, coinsPositive: r.train.coinsPositive, expR2026: r.test.expR }]),
 );
 
+import { isAllowedSetup } from "@/lib/trading-policy";
+
 // Daily trend = last closed daily candle vs daily EMA50 (same as service/scripts/rule_study.py)
 async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
@@ -26,11 +28,13 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   return d.at(-1)!.c > ema ? 1 : -1;
 }
 
-// The agreed rule (PLAN.md): BOS long only; double top/bottom only with the daily trend of BTC and the coin
-function blockReason(style: string, side: 1 | -1, btc: number, own: number) {
-  if (style === "bos" && side < 0) return "BOS SHORT: không có lợi thế qua kiểm chứng";
-  if (style === "double_top_bottom" && !(btc === side && own === side))
-    return `Ngược xu hướng ngày (BTC ${btc > 0 ? "tăng" : "giảm"}, coin ${own > 0 ? "tăng" : "giảm"})`;
+// Unified rule: 4H BOS LONG and Double Top SHORT only
+function blockReason(style: string, side: 1 | -1) {
+  if (!isAllowedSetup(style, side, "4H")) {
+    if (style === "bos" && side < 0) return "BOS SHORT: không có lợi thế qua kiểm chứng";
+    if (style === "double_top_bottom" && side > 0) return "Hai đáy: không đánh lệnh Long hai đáy";
+    return "Không nằm trong danh mục setup đã kiểm chứng";
+  }
   return null;
 }
 
@@ -44,7 +48,7 @@ export async function GET() {
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         return risk >= RISK_RANGE[0] && risk <= RISK_RANGE[1];
       })
-      .map((s) => ({ ...s, blocked: blockReason(s.style, s.side, btcDaily, own) }));
+      .map((s) => ({ ...s, blocked: blockReason(s.style, s.side) }));
     return { coin, ...a, daily: own, setups };
   };
   // OKX rate-limits bursts on /market/candles: scan in small batches and retry once
