@@ -42,6 +42,18 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 | Đu sóng 15–20x (4h+1h cùng xu hướng, hồi EMA20 1h, nến từ chối 15m) | 15m | -0,29$/lệnh, 9/10 coin lỗ | `trend_ride_study.py` |
 | **Chưa làm**: mô phỏng tài khoản 40$ theo kiểu 4h; giữ lệnh dài hơn với dừng lỗ kéo theo (Donchian/BOS 4h–1D); tín hiệu funding / open interest / thanh lý; kỹ thuật trích từ video Nukida (32/191 transcript) và sách; dữ liệu 1m để phân xử SL/TP cùng nến | | | |
 
+## Tự rà soát: chỗ còn thiếu / sai sót (2026-10-09)
+
+1. **Không tách LONG/SHORT** trong mọi nghiên cứu trước 9/10 → phát hiện muộn BOS 4h chỉ có lợi thế ở chiều LONG. Mọi kết quả cũ cần xem lại theo chiều.
+2. **Thử quá nhiều biến thể, chưa hiệu chỉnh đa giả thuyết** → t≈2 có thể do may. Cần năm kiểm tra sạch hoặc forward test.
+3. **Dữ liệu 2023–2026 thiên về thị trường tăng**; 21 coin chọn theo danh sách hiện tại (bỏ sót coin đã chết) → có thể đẹp hơn thực tế.
+4. **Chưa tính funding** khi giữ lệnh 0,5–2 ngày; **phí OKX** (sàn chủ dự án thực sự dùng) chưa chạy lại cho luật mới; trượt giá coin nhỏ chưa đo.
+5. **SL/TP cùng nến** giả định SL trước (bảo thủ), chưa có dữ liệu 1m để phân xử.
+6. **Chưa có test đối chiếu** bản Python (backtest) với bản TypeScript (scanner) trên cùng dữ liệu.
+7. **Chưa mô phỏng tài khoản** (40$ theo luật 4h: sụt vốn tối đa, chuỗi thua).
+8. **Lời khuyên trong chat từng đi trước kiểm chứng** (vùng hồi 1h cho APT/ETH/SOL) → quy tắc: không đề xuất kiểu chưa backtest.
+9. **Mục tiêu gốc chưa làm**: trích kỹ thuật từ video Nukida (32/191 transcript) và sách để kiểm chứng.
+
 ## Mục tiêu dự án
 
 Phòng thí nghiệm kiểm chứng kỹ thuật trading crypto: nạp kiến thức (video Nukida, sách hết bản quyền), biến kỹ thuật thành luật, backtest có phí và năm kiểm tra riêng, chỉ dùng kỹ thuật vượt kiểm chứng; ghi nhật ký quyết định. "Không kỹ thuật nào thắng sau phí" vẫn là kết quả hợp lệ.
