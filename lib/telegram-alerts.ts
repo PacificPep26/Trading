@@ -78,12 +78,17 @@ export async function scanAndAlert(): Promise<string[]> {
         const tp05 = s.entry + s.side * 0.5 * R;
         const tp10 = s.entry + s.side * 1.0 * R;
 
+        const isStar = own === s.side;
+        const header = isStar
+          ? `🌟 [KÈO ĐẸP ★★★ - ĂN SÓNG LỚN] 4H ${coin} ${s.side > 0 ? "🟢 LONG (BOS 4H)" : "🔴 SHORT (Hai đỉnh 4H)"}\n🔥 THUẬN XU HƯỚNG NGÀY (Cùng trend lớn, tiềm năng ăn sóng 4-6% như LINK hôm qua!)`
+          : `🚨 [4H] ${coin} ${s.side > 0 ? "🟢 LONG (BOS)" : "🔴 SHORT (Hai đỉnh)"}`;
+
         out.push(
-          `🚨 [4H] ${coin} ${s.side > 0 ? "🟢 LONG (BOS)" : "🔴 SHORT (Hai đỉnh)"}${own === s.side ? " · ★ Thuận xu hướng ngày" : ""}\n` +
+          `${header}\n` +
           `• Vào: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
           `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
           `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-          `• Chốt lời (TP): TP1 (0,5R) ở ${f(tp05)} (+2,5$) → dời SL về Entry → TP2 (1R) ở ${f(tp10)} (đủ +5$)\n` +
+          `• Chốt lời (TP): TP1 (0,5R) ở ${f(tp05)} (+2,5$) → dời SL về Entry → TP2 (1R) ở ${f(tp10)} (đủ +5$)${isStar ? " (Có thể gồng thêm theo trend)" : ""}\n` +
           `• Vị thế: Ký quỹ ~${margin.toFixed(1)}$ · Đòn bẩy x${lev} (Notional ~${notional.toFixed(0)}$) · Mất ~${RISK_PER_TRADE}$ nếu dính SL`
         );
       }
@@ -170,8 +175,9 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
           const notional = RISK_PER_TRADE / risk;
           const lev = Math.max(1, Math.min(20, Math.floor(notional / 10)));
 
+          const isStar = own === s.side;
           lines4h.push(
-            `• ${coin} ${s.side > 0 ? "🟢 LONG (BOS 4h)" : "🔴 SHORT (Hai đỉnh 4h)"}${own === s.side ? " ★" : ""}: ` +
+            `• ${coin} ${s.side > 0 ? "🟢 LONG (BOS 4h)" : "🔴 SHORT (Hai đỉnh 4h)"}${isStar ? " ⭐ [KÈO ĐẸP ★★★ ĂN SÓNG LỚN]" : ""}: ` +
             `nến 4h đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${lev}`
           );
         }
