@@ -80,16 +80,29 @@ export async function scanAndAlert(): Promise<string[]> {
 const H4 = 4 * 3_600_000;
 const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 declare global {
-  var telegramPreSent: Set<number> | undefined;
+  var telegramPreSent: Set<string> | undefined;
 }
-const preSent = (globalThis.telegramPreSent ??= new Set<number>());
+const preSent = (globalThis.telegramPreSent ??= new Set<string>());
 
-/** About 1h before each 4h close: list setups that could trigger at that close, so the owner can prepare. */
-export async function preAlert(now = Date.now()): Promise<string | null> {
+/** Heads-up before each 4h close (at ~60m and ~10m before close): list setups that could trigger at that close. */
+export async function preAlert(now = Date.now(), force = false): Promise<string | null> {
   const close = Math.floor(now / H4) * H4 + H4;
   const left = close - now;
-  if (left > 65 * 60_000 || left < 40 * 60_000 || preSent.has(close)) return null;
-  preSent.add(close);
+  let slot = "";
+  if (force) {
+    slot = "force";
+  } else if (left <= 65 * 60_000 && left >= 40 * 60_000) {
+    slot = "60m";
+  } else if (left <= 15 * 60_000 && left >= 3 * 60_000) {
+    slot = "10m";
+  } else {
+    return null;
+  }
+
+  const key = `${close}:${slot}`;
+  if (!force && preSent.has(key)) return null;
+  preSent.add(key);
+
   const btc = await dailyTrend("BTC");
   const lines: string[] = [];
   for (const coin of COINS) {
