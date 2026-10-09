@@ -17,21 +17,26 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 
 **Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web`; deploy `railway up --service web --ci --detach`). Một trang: **Scanner live** 21 coin (WebSocket OKX), chỉ luật 4h, có ô Vốn $, cỡ lệnh rủi ro 2,5%, TP 0,5R/1,5R, thông báo trình duyệt; khối "Luật & kiến thức". **Bot Telegram** chạy trong server (`instrumentation.ts` → `lib/telegram-alerts.ts`), quét 5 phút/lần, chỉ gửi tín hiệu mới hợp lệ (vào, SL, TP 0,5R/1,5R, cỡ lệnh). GitHub `PacificPep26/Trading` (public).
 
-## Kết luận hiện tại: đánh thế nào (LUẬT DUY NHẤT, thống nhất 2026-10-09)
+## Kết luận hiện tại: đánh thế nào (HỆ THỐNG CHUẨN HÓA MỚI, 2026-10-09 chiều)
 
-**Chế độ đang dùng (chủ dự án chọn 2026-10-09 trưa): "Kiểu hôm qua"** = mọi tín hiệu 4h (BOS long + short, hai đỉnh/hai đáy, không lọc xu hướng ngày), toàn bộ ký quỹ (~36$) x10 (tự hạ nếu thanh lý trước SL), TP 0,75R, vẫn ghi mức thoát sớm. Đã nói rõ: backtest cho rủi ro cỡ này sụt rất sâu/cháy, BOS short không có lợi thế. Chế độ "An toàn" (bên dưới) vẫn chọn được trên web (ô Kiểu) và bot (ALERT_MODE=safe).
+Chủ dự án bỏ hoàn toàn kiểu đánh cũ (bỏ bold mode cược hết margin, bỏ BOS SHORT). Hệ thống được chuẩn hóa dựa trên backtest 0% phí MEXC (2023–2026):
 
-**Chỉ vào lệnh khi có tín hiệu 4h đã kiểm chứng, vừa xác nhận bằng nến 4h đóng cửa: BOS LONG, hoặc hai đỉnh/hai đáy CÙNG xu hướng ngày (BTC và coin so với EMA50 ngày: trên → chỉ hai đáy LONG, dưới → chỉ hai đỉnh SHORT). BOS SHORT = không đánh.** (cập nhật 2026-10-09) Không có tín hiệu 4h = không vào lệnh. Scanner trên web chỉ còn báo đúng hai kiểu này.
+1. **Khung 4H (Đánh sóng lớn / Giữ 0,5 – 2 ngày)**:
+   - **BOS LONG**: khi nến 4h đóng vượt đỉnh cấu trúc. (BOS SHORT = KHÔNG ĐÁNH).
+   - **Hai đỉnh SHORT**: khi nến 4h đóng xuyên qua neckline.
+   - **Báo trước**: Bot Telegram gửi tin báo trước ~10 phút lúc 14:50, 18:50, 22:50, 02:50, 06:50, 10:50.
+   - **Chốt lời**: Chốt 50% ở 0,75R → dời SL về Entry (hòa vốn) → 50% còn lại gồng đến 1,5R (hoặc 2R).
+   - **Thoát sớm**: Đóng lệnh ngay nếu nến 4h sau đóng ngược lại qua mức vừa phá.
 
-- **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
-- **SL**: ở cấu trúc 4h (thường cách 4–8%). **Đòn bẩy suy ra từ SL**, không chọn trước: chạm SL không được mất quá số tiền đã định (~3–5$ với vốn 40$; lệnh LINK 8/10 chủ dự án chọn mất tối đa ~28$).
+2. **Khung 1H (Đánh nhanh / Lướt trong ngày trên MEXC)**:
+   - **CHỈ ĐÁNH**: **Hai đỉnh (Double Top - SHORT)** khi nến 1h đóng dưới neckline (backtest 0% phí thắng 66,9% ở 0,5R, t > 3,7).
+   - Tuyệt đối **KHÔNG ĐÁNH lệnh LONG 1H** (vì nến 1h rất hay quét râu đỉnh rồi xả).
+   - **Chốt lời**: TP 0,5R – 0,75R ăn nhanh.
 
-- **Thoát sớm** (kiểm chứng 2026-10-09): nếu một nến 4h ĐÓNG ngược lại qua mức vừa phá (BOS long: đóng dưới đỉnh vừa vượt) → đóng lệnh ngay, không chờ SL xa. Lỗ TB khi thua giảm từ -0,72R xuống -0,33R, TB/lệnh không giảm (+0,016 so với +0,012R ở TP 0,5R), sụt vốn tối đa thấp hơn hẳn.
-- **Giữ**: nửa ngày – 2 ngày; không đóng tay vì giá đi ngang buổi trưa; phiên tối (sau 20h30) thường chạy mạnh.
-- **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
-- Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.
-- Thua 2 lệnh liên tiếp: nghỉ hết ngày, không gỡ.
-- **Chủ dự án chọn (2026-10-09): CHỈ đánh lệnh ★ (coin cùng xu hướng ngày với lệnh), chịu mất 10% vốn/lệnh; chốt NỬA ở 0,5R → dời SL về giá vào → NỬA còn lại ở 1R** (thắng trọn ≈ +7,5% vốn; chạm 0,5R rồi quay về = +2,5% vốn). Lệnh thường bỏ qua. Đã nói rõ: backtest ở 7,5–20% rủi ro/lệnh có sụt rất sâu / có thể cháy. Bắt buộc: thua 2 lệnh liên tiếp nghỉ; mỗi lệnh tính lại 10% theo vốn còn lại.
+3. **Quản lý vốn & Kỷ luật sống còn**:
+   - Vốn: ~40$. **Rủi ro mỗi lệnh: cố định ~1,5$ (3,75% vốn)**. Đòn bẩy tính từ khoảng cách SL để nếu dính SL chỉ mất đúng 1,5$.
+   - Thua 2 lệnh liên tiếp: nghỉ hết ngày, tuyệt đối không gỡ.
+   - Sàn: Ưu tiên MEXC (0% phí giao dịch). Bot lấy giá OKX để quét nến.
 
 ## Đã / chưa backtest
 
