@@ -42,7 +42,8 @@ function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, n
     const crossed = s.side > 0 ? p > s.entry : p < s.entry;
     const dist = Math.abs(p / s.entry - 1);
     if (crossed) return { ...base, key: "wait", text: "CHỜ ĐÓNG 4H", reason: "Giá đã qua mức kích hoạt, cần nến 4h đóng cửa xác nhận" };
-    return { ...base, key: dist <= 0.01 ? "wait" : "skip", text: dist <= 0.01 ? "CHỜ" : "BỎ QUA", reason: `Cách mức kích hoạt ${pct(dist)}` };
+    const close = s.side > 0 ? "trên" : "dưới";
+    return { ...base, key: "wait", text: dist <= 0.01 ? "SẮP KÍCH HOẠT" : "THEO DÕI", reason: `Chưa vào: cần nến 4h đóng ${close} ${fmt(s.entry)} (còn cách ${pct(dist)})` };
   }
   // triggered on the last closed 4h bar: valid until the next 4h bar closes
   const barClose = lastBarTime + 4 * 3_600_000;
