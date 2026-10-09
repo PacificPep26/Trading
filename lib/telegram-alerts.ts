@@ -196,8 +196,8 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
     }
   }
 
-  // Với slot 1H riêng lẻ: chỉ gửi tin nếu có coin đang chờ để tránh spam mỗi giờ
-  if (!is4hSlot && !lines1h.length) {
+  // Nếu KHÔNG có coin nào (cả 4h lẫn 1h) sắp kích hoạt: TUYỆT ĐỐI IM LẶNG, không gửi tin rác
+  if (!lines4h.length && !lines1h.length) {
     return null;
   }
 
@@ -206,8 +206,6 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
     msg = `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n`;
     if (lines4h.length) {
       msg += `📌 Setup 4H có thể kích hoạt:\n${lines4h.join("\n")}\n`;
-    } else {
-      msg += `📌 Không có coin nào sắp kích hoạt 4h.\n`;
     }
     if (lines1h.length) {
       msg += `\n⚡ Lướt 1H sắp đóng nến:\n${lines1h.join("\n")}\n`;
