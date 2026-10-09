@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: `service/scripts/regime_study.py` (long hay short theo bối cảnh; bối cảnh = giá đóng ngày so với EMA50 ngày của BTC và của coin): **BOS LONG dương ở mọi bối cảnh** (+0,04 đến +0,105R; tốt nhất khi coin trên EMA50 ngày +0,105R t=2,2). **BOS SHORT ≈ 0 ở mọi bối cảnh** (-0,03 đến -0,01R). **Hai đỉnh/hai đáy chỉ tốt khi cùng chiều xu hướng ngày**: SHORT khi BTC & coin dưới EMA50 ngày +0,083R (2026 +0,146R); LONG khi BTC trên EMA50 ngày +0,079R (2026 +0,143R); ngược chiều ≈ 0. Mẫu nhỏ (170–550 lệnh/nhóm), chưa đạt t≥3.
+
 - **2026-10-09**: Tách theo chiều (4h, phí MEXC, chốt 1,5R, 21 coin): **BOS LONG +0,073R (t=+2,3, 848 lệnh, 2026 +0,091R)**; BOS SHORT -0,015R (2026 -0,056R). Hai đỉnh/hai đáy: LONG +0,033R, SHORT +0,034R. Bật hỗ trợ/kháng cự: SHORT +0,021R (2026 -0,088R), LONG -0,117R. Fibonacci+xác nhận: cả hai chiều âm. → lợi thế BOS 4h chủ yếu ở chiều LONG (giai đoạn 2023–2026 crypto tăng nhiều; có thể là thiên lệch thị trường).
 
 - **2026-10-09**: `service/scripts/zone_volume_study.py`: lệnh vùng hồi 1h (luật scanner, 10x, 21 coin, 5471 lệnh) **-0,110R/lệnh, thắng 39%, 2026 -0,177R**. Lọc theo khối lượng không cứu được: nến từ chối KL thấp/TB/cao: -0,10 / -0,11 / -0,15 đến -0,20R; nhịp hồi KL thấp (hồi yếu) -0,126R, cao -0,103R. → vùng hồi 1h là kiểu **không có lợi thế**, chỉ BOS 4h còn gần lãi.
