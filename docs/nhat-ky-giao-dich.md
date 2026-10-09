@@ -2,7 +2,7 @@
 
 Lệnh thật, kế hoạch trong ngày và chấm điểm sau đó. Mới nhất ở trên.
 
-- **2026-10-09 (kết quả)**: **LINK SHORT đóng 22h36 ngày 8/10 ở 12,411 → +19,97$ (+54,7% ký quỹ)**, trailing stop chốt (giá xuống ~11,95 rồi hồi 3,9%). Lịch sử OKX cũng cho thấy một lệnh SOL SHORT 7/10: 4,53 SOL @117,18 → đóng 116,8 (+1,19$). Sáng 9/10: thị trường giảm rộng, 4h giảm ở ETH, SOL, BNB, ADA, LINK, LTC, SUI, ARB, OP, APT, PEPE, WIF; BOS 4h SHORT (2 nến trước) ở ETH, BNB, ADA, SUI, ARB, PEPE, APT (APT vừa kích hoạt); RSI 4h nhiều coin 23–30 (đã bán mạnh).
+- **2026-10-09 (kết quả)**: **LINK SHORT đóng 22h36 ngày 8/10 ở 12,411 → +19,97$ (+54,7% ký quỹ)**, **chủ dự án tự chốt tay** khi thấy đủ lời (không phải trailing); giá chạy mạnh ở phiên tối (phiên Mỹ). Lịch sử OKX cũng cho thấy một lệnh SOL SHORT 7/10: 4,53 SOL @117,18 → đóng 116,8 (+1,19$). Sáng 9/10: thị trường giảm rộng, 4h giảm ở ETH, SOL, BNB, ADA, LINK, LTC, SUI, ARB, OP, APT, PEPE, WIF; BOS 4h SHORT (2 nến trước) ở ETH, BNB, ADA, SUI, ARB, PEPE, APT (APT vừa kích hoạt); RSI 4h nhiều coin 23–30 (đã bán mạnh).
 
 - **2026-10-08 11h14**: **Đã vào LINK SHORT** (OKX): 27,8 LINK @13,138, 10x cô lập, ký quỹ 36,52$ (gần hết tài khoản, chủ dự án chọn dù được khuyên 3–5 LINK), thanh lý 14,35, **TP 12,2 (~+26$) / SL 14,14 (~-28$)**. Quản lý đề xuất: chạm ~12,64 (0,5R) thì dời SL về 13,14 (có thể chốt nửa); không đóng tay khi hồi về 13,4–13,5; chạm SL thì nghỉ hết ngày. 11h20: đã đặt thêm **trailing stop** OKX (kích hoạt 12,64, callback 3,9%, 27,8 LINK) để tự dời điểm đóng về ~13,13 khi chạm 12,64; SL 14,14 + TP 12,2 giữ nguyên. Giá lúc đó ~12,96–13,01.
 
