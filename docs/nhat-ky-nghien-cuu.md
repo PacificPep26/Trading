@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: `service/scripts/zone_volume_study.py`: lệnh vùng hồi 1h (luật scanner, 10x, 21 coin, 5471 lệnh) **-0,110R/lệnh, thắng 39%, 2026 -0,177R**. Lọc theo khối lượng không cứu được: nến từ chối KL thấp/TB/cao: -0,10 / -0,11 / -0,15 đến -0,20R; nhịp hồi KL thấp (hồi yếu) -0,126R, cao -0,103R. → vùng hồi 1h là kiểu **không có lợi thế**, chỉ BOS 4h còn gần lãi.
+
 - **2026-10-09**: Kiểm ý tưởng chủ dự án "gãy nền rồi về nền cũ thì bật mạnh, chốt ngay trên nền cũ" (`service/scripts/support_target_study.py`, 1408 BOS 4h, 21 coin): giá chạm nền cũ (đáy 4h cũ gần nhất, ≤3R) 72%; sau khi chạm, bật ≥1,5% trong 12h **45%**, xuyên ≥1,5% 43% — **giống hệt một mức giả ở giữa đường (45/42%)** → nền cũ không phải điểm bật đặc biệt. Chốt ngay trên nền cũ: thắng 75% nhưng TB -0,019R; chốt 1,5R: thắng 47%, +0,034R.
 
 - **2026-10-08**: `service/scripts/bos_exit_study.py`: so sánh cách thoát lệnh cho BOS 4h (1550 tín hiệu, 21 coin, mô phỏng trên nến 1h, giữ tối đa 48h). Phí MEXC: A (SL 4h, TP 1,5R) +0,036R thắng 47% (tốt nhất); D (chốt nửa 0,5R rồi SL về giá vào, nửa 1,5R) +0,028R thắng 62%; C (TP 0,5R) +0,019R thắng 62%, 2026 âm; B (SL cấu trúc 1h, TP 1,3R) +0,009R. Phí OKX: A +0,023R, D +0,015R, C +0,006R, B -0,010R. Không cái nào đạt t≥3. Với vị thế 400$ (40$×10x) lỗ TB khi thua ~14$ → nên định cỡ theo số tiền chịu mất.

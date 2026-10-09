@@ -104,7 +104,10 @@ def run(sym, lev, margin_cap, max_stop):
             "time": datetime.fromtimestamp(cs[i + 1].t / 1000, VN).strftime("%Y-%m-%d %H:%M"),
             "side": "LONG" if side > 0 else "SHORT", "entry": entry, "stop": stop, "tp1": tp1,
             "exit_time": datetime.fromtimestamp(cs[exit_i].t / 1000, VN).strftime("%m-%d %H:%M"),
-            "half": half_done, "pnl": pnl, "dist": dist, "year": int(datetime.fromtimestamp(cs[i + 1].t / 1000, VN).year),
+            "half": half_done, "pnl": pnl, "dist": dist, "R": (realized - fee) / dist,
+            # volume context: rejection bar vs prior 20 bars; pullback bars (4) vs the 20 before them
+            "vr": c.v / max(sum(x.v for x in cs[i - 20 : i]) / 20, 1e-12),
+            "pbv": (sum(x.v for x in cs[i - 3 : i + 1]) / 4) / max(sum(x.v for x in cs[i - 24 : i - 4]) / 20, 1e-12), "year": int(datetime.fromtimestamp(cs[i + 1].t / 1000, VN).year),
         })
         i = exit_i + 1
     return trades, refills, equity
