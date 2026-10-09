@@ -72,8 +72,8 @@ function beep() {
 export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
   const [levels, setLevels] = useState<LevelsData | null>(null);
-  const [capital, setCapital] = useState(40); // margin per trade ($)
-  const [lossUsd, setLossUsd] = useState(20); // $ lost if the stop is hit; leverage is derived from it
+  const [capital, setCapital] = useState(10); // margin per trade ($)
+  const [lossUsd, setLossUsd] = useState(5); // $ lost if the stop is hit; leverage is derived from it
   useEffect(() => {
     const t = setTimeout(() => { try { const v = Number(localStorage.getItem("scanner-margin")); if (v > 0) setCapital(v); } catch { /* ignore */ } }, 0);
     return () => clearTimeout(t);
