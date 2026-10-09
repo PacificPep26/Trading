@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: `service/scripts/bounce_long_study.py`: LONG bắt nhịp hồi sau cú sập (4h, 21 coin, phí MEXC + trượt): RSI 4h<25 rồi nến xanh đầu tiên -0,007R (2026 -0,241R); giảm ≥8%/48h + nến rút râu dưới -0,133R; giảm ≥8% + nến đóng trên đỉnh nến trước -0,072R. → không có lợi thế; chờ BOS LONG xác nhận.
+
 - **2026-10-09**: `service/scripts/rule_study.py`: luật mới (BOS 4h LONG + hai đỉnh/đáy cùng xu hướng ngày BTC & coin, EMA50 ngày), 21 coin, 1221 lệnh (~6,5/tuần, giữ TB 37h), có trượt 0,04% + funding 0,01%/8h. Phí OKX: +0,038R (t=1,4); MEXC: +0,052R (t=2,0). Năm: 2023 +0,06, 2024 +0,07, **2025 âm (-0,03/-0,01)**, 2026 +0,07–0,08R. Tài khoản 40$: rủi ro 3$/lệnh (7,5%) **cháy trong 2023** (chuỗi thua 12 lệnh, nhiều lệnh mở cùng lúc); 7,5% vốn/lệnh sụt tối đa 93–96%; **1$ hoặc 2,5% vốn/lệnh: sụt tối đa 53–67%, 40$ → 87–140$ sau ~3,6 năm**. Test đối chiếu Python ↔ scanner TS (`tests/test_parity.py`) khớp trên cả 21 coin. Scanner thêm lọc xu hướng ngày (BOS SHORT, ngược xu hướng ngày → KHÔNG ĐÁNH).
 
 - **2026-10-09**: `service/scripts/regime_study.py` (long hay short theo bối cảnh; bối cảnh = giá đóng ngày so với EMA50 ngày của BTC và của coin): **BOS LONG dương ở mọi bối cảnh** (+0,04 đến +0,105R; tốt nhất khi coin trên EMA50 ngày +0,105R t=2,2). **BOS SHORT ≈ 0 ở mọi bối cảnh** (-0,03 đến -0,01R). **Hai đỉnh/hai đáy chỉ tốt khi cùng chiều xu hướng ngày**: SHORT khi BTC & coin dưới EMA50 ngày +0,083R (2026 +0,146R); LONG khi BTC trên EMA50 ngày +0,079R (2026 +0,143R); ngược chiều ≈ 0. Mẫu nhỏ (170–550 lệnh/nhóm), chưa đạt t≥3.
