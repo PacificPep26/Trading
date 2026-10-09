@@ -1,3 +1,4 @@
+import Knowledge from "./knowledge";
 import LiveScanner from "./live-scanner";
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
         </div>
       </header>
       <LiveScanner />
+      <Knowledge />
       <footer className="foot">Thống kê từ dữ liệu quá khứ, không đảm bảo kết quả tương lai. Trang không đặt lệnh.</footer>
     </main>
   );
