@@ -51,7 +51,7 @@ export async function scanAndAlert(): Promise<string[]> {
         sent.add(key);
         const R = Math.abs(s.entry - s.stop), riskUsd = CAPITAL * RISK_PCT, notional = riskUsd / risk;
         out.push(
-          `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}\n` +
+          `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}${own === s.side ? " · ★ coin cùng xu hướng ngày" : ""}\n` +
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
           `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
           `TP 0,5R ${f(s.entry + s.side * 0.5 * R)} · 1,5R ${f(s.entry + s.side * 1.5 * R)}\n` +
