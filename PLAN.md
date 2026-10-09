@@ -24,6 +24,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - **Vào**: khi nến 4h đóng xác nhận (giờ đóng VN: 3h, 7h, 11h, 15h, 19h, 23h), giá chưa chạy quá 0,5R.
 - **SL**: ở cấu trúc 4h (thường cách 4–8%). **Đòn bẩy suy ra từ SL**, không chọn trước: chạm SL không được mất quá số tiền đã định (~3–5$ với vốn 40$; lệnh LINK 8/10 chủ dự án chọn mất tối đa ~28$).
 - **Chốt theo chất lượng lệnh** (chủ dự án chọn 2026-10-09, "1R là đẹp rồi"): **lệnh ★ (coin cùng xu hướng ngày với lệnh) → TP 1R; lệnh thường → TP 0,5R**. 21 coin: +0,042R/lệnh, thắng 55% (chốt hết 0,5R: +0,021R; ★ 1,5R + thường 0,5R: +0,061R nếu muốn ăn thêm).
+- **Thoát sớm** (kiểm chứng 2026-10-09): nếu một nến 4h ĐÓNG ngược lại qua mức vừa phá (BOS long: đóng dưới đỉnh vừa vượt) → đóng lệnh ngay, không chờ SL xa. Lỗ TB khi thua giảm từ -0,72R xuống -0,33R, TB/lệnh không giảm (+0,016 so với +0,012R ở TP 0,5R), sụt vốn tối đa thấp hơn hẳn.
 - **Giữ**: nửa ngày – 2 ngày; không đóng tay vì giá đi ngang buổi trưa; phiên tối (sau 20h30) thường chạy mạnh.
 - **Coin**: ưu tiên phí 0% trên MEXC (LINK, APT, ARB, ADA, OP, DOT, …). Coin nhỏ đòn bẩy thấp (~5x).
 - Kết quả kiểm chứng: BOS 4h +0,03 đến +0,04R/lệnh, thắng ~47% (mỏng, chưa đạt t≥3). Mọi kiểu khung 15m/1h (vùng hồi 1h, Fibonacci, hỗ trợ/kháng cự, VWAP, bắt đáy, đu sóng 20x, lọc khối lượng, chốt ở nền cũ) đều **lỗ** → **không dùng**.

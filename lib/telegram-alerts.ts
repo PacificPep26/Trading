@@ -53,7 +53,7 @@ export async function scanAndAlert(): Promise<string[]> {
         out.push(
           `🚨 ${coin} ${s.side > 0 ? "🟢 LONG" : "🔴 SHORT"} · ${s.style === "bos" ? "BOS 4h" : s.side > 0 ? "Hai đáy 4h" : "Hai đỉnh 4h"}${own === s.side ? " · ★ coin cùng xu hướng ngày" : ""}\n` +
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
-          `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
+          `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%) · THOÁT SỚM nếu nến 4h đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
           `TP ${f(s.entry + s.side * (own === s.side ? 1 : 0.5) * R)} (${own === s.side ? "1R, lệnh ★" : "0,5R, lệnh thường"})\n` +
           `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * (own === s.side ? 1 : 0.5)).toFixed(1)}$ ở TP`,
         );

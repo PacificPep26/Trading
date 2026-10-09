@@ -13,6 +13,7 @@ export type Setup = {
   tp15: number;
   tp2: number;
   target?: number; // structural target (double top/bottom measured move)
+  level: number; // broken level (swing / neckline): a 4h close back through it = failed setup, exit early
   distancePct: number; // pending: how far price must move to trigger (signed toward the trade)
 };
 
@@ -69,12 +70,12 @@ export function analyse(all: Candle[]) {
     const lastHigh = cs[highs.at(-1)!].h, lastLow = cs[lows.at(-1)!].l;
     if (trend > 0) {
       const stop = lastLow - 0.1 * atr;
-      if (c.c > lastHigh && lastHigh >= prev.c) setups.push({ style: "bos", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), distancePct: 0 });
-      else if (c.c <= lastHigh) setups.push({ style: "bos", state: "pending", side: 1, entry: lastHigh, stop, ...levels(1, lastHigh, stop), distancePct: lastHigh / c.c - 1 });
+      if (c.c > lastHigh && lastHigh >= prev.c) setups.push({ style: "bos", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), level: lastHigh, distancePct: 0 });
+      else if (c.c <= lastHigh) setups.push({ style: "bos", state: "pending", side: 1, entry: lastHigh, stop, ...levels(1, lastHigh, stop), level: lastHigh, distancePct: lastHigh / c.c - 1 });
     } else {
       const stop = lastHigh + 0.1 * atr;
-      if (c.c < lastLow && lastLow <= prev.c) setups.push({ style: "bos", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), distancePct: 0 });
-      else if (c.c >= lastLow) setups.push({ style: "bos", state: "pending", side: -1, entry: lastLow, stop, ...levels(-1, lastLow, stop), distancePct: c.c / lastLow - 1 });
+      if (c.c < lastLow && lastLow <= prev.c) setups.push({ style: "bos", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), level: lastLow, distancePct: 0 });
+      else if (c.c >= lastLow) setups.push({ style: "bos", state: "pending", side: -1, entry: lastLow, stop, ...levels(-1, lastLow, stop), level: lastLow, distancePct: c.c / lastLow - 1 });
     }
   }
 
@@ -84,8 +85,8 @@ export function analyse(all: Candle[]) {
     if (Math.abs(cs[a].h - cs[b].h) <= 0.3 * atr && b - a >= 5) {
       const neck = Math.min(...cs.slice(a, b + 1).map((x) => x.l));
       const top = Math.max(cs[a].h, cs[b].h), stop = top + 0.1 * atr, target = neck - (top - neck);
-      if (c.c < neck && neck <= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), target, distancePct: 0 });
-      else if (c.c >= neck && c.c < stop) setups.push({ style: "double_top_bottom", state: "pending", side: -1, entry: neck, stop, ...levels(-1, neck, stop), target, distancePct: c.c / neck - 1 });
+      if (c.c < neck && neck <= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), target, level: neck, distancePct: 0 });
+      else if (c.c >= neck && c.c < stop) setups.push({ style: "double_top_bottom", state: "pending", side: -1, entry: neck, stop, ...levels(-1, neck, stop), target, level: neck, distancePct: c.c / neck - 1 });
     }
   }
   if (lows.length >= 2) {
@@ -93,8 +94,8 @@ export function analyse(all: Candle[]) {
     if (Math.abs(cs[a].l - cs[b].l) <= 0.3 * atr && b - a >= 5) {
       const neck = Math.max(...cs.slice(a, b + 1).map((x) => x.h));
       const bot = Math.min(cs[a].l, cs[b].l), stop = bot - 0.1 * atr, target = neck + (neck - bot);
-      if (c.c > neck && neck >= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), target, distancePct: 0 });
-      else if (c.c <= neck && c.c > stop) setups.push({ style: "double_top_bottom", state: "pending", side: 1, entry: neck, stop, ...levels(1, neck, stop), target, distancePct: neck / c.c - 1 });
+      if (c.c > neck && neck >= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), target, level: neck, distancePct: 0 });
+      else if (c.c <= neck && c.c > stop) setups.push({ style: "double_top_bottom", state: "pending", side: 1, entry: neck, stop, ...levels(1, neck, stop), target, level: neck, distancePct: neck / c.c - 1 });
     }
   }
 

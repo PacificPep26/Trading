@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
 
-type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null };
+type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null; level?: number };
 type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number; daily?: number }[]; btcDaily?: number };
 type LevelsData = { rows: { coin: string; trend4h: number; trend1h: number }[]; computedAt: number };
 type Tape = { price: number; bid: number; ask: number; bookBuy: number; tradeBuy: number; tradeVolume: number; ts: number };
@@ -14,6 +14,7 @@ type Key = "enter" | "wait" | "skip";
 type Plan = {
   id: string; coin: string; kind: "4h"; side: 1 | -1; title: string; key: Key; text: string; reason: string;
   levels?: { entry: number; stop: number; tp1: number; tp2: number };
+  exitLevel?: number;
 };
 
 const emptyTape = (): Tape => ({ price: 0, bid: 0, ask: 0, bookBuy: 0.5, tradeBuy: 0.5, tradeVolume: 0, ts: 0 });
@@ -41,7 +42,7 @@ function next4h(now: number) {
 
 function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, now: number): Plan {
   const title = s.style === "bos" ? "Phá cấu trúc (BOS) 4h" : "Hai đỉnh / hai đáy 4h";
-  const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, levels: { entry: s.entry, stop: s.stop, tp1: s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop), tp2: s.tp15 } };
+  const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, exitLevel: s.level, levels: { entry: s.entry, stop: s.stop, tp1: s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop), tp2: s.tp15 } };
   const p = tape.price;
   if (s.blocked) return { ...base, key: "skip", text: "KHÔNG ĐÁNH", reason: s.blocked };
   if (!p) return { ...base, key: "wait", text: "ĐANG LẤY GIÁ", reason: "Chờ WebSocket" };
@@ -224,7 +225,7 @@ export default function LiveScanner() {
           <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
           <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
-          <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
+          <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
           <td className="pos">{!l ? "—" : star(p) ? <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R (lệnh ★)</small></> : <><b>{fmt(l.tp1)}</b><small>0,5R (lệnh thường)</small></>}</td>
           <td>{!l ? "—" : (() => {
             const tpR = star(p) ? 1 : 0.5, lossUsd = profitUsd / 0.5, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * tpR * riskPct;

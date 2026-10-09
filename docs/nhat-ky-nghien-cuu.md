@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: `service/scripts/early_exit_study.py` (BOS LONG 4h, 21 coin): thoát sớm khi nến 4h đóng lại dưới mức phá → TP 0,5R +0,016R (chờ SL +0,012R), TP 1R +0,028R (+0,020R); lỗ TB khi thua -0,33R thay vì -0,72R; thắng ít hơn (43%/32%). **Tài khoản 57$ mất 10$/lệnh: cháy (cả hai cách)**; mất 3$/lệnh: 89–143$, sụt tối đa 47–78% (thoát sớm tốt hơn). Áp dụng mức thoát sớm vào scanner + Telegram.
+
 - **2026-10-09**: TP theo chất lượng (21 coin, phí 0): ★ (coin cùng xu hướng ngày) TP 0,5/1/1,5R = +0,016/+0,045/+0,081R; không ★ = +0,025/+0,004/+0,028R. Kết hợp ★ 1R + thường 0,5R: +0,042R, thắng 55%, t=2,0 (chủ dự án chọn); ★ 1,5R + thường 0,5R: +0,061R; chốt hết 0,5R: +0,021R. Chưa kiểm trên 18 coin mới.
 
 - **2026-10-09**: `service/scripts/expand_study.py` (phí 0, trượt + funding). **Khung**: 4h tốt nhất (0,5R +0,019R; 1,5R +0,061R t=2,3); 2h âm (-0,028R / -0,022R, 17 lệnh/tuần); 6h ≈ 0. **18 coin MỚI phí 0% MEXC (AAVE, ATOM, ALGO, APE, ENA, FET, HBAR, ICP, JUP, LDO, ONDO, ORDI, RENDER, SEI, TAO, WLD, XLM, ZEC), chưa từng dùng để chọn luật**: 0,5R -0,008R, 1,5R +0,002R → **luật không có lợi thế trên coin mới**; lợi thế trên 21 coin cũ có thể một phần do chọn luật trên chính dữ liệu đó. Không thêm coin mới vào scanner. Bot Telegram chạy trong server (instrumentation.ts, 5 phút/lần, chỉ tín hiệu mới), endpoint cần CRON_SECRET.
