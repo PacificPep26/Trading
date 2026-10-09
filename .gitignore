@@ -12,3 +12,4 @@ __pycache__/
 *.db
 # market data and YouTube transcripts stay local (size + copyright)
 data/
+service/telegram-sent.json

@@ -6,7 +6,7 @@ Start with [PLAN.md](PLAN.md) (current conclusions, what was tested, open plans)
 
 ## Web (Next.js)
 
-One page: a live scanner for 21 OKX perpetuals. The browser streams OKX public WebSocket data (tickers, 5-level books, trades, 15m candles); `/api/watchlist` finds the two tested 4h setups (BOS, double top/bottom) and `/api/live/levels` gives 4h/1h trend context. Each row shows VÀO NGAY / CHỜ / BỎ QUA with entry, stop, targets and position size; optional browser notifications. No API key, no orders.
+One page: a live scanner for 21 OKX perpetuals. The browser streams OKX public WebSocket data; `/api/watchlist` finds the tested 4h setups and `/api/live/levels` gives 4h/1h trend context. Each row shows VÀO NGAY / CHỜ / BỎ QUA with entry, structural stop, explicit TP prices and full-account isolated-x10 sizing. Telegram keeps 1h double-top messages as clearly labelled early watch alerts, not verified 4h entries. No API key, no orders.
 
 ```powershell
 npm install

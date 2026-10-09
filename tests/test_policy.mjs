@@ -4,17 +4,21 @@ import {
   isStarSetup,
   calculateSizing,
   calculatePartialPnL,
-} from "../lib/trading-policy.js";
+  isWatchSetup,
+} from "../lib/trading-policy.ts";
 
 // 1. Policy test
 assert.equal(isAllowedSetup("bos", 1, "4H"), true, "4H BOS LONG allowed");
 assert.equal(isAllowedSetup("bos", -1, "4H"), false, "4H BOS SHORT blocked");
-assert.equal(isAllowedSetup("double_top_bottom", -1, "4H"), true, "4H Double top SHORT allowed");
-assert.equal(isAllowedSetup("double_top_bottom", 1, "4H"), false, "4H Double bottom LONG blocked");
+assert.equal(isAllowedSetup("double_top_bottom", -1, "4H", -1, -1), true, "4H Double top SHORT allowed with both daily trends down");
+assert.equal(isAllowedSetup("double_top_bottom", -1, "4H", 1, -1), false, "4H Double top blocked unless BTC and coin agree");
+assert.equal(isAllowedSetup("double_top_bottom", 1, "4H", 1, 1), true, "4H Double bottom LONG allowed with both daily trends up");
 
-assert.equal(isAllowedSetup("double_top_bottom", -1, "1H"), true, "1H Double top SHORT allowed");
+assert.equal(isAllowedSetup("double_top_bottom", -1, "1H"), false, "1H is disabled: no statistically strong edge");
 assert.equal(isAllowedSetup("double_top_bottom", 1, "1H"), false, "1H Double bottom LONG blocked");
 assert.equal(isAllowedSetup("bos", 1, "1H"), false, "1H BOS LONG blocked");
+assert.equal(isWatchSetup("double_top_bottom", -1, "1H"), true, "1H double top remains an early watch alert");
+assert.equal(isWatchSetup("bos", 1, "1H"), false, "other 1H patterns are not watch alerts");
 
 // 2. Star test
 assert.equal(isStarSetup(1, 1, 1), true, "LONG star when BTC & coin up");
@@ -22,16 +26,18 @@ assert.equal(isStarSetup(1, -1, 1), false, "LONG not star when coin down");
 assert.equal(isStarSetup(-1, -1, 1), true, "SHORT star when coin down");
 
 // 3. Sizing test: Normal risk
-const s1 = calculateSizing(40, 5, 0.02);
-assert.equal(s1.notional, 250);
-assert.equal(s1.actualRiskUsd, 5);
+const s1 = calculateSizing(40, 0.02);
+assert.equal(s1.notional, 400);
+assert.equal(s1.margin, 40);
+assert.equal(s1.actualRiskUsd, 8);
 assert.equal(s1.isCapped, false);
 
-// 4. Sizing test: Tight stop (must be capped by equity to avoid insufficient margin)
-const s2 = calculateSizing(40, 5, 0.004);
-assert.ok(s2.isCapped, "Must cap when notional exceeds account purchasing power");
-assert.ok(s2.notional <= 40 * 0.9 * 20, "Notional within account equity purchasing power");
-assert.ok(s2.actualRiskUsd < 5, "Actual risk reduced when capped");
+// 4. Sizing test: full $40 isolated margin x10; loss follows structural stop distance
+const s2 = calculateSizing(40, 0.004);
+assert.equal(s2.notional, 400, "Full $40 margin at x10 gives $400 maximum notional");
+assert.equal(s2.actualRiskUsd, 1.6, "0.4% structural stop on $400 risks $1.60");
+const s3 = calculateSizing(40, 0.08);
+assert.equal(s3.actualRiskUsd, 32, "8% structural stop on $400 risks $32");
 
 // 5. Partial PnL test (exact math check)
 const pnl = calculatePartialPnL(5);

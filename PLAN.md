@@ -15,7 +15,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - Nhận xét lệnh đang chạy: nêu mức giá làm hỏng lý do vào lệnh; **không liệt kê rủi ro ngắn hạn kiểu "giá có thể hồi"** (lần trước làm chủ dự án thoát sớm một lệnh short đúng hướng).
 - Không hứa dự đoán; luôn kèm số liệu kiểm chứng.
 
-**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web`; deploy `railway up --service web --ci --detach`). Một trang: **Scanner live** 21 coin (WebSocket OKX), chỉ luật 4h, có ô Vốn $, cỡ lệnh rủi ro 2,5%, TP 0,5R/1,5R, thông báo trình duyệt; khối "Luật & kiến thức". **Bot Telegram** chạy trong server (`instrumentation.ts` → `lib/telegram-alerts.ts`), quét 5 phút/lần, chỉ gửi tín hiệu mới hợp lệ (vào, SL, TP 0,5R/1,5R, cỡ lệnh). GitHub `PacificPep26/Trading` (public).
+**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web`; deploy `railway up --service web --ci --detach`). Một trang: **Scanner live** 21 coin (WebSocket OKX), tín hiệu chính 4h, isolated x10, SL cấu trúc và TP hiển thị theo giá/1R. **Bot Telegram** chạy trong server (`instrumentation.ts` → `lib/telegram-alerts.ts`), quét 5 phút/lần; tín hiệu 4h và cảnh báo sớm 1h được ghi nhãn riêng. GitHub `PacificPep26/Trading` (public).
 
 ## Kết luận hiện tại: đánh thế nào (HỆ THỐNG CHUẨN HÓA MỚI, 2026-10-09 chiều)
 
@@ -23,22 +23,21 @@ Chủ dự án bỏ hoàn toàn kiểu đánh cũ (bỏ bold mode cược hết 
 
 1. **Khung 4H (Đánh theo cấu trúc)**:
    - **BOS LONG**: khi nến 4h đóng vượt đỉnh cấu trúc. (BOS SHORT = KHÔNG ĐÁNH).
-   - **Hai đỉnh SHORT**: khi nến 4h đóng xuyên qua neckline.
+   - **Hai đỉnh SHORT / hai đáy LONG**: chỉ khi BTC và coin cùng xu hướng ngày với lệnh; nến 4h phải đóng xuyên neckline.
    - **Báo trước**: Bot Telegram gửi tin báo trước ~5 phút (khi coin cách mức kích hoạt <= 1,2%).
-   - **Chốt lời**: TP1 chốt 50% ở 0,5R (+1,25$, dời SL hòa vốn) → TP2 chốt 50% ở 1,0R (+2,50$), tổng 2 bước là **+3,75$ (0,75R)**. Hoặc chốt 100% ở 1R để đủ **+5,00$**.
+   - **Chốt lời trên UI/bot**: luôn ghi trực tiếp giá coin dưới nhãn **TP gần** và **TP chính**, kèm USD ước tính; không bắt người dùng tự hiểu ký hiệu R. Nội bộ vẫn tính TP gần ở 0,5R và TP chính ở 1R. Có thể chốt nửa tại TP gần rồi dời SL hòa vốn, hoặc giữ tới TP chính.
    - **Thoát sớm**: Đóng lệnh ngay nếu nến 4h sau đóng ngược lại qua mức vừa phá.
 
-2. **Khung 1H (Đánh nhanh / Lướt trong ngày trên MEXC)**:
-   - **CHỈ ĐÁNH**: **Hai đỉnh (Double Top - SHORT)** khi nến 1h đóng dưới neckline (backtest 0% phí thắng 66,9% ở 0,5R, t > 3,7).
-   - Tuyệt đối **KHÔNG ĐÁNH lệnh LONG 1H** (vì nến 1h rất hay quét râu đỉnh rồi xả).
-   - **Chốt lời**: TP 0,5R (+2,5$ nếu 100% hoặc +1,25$ nếu chốt nửa) hoặc 1,0R (+5$).
+2. **Khung 1H: CẢNH BÁO SỚM ĐỂ CANH, KHÔNG PHẢI TÍN HIỆU CHÍNH**:
+   - Backtest 2023–2026: hai đỉnh SHORT 1H TP 0,5R đạt 66,7% thắng nhưng expectancy −0,0016R (t=−0,19); TP 1R +0,0126R nhưng t=+1,12. Tỷ lệ thắng cao không đồng nghĩa có lợi thế.
+   - Bot vẫn báo khi hai đỉnh SHORT 1H vừa kích hoạt để mở chart canh sóng, nhưng ghi rõ “chưa phải lệnh 4H”, không gắn ★★★ và không tuyên bố có lợi thế chắc chắn.
 
 3. **Quản lý vốn & Kỷ luật sống còn (Unified Policy: `lib/trading-policy.ts`)**:
-   - Vốn: ~40$. **Rủi ro mục tiêu: 5$/lệnh**.
-   - **Giới hạn an toàn (Margin cap)**: Vị thế không bao giờ vượt quá sức mua tài khoản ($40 \times \text{đòn bẩy an toàn}$). Nếu SL quá gần (< 0,6%), rủi ro thực tế tự động giảm xuống để không bị thiếu ký quỹ.
+   - Vốn: ~40$, dùng toàn bộ làm isolated margin **x10** (vị thế khoảng 400$). SL luôn theo cấu trúc: dưới đáy với LONG, trên đỉnh với SHORT. Không giới hạn lỗ cố định 5$; số tiền rủi ro = 400$ × khoảng cách SL (SL 4% ≈ 16$, SL 8% ≈ 32$).
+   - Chỉ nhận setup có SL cách 0,4–8%. Với x10, vùng 8% đã gần mức thanh lý lý thuyết nên phải tính thêm maintenance margin/slippage thực tế của sàn trước khi vào.
    - Thua 2 lệnh liên tiếp: nghỉ hết ngày, tuyệt đối không gỡ.
    - Sàn: Ưu tiên MEXC (0% phí giao dịch). Bot lấy giá OKX để quét nến.
-   - Dùng chung 1 policy `lib/trading-policy.ts` cho cả Website, API và Telegram alerts. Chống trùng Telegram bền vững qua file `service/telegram-sent.json`.
+   - Dùng chung 1 policy `lib/trading-policy.ts` cho Website, API và Telegram alerts. File `service/telegram-sent.json` chống gửi trùng qua restart trên cùng volume (không thay thế database khi chạy nhiều replica).
 
 ## Đã / chưa backtest
 

@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09 (chốt cấu hình UI/bot)**: tín hiệu chính giữ ở 4h; hai đỉnh SHORT 1h chỉ gửi dưới nhãn cảnh báo sớm để mở chart canh vì TP 1R chỉ +0,0126R/lệnh, t=1,12. Theo quyết định chủ tài khoản, sizing dùng toàn bộ equity làm isolated margin x10 (40$ → 400$); SL trên đỉnh/dưới đáy theo cấu trúc, rủi ro USD thay đổi theo khoảng cách SL. Website và Telegram hiển thị giá TP cụ thể cùng PnL ước tính; TP mặc định 100% ở 1R. Cách dùng vốn gần giống lệnh LINK 8/10 (36,52$ x10, SL cấu trúc), nhưng setup LINK là BOS SHORT nên không còn được coi là tín hiệu chính.
+
 - **2026-10-09**: `service/scripts/early_exit_study.py` (BOS LONG 4h, 21 coin): thoát sớm khi nến 4h đóng lại dưới mức phá → TP 0,5R +0,016R (chờ SL +0,012R), TP 1R +0,028R (+0,020R); lỗ TB khi thua -0,33R thay vì -0,72R; thắng ít hơn (43%/32%). **Tài khoản 57$ mất 10$/lệnh: cháy (cả hai cách)**; mất 3$/lệnh: 89–143$, sụt tối đa 47–78% (thoát sớm tốt hơn). Áp dụng mức thoát sớm vào scanner + Telegram.
 
 - **2026-10-09**: TP theo chất lượng (21 coin, phí 0): ★ (coin cùng xu hướng ngày) TP 0,5/1/1,5R = +0,016/+0,045/+0,081R; không ★ = +0,025/+0,004/+0,028R. Kết hợp ★ 1R + thường 0,5R: +0,042R, thắng 55%, t=2,0 (chủ dự án chọn); ★ 1,5R + thường 0,5R: +0,061R; chốt hết 0,5R: +0,021R. Chưa kiểm trên 18 coin mới.
@@ -10,7 +12,7 @@ Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận �
 
 - **2026-10-09**: `service/scripts/short_exit_study.py`: short 4h theo TP và xu hướng ngày. BOS SHORT: ngày giảm -0,03 đến +0,01R ở mọi TP (TP nhanh 0,5R thắng 62% nhưng +0,012R); ngày không giảm -0,03 đến -0,06R (2026 -0,17 đến -0,27R). **Hai đỉnh SHORT khi BTC & coin ngày giảm: +0,056 đến +0,067R (TP 1–2R; 2026 +0,08 đến +0,18R)**; ngày không giảm âm. → short chỉ qua hai đỉnh khi xu hướng ngày giảm; chốt sớm không cứu BOS SHORT.
 
-- **2026-10-09**: Cấu hình Telegram Bot (`@VictorHuynh_trading_bot`) cảnh báo setup 4h (BOS LONG & Hai đỉnh/đáy thuận xu hướng ngày BTC & coin) cho 21 coin. Tạo script Python `service/scripts/telegram_notifier.py` và API Route Next.js `/api/cron/telegram`. Đã lưu biến môi trường `TELEGRAM_BOT_TOKEN` & `TELEGRAM_CHAT_ID` trên Railway, deploy web service thành công.
+- **2026-10-09**: Cấu hình Telegram Bot (`@VictorHuynh_trading_bot`) cảnh báo setup 4h (BOS LONG & Hai đỉnh/đáy thuận xu hướng ngày BTC & coin) cho 21 coin. Bản Python thử nghiệm ban đầu sau đó được thay bằng `lib/telegram-alerts.ts` + API Route `/api/cron/telegram`. Đã lưu biến môi trường `TELEGRAM_BOT_TOKEN` & `TELEGRAM_CHAT_ID` trên Railway, deploy web service thành công.
 
 - **2026-10-09**: `service/scripts/bounce_long_study.py`: LONG bắt nhịp hồi sau cú sập (4h, 21 coin, phí MEXC + trượt): RSI 4h<25 rồi nến xanh đầu tiên -0,007R (2026 -0,241R); giảm ≥8%/48h + nến rút râu dưới -0,133R; giảm ≥8% + nến đóng trên đỉnh nến trước -0,072R. → không có lợi thế; chờ BOS LONG xác nhận.
 

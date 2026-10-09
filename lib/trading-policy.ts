@@ -4,7 +4,7 @@
  * Không để xảy ra tình trạng website một kiểu, bot một kiểu.
  */
 
-export const MAX_LEVERAGE = 20;
+export const MAX_LEVERAGE = 10;
 
 export interface SetupPolicy {
   style: string;
@@ -24,20 +24,21 @@ export interface TradeSizing {
 
 /**
  * Kiểm tra xem một setup có được phép giao dịch theo luật đã kiểm chứng không:
- * - 4H: BOS LONG (không đánh BOS SHORT); Hai đỉnh SHORT (không đánh Hai đáy).
- * - 1H: CHỈ Hai đỉnh SHORT (không đánh Long).
+ * - 4H: BOS LONG; hai đỉnh/hai đáy chỉ khi BTC và coin cùng xu hướng ngày với lệnh.
+ * - 1H: chưa có lợi thế đủ mạnh (t-stat tốt nhất hiện tại chỉ +1,12), không giao dịch.
  */
-export function isAllowedSetup(style: string, side: 1 | -1, tf: "4H" | "1H"): boolean {
+export function isAllowedSetup(style: string, side: 1 | -1, tf: "4H" | "1H", btcDaily = 0, ownDaily = 0): boolean {
   if (tf === "4H") {
     if (style === "bos" && side > 0) return true; // BOS LONG
-    if (style === "double_top_bottom" && side < 0) return true; // Hai đỉnh SHORT
-    return false;
-  }
-  if (tf === "1H") {
-    if (style === "double_top_bottom" && side < 0) return true; // Hai đỉnh SHORT
+    if (style === "double_top_bottom") return btcDaily === side && ownDaily === side;
     return false;
   }
   return false;
+}
+
+/** 1H is an early chart-watch alert only, never a verified trade signal. */
+export function isWatchSetup(style: string, side: 1 | -1, tf: "4H" | "1H"): boolean {
+  return tf === "1H" && style === "double_top_bottom" && side < 0;
 }
 
 /**
@@ -56,38 +57,27 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
 /**
  * Tính toán vị thế an toàn, giới hạn không vượt quá số dư tài khoản.
  * @param equity Vốn thực tế trong tài khoản (ví dụ 40$)
- * @param targetRiskUsd Rủi ro mong muốn (ví dụ 5$)
  * @param riskPct Khoảng cách dừng lỗ (|entry - stop| / entry)
  */
-export function calculateSizing(equity: number, targetRiskUsd: number, riskPct: number): TradeSizing {
-  if (riskPct <= 0) {
+export function calculateSizing(equity: number, riskPct: number): TradeSizing {
+  if (!Number.isFinite(equity) || !Number.isFinite(riskPct) || equity <= 0 || riskPct <= 0) {
     return { notional: 0, leverage: 1, margin: 0, actualRiskUsd: 0, isCapped: false };
   }
 
-  // Đòn bẩy an toàn: thanh lý xa hơn SL ít nhất 30%
-  const safeLev = Math.min(MAX_LEVERAGE, Math.max(2, Math.floor(0.7 / riskPct)));
+  // Chủ tài khoản giao dịch isolated x10; position size thay đổi theo SL cấu trúc.
+  const safeLev = MAX_LEVERAGE;
 
-  // Sức mua tối đa của tài khoản (dùng tối đa 90% vốn để tránh thiếu ký quỹ)
-  const maxNotional = equity * 0.9 * safeLev;
-
-  // Vị thế lý tưởng theo rủi ro mục tiêu
-  let idealNotional = targetRiskUsd / riskPct;
-  let isCapped = false;
-
-  if (idealNotional > maxNotional) {
-    idealNotional = maxNotional;
-    isCapped = true;
-  }
-
-  const margin = idealNotional / safeLev;
-  const actualRiskUsd = idealNotional * riskPct;
+  // Chủ tài khoản chọn luôn dùng toàn bộ equity làm isolated margin ở x10.
+  const maxNotional = equity * safeLev;
+  const margin = equity;
+  const actualRiskUsd = maxNotional * riskPct;
 
   return {
-    notional: Math.round(idealNotional * 10) / 10,
+    notional: Math.round(maxNotional * 10) / 10,
     leverage: safeLev,
     margin: Math.round(margin * 10) / 10,
     actualRiskUsd: Math.round(actualRiskUsd * 100) / 100,
-    isCapped,
+    isCapped: false,
   };
 }
 

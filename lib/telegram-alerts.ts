@@ -1,7 +1,6 @@
 // Telegram signal alerts according to disciplined backtested rules:
-// 1. 4H Frame: BOS LONG & Double Top (SHORT) with early exit + TP 0.5R (50%) & 1.0R (50%).
+// 4H only: BOS LONG; double top/bottom only with matching BTC + coin daily trends.
 //    Includes 5-minute heads-up preview before each 4h close when coin is near level (<= 1.2%).
-// 2. 1H Frame: Double Top (SHORT) only (TP 0.5R - 1.0R fast scalping).
 // Uses unified trading policy from @/lib/trading-policy.
 
 import fs from "fs";
@@ -10,6 +9,7 @@ import { analyse } from "@/lib/patterns";
 import { candles } from "@/lib/okx";
 import {
   isAllowedSetup,
+  isWatchSetup,
   isStarSetup,
   calculateSizing,
   calculatePartialPnL,
@@ -21,7 +21,6 @@ const COINS = [
 ];
 
 const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
-const RISK_PER_TRADE = Number(process.env.ALERT_RISK_USD ?? 5.0); // Target $5 at 1R
 
 const DEDUP_FILE = path.join(process.cwd(), "service", "telegram-sent.json");
 
@@ -87,7 +86,7 @@ export async function send(text: string): Promise<boolean> {
   }
 }
 
-/** Scan 4H and 1H for disciplined setups. */
+/** Scan the verified 4H setups. */
 export async function scanAndAlert(): Promise<string[]> {
   const btc = await dailyTrend("BTC");
   const itemsToSend: { key: string; msg: string }[] = [];
@@ -103,7 +102,7 @@ export async function scanAndAlert(): Promise<string[]> {
       // 1. Quét 4H (BOS LONG & Hai đỉnh SHORT)
       for (const s of a4.setups) {
         if (s.state !== "triggered") continue;
-        if (!isAllowedSetup(s.style, s.side, "4H")) continue;
+        if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
 
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.004 || risk > 0.08) continue;
@@ -112,11 +111,10 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key)) continue;
 
         const R = Math.abs(s.entry - s.stop);
-        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+        const sizing = calculateSizing(CAPITAL, risk);
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-
         const tp05 = s.entry + s.side * 0.5 * R;
-        const tp10 = s.entry + s.side * 1.0 * R;
+        const tp10 = s.entry + s.side * R;
 
         const isStar = isStarSetup(s.side, own, btc);
         const header = isStar
@@ -130,42 +128,29 @@ export async function scanAndAlert(): Promise<string[]> {
             `• Vào: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
             `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
             `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-            `• Chốt lời (TP): TP1 (0,5R) chốt 50%: +${pnl.winTp1.toFixed(2)}$ (dời SL hòa) → TP2 (1R) chốt 50%: +${pnl.winTp2.toFixed(2)}$ (Tổng 2 TP: +${pnl.totalWin.toFixed(2)}$, hoặc chốt 100% ở 1R để đủ +${sizing.actualRiskUsd}$)${isStar ? " (Có thể gồng thêm theo trend)" : ""}\n` +
+            `• TP gần: ${f(tp05)} (nếu chốt 50%: +${pnl.winTp1.toFixed(2)}$)\n` +
+            `• TP chính: ${f(tp10)} (chốt toàn bộ: +${sizing.actualRiskUsd}$; nếu đã chốt nửa thì tổng +${pnl.totalWin.toFixed(2)}$)${isStar ? " · Có thể gồng thêm theo trend" : ""}\n` +
             `• Vị thế: Ký quỹ ~${sizing.margin}$ · Đòn bẩy x${sizing.leverage} (Notional ~${sizing.notional}$) · Mất ~${sizing.actualRiskUsd}$ nếu dính SL${sizing.isCapped ? " (đã giới hạn vốn)" : ""}`
         });
       }
 
-      // 2. Quét 1H (CHỈ HAI ĐỈNH SHORT - Đánh nhanh lướt sóng trên MEXC)
+      // 1H only wakes the user up to watch the chart; it is not a verified 4H entry.
       const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
       for (const s of a1.setups) {
-        if (s.state !== "triggered") continue;
-        if (!isAllowedSetup(s.style, s.side, "1H")) continue;
-
+        if (s.state !== "triggered" || !isWatchSetup(s.style, s.side, "1H")) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.003 || risk > 0.04) continue;
-
-        const key = `1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
+        const key = `WATCH:1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
         if (sent.has(key)) continue;
-
-        const R = Math.abs(s.entry - s.stop);
-        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
-
-        const tp05 = s.entry - 0.5 * R;
-        const tp10 = s.entry - 1.0 * R;
-
-        const isStar1h = isStarSetup(-1, own, btc);
-        const header1h = isStar1h
-          ? `🌟 [KÈO ĐẸP 1H ★★★] ${coin} 🔴 SHORT (Hai đỉnh 1h)\n🔥 THUẬN XU HƯỚNG NGÀY GIẢM (Tỷ lệ thắng cao 67%, ăn nhanh +2,5$ đến +5$)`
-          : `⚡ [1H - LƯỚT NHANH] ${coin} 🔴 SHORT (Hai đỉnh 1h)`;
-
+        const sizing = calculateSizing(CAPITAL, risk);
         itemsToSend.push({
           key,
           msg:
-            `${header1h}\n` +
-            `• Vào: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
-            `• Dừng lỗ (SL): ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
-            `• TP lướt nhanh: 0,5R ăn +${(sizing.actualRiskUsd * 0.5).toFixed(2)}$ hoặc 1R ăn +${sizing.actualRiskUsd}$\n` +
-            `• Vị thế: Ký quỹ ~${sizing.margin}$ · Đòn bẩy x${sizing.leverage} (Notional ~${sizing.notional}$) · Mất ~${sizing.actualRiskUsd}$ nếu dính SL${sizing.isCapped ? " (đã giới hạn vốn)" : ""}`
+            `👀 [CẢNH BÁO SỚM 1H — CHƯA PHẢI LỆNH 4H] ${coin} 🔴 Hai đỉnh SHORT\n` +
+            `• Nến 1h vừa đóng dưới ${f(s.entry)}; mở chart để canh, không coi đây là kèo ★★★\n` +
+            `• SL tham khảo: ${f(s.stop)} (${(risk * 100).toFixed(2)}%)\n` +
+            `• Nếu vẫn vào sớm: tối đa x${sizing.leverage}, vị thế ${sizing.notional}$, rủi ro ${sizing.actualRiskUsd}$\n` +
+            `• Backtest 1H chưa đủ mạnh (TP 1R: +0,0126R/lệnh, t=1,12). Ưu tiên chờ xác nhận 4H.`
         });
       }
 
@@ -187,7 +172,7 @@ export async function scanAndAlert(): Promise<string[]> {
 }
 
 const H4 = 4 * 3_600_000;
-const H1 = 1 * 3_600_000;
+const H1 = 3_600_000;
 const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 
 /** Báo trước: ~5 phút trước khi nến đóng (chỉ báo khi coin áp sát mức kích hoạt <= 1%) */
@@ -196,14 +181,12 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
   const left4h = close4h - now;
   const close1h = Math.floor(now / H1) * H1 + H1;
   const left1h = close1h - now;
-
   // Báo trước ~5 phút (từ phút 53 đến 58)
   const is4hSlot = force || (left4h <= 7 * 60_000 && left4h >= 1 * 60_000);
-  const is1hSlot = !is4hSlot && (left1h <= 7 * 60_000 && left1h >= 1 * 60_000);
-
+  const is1hSlot = !is4hSlot && left1h <= 7 * 60_000 && left1h >= 1 * 60_000;
   if (!is4hSlot && !is1hSlot) return null;
 
-  const key = is4hSlot ? `4H:${close4h}` : `1H:${close1h}`;
+  const key = is4hSlot ? `4H:${close4h}` : `WATCH:1H:${close1h}`;
   if (!force && preSent.has(key)) return null;
 
   const btc = await dailyTrend("BTC");
@@ -219,12 +202,12 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         const a4 = analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300));
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
-          if (!isAllowedSetup(s.style, s.side, "4H")) continue;
+          if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
 
           const risk = Math.abs(s.entry - s.stop) / s.entry;
           if (risk < 0.004 || risk > 0.08 || Math.abs(s.distancePct) > 0.012) continue;
 
-          const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
+          const sizing = calculateSizing(CAPITAL, risk);
           const isStar = isStarSetup(s.side, own, btc);
 
           lines4h.push(
@@ -234,22 +217,14 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         }
       }
 
-      // 2. Quét 1h (Hai đỉnh SHORT) khi còn cách <= 1.0%
       const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
       for (const s of a1.setups) {
-        if (s.state !== "pending") continue;
-        if (!isAllowedSetup(s.style, s.side, "1H")) continue;
-
+        if (s.state !== "pending" || !isWatchSetup(s.style, s.side, "1H")) continue;
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         if (risk < 0.003 || risk > 0.04 || Math.abs(s.distancePct) > 0.01) continue;
-
-        const sizing = calculateSizing(CAPITAL, RISK_PER_TRADE, risk);
-        const isStar1h = isStarSetup(-1, own, btc);
-
-        lines1h.push(
-          `• ${coin} 🔴 SHORT (Hai đỉnh 1h)${isStar1h ? " ⭐ [KÈO ĐẸP 1H ★★★]" : ""}: nến 1h đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (${(risk * 100).toFixed(1)}%) · x${sizing.leverage}`
-        );
+        lines1h.push(`• ${coin} 🔴 hai đỉnh 1H: cần đóng < ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL tham khảo ${f(s.stop)}`);
       }
+
     } catch (e) {
       console.error(`telegram pre ${coin}`, e);
     }
@@ -260,21 +235,13 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
     return null;
   }
 
-  let msg = "";
-  if (is4hSlot) {
-    msg = `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n`;
-    if (lines4h.length) {
-      msg += `📌 Setup 4H có thể kích hoạt:\n${lines4h.join("\n")}\n`;
-    }
-    if (lines1h.length) {
-      msg += `\n⚡ Lướt 1H sắp đóng nến:\n${lines1h.join("\n")}\n`;
-    }
-    msg += `\nChỉ vào sau khi nến ĐÓNG đúng điều kiện; bot sẽ báo lại khi kích hoạt.`;
-  } else {
-    msg = `⚡ [1H] Sắp đóng nến lúc ${vnTime(close1h)} (còn ~${Math.round(left1h / 60_000)} phút)\n` +
-      `🔴 Có thể kích hoạt Hai đỉnh SHORT 1h:\n${lines1h.join("\n")}\n` +
-      `\nChỉ vào lệnh sau khi nến 1h ĐÓNG NẾN; bot sẽ báo lại khi kích hoạt.`;
-  }
+  const msg = is4hSlot
+    ? `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
+      `${lines4h.length ? `📌 Setup 4H có thể kích hoạt:\n${lines4h.join("\n")}\n` : ""}` +
+      `${lines1h.length ? `\n👀 Cảnh báo sớm 1H để mở chart canh:\n${lines1h.join("\n")}\n` : ""}` +
+      `\nChỉ setup 4H mới là tín hiệu hệ thống đã kiểm chứng.`
+    : `👀 [CẢNH BÁO SỚM 1H — CHƯA PHẢI LỆNH 4H] Còn ~${Math.round(left1h / 60_000)} phút đóng nến\n` +
+      `${lines1h.join("\n")}\n\nMở chart để canh; ưu tiên chờ xác nhận, không gắn ★★★.`;
 
   const ok = await send(msg);
   if (ok) {

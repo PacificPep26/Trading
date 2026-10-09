@@ -28,11 +28,11 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   return d.at(-1)!.c > ema ? 1 : -1;
 }
 
-// Unified rule: 4H BOS LONG and Double Top SHORT only
-function blockReason(style: string, side: 1 | -1) {
-  if (!isAllowedSetup(style, side, "4H")) {
+// Unified rule: 4H BOS LONG; double top/bottom only with BTC + coin daily alignment.
+function blockReason(style: string, side: 1 | -1, btc: number, own: number) {
+  if (!isAllowedSetup(style, side, "4H", btc, own)) {
     if (style === "bos" && side < 0) return "BOS SHORT: không có lợi thế qua kiểm chứng";
-    if (style === "double_top_bottom" && side > 0) return "Hai đáy: không đánh lệnh Long hai đáy";
+    if (style === "double_top_bottom") return "Hai đỉnh/đáy chỉ đánh khi BTC và coin cùng xu hướng ngày với lệnh";
     return "Không nằm trong danh mục setup đã kiểm chứng";
   }
   return null;
@@ -48,7 +48,7 @@ export async function GET() {
         const risk = Math.abs(s.entry - s.stop) / s.entry;
         return risk >= RISK_RANGE[0] && risk <= RISK_RANGE[1];
       })
-      .map((s) => ({ ...s, blocked: blockReason(s.style, s.side) }));
+      .map((s) => ({ ...s, blocked: blockReason(s.style, s.side, btcDaily, own) }));
     return { coin, ...a, daily: own, setups };
   };
   // OKX rate-limits bursts on /market/candles: scan in small batches and retry once

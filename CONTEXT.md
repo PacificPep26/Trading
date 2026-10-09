@@ -21,3 +21,5 @@ Phòng thí nghiệm cá nhân về giao dịch hợp đồng vĩnh cửu crypto
 - Backtest: chỉ dùng nến đã đóng, vào lệnh ở giá mở nến sau, dừng lỗ được tính trước khi cùng nến chạm cả hai. Chủ dự án giao dịch trên sàn MEXC miễn phí giao dịch (0% phí sàn) -> backtest/thống kê tính theo 0% phí sàn (zero-fee); 2026 là năm kiểm tra.
 - Không lưu key/secret trong code hay git (repo GitHub là public). Biến môi trường để trên Railway.
 - Trả lời chủ dự án bằng tiếng Việt, dứt khoát, kèm số liệu kiểm chứng; không hứa dự đoán.
+- Cấu hình thực chiến hiện tại: dùng toàn bộ vốn làm isolated margin x10 (40$ → khoảng 400$ vị thế). SL theo cấu trúc — dưới đáy với LONG, trên đỉnh với SHORT — không giới hạn lỗ cố định 5$. Luôn hiển thị giá TP và PnL ước tính.
+- Tín hiệu chính là setup 4h. Hai đỉnh SHORT 1h chỉ là cảnh báo sớm để mở chart canh và phải ghi rõ chưa phải tín hiệu 4h.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { calculateSizing, calculatePartialPnL } from "@/lib/trading-policy";
+import { calculateSizing, calculatePartialPnL, isStarSetup } from "@/lib/trading-policy";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
@@ -76,14 +76,20 @@ export default function LiveScanner() {
   const [levels, setLevels] = useState<LevelsData | null>(null);
   const [capital, setCapital] = useState(36); // legacy margin ($)
   const [equity, setEquity] = useState(40); // account size ($)
-  const [riskUsd, setRiskUsd] = useState(5); // fixed risk per trade ($5 to win $5 at 1R)
-  // "disciplined" = MEXC 0% fee, fixed $5 risk, TP 0.5R & 1.0R
+  // "disciplined" = target $5 risk/reward at 1R, capped by available buying power
   const [mode, setMode] = useState<"disciplined" | "bold" | "safe">("disciplined");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   useEffect(() => {
     const t = setTimeout(() => {
       try {
         const m = localStorage.getItem("scanner-mode-v2");
         if (m === "safe" || m === "bold" || m === "disciplined") setMode(m);
+        const vm = localStorage.getItem("scanner-view-mode");
+        if (vm === "cards" || vm === "table") {
+          setViewMode(vm);
+        } else if (typeof window !== "undefined" && window.innerWidth >= 860) {
+          setViewMode("table");
+        }
       } catch { /* ignore */ }
     }, 0);
     return () => clearTimeout(t);
@@ -93,8 +99,6 @@ export default function LiveScanner() {
       try {
         const e = Number(localStorage.getItem("scanner-equity"));
         if (e > 0) setEquity(e);
-        const r = Number(localStorage.getItem("scanner-risk"));
-        if (r > 0) setRiskUsd(r);
         const v = Number(localStorage.getItem("scanner-margin"));
         if (v > 0) setCapital(v);
       } catch { /* ignore */ }
@@ -225,105 +229,415 @@ export default function LiveScanner() {
   const idle = COINS.filter((c) => !plans.some((p) => p.coin === c));
   const trendOf = (coin: string) => levels?.rows.find((r) => r.coin === coin);
 
-  return <section className="card live-scanner">
-    <header className="card-head">
-      <h2>Scanner live · 21 coin</h2>
-      <div className="live-head">
-        <label className="capital">
-          Kiểu
-          <select value={mode} onChange={(e) => { const m = e.target.value as "disciplined" | "bold" | "safe"; setMode(m); try { localStorage.setItem("scanner-mode-v2", m); } catch { /* ignore */ } }}>
-            <option value="disciplined">Mục tiêu 5$/lệnh (TP 0,5R &amp; 1R, rủi ro 5$)</option>
-            <option value="safe">An toàn (★ xu hướng ngày, 10% vốn)</option>
-            <option value="bold">Kiểu cũ (x10, dồn lệnh, TP 0,75R)</option>
-          </select>
-        </label>
-        <label className="capital">
-          Vốn $
-          <input inputMode="decimal" value={equity} onChange={(e) => {
-            const v = Number(e.target.value.replace(",", ".")) || 0;
-            setEquity(v);
-            try { localStorage.setItem("scanner-equity", String(v)); } catch { /* ignore */ }
-          }} />
-        </label>
-        {mode === "disciplined" ? (
-          <label className="capital">
-            Rủi ro/lệnh $
-            <input inputMode="decimal" value={riskUsd} onChange={(e) => {
-              const v = Number(e.target.value.replace(",", ".")) || 0;
-              setRiskUsd(v);
-              try { localStorage.setItem("scanner-risk", String(v)); } catch { /* ignore */ }
-            }} />
-          </label>
-        ) : (
-          <label className="capital">
-            Ký quỹ $
-            <input inputMode="decimal" value={capital} onChange={(e) => {
-              const v = Number(e.target.value.replace(",", ".")) || 0;
-              setCapital(v);
-              try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ }
-            }} />
-          </label>
-        )}
-        <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
-          {notify ? "Đã bật thông báo" : "Bật thông báo"}
-        </button>
-        <span className={`live-state ${connection}`}>{connection === "live" ? "● LIVE OKX" : connection === "connecting" ? "Đang kết nối…" : "Đang kết nối lại…"}</span>
-      </div>
-    </header>
-    <p className="muted">
-      Giá, sổ lệnh 5 mức và giao dịch 30 giây qua WebSocket (mỗi giây); tín hiệu 4h và xu hướng tính lại mỗi 60 giây{levels ? ` (lần cuối ${clock(levels.computedAt)})` : ""}.
-      {watch?.btcDaily ? <b>Xu hướng ngày BTC: {watch.btcDaily > 0 ? "TĂNG (ưu tiên LONG)" : "GIẢM (chỉ hai đỉnh SHORT)"}. </b> : null}<b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận <b>BOS LONG</b> hoặc <b>hai đỉnh SHORT</b> (cùng xu hướng ngày BTC &amp; coin), và giá chưa chạy quá 0,5R. BOS SHORT và lệnh ngược xu hướng ngày ghi KHÔNG ĐÁNH. Đã bỏ kiểu vùng hồi 1h.
-    </p>
-    {error && <p className="verdict bad">{error}</p>}
-    {shown.length === 0 && <p className="verdict neutral"><b>Chưa có lệnh nào vào được.</b> Lần kiểm tra tới: {next4h(now)}. Khi có tín hiệu, trang này kêu và bot gửi Telegram.</p>}
-    {shown.length > 0 && <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP</th><th>Đòn bẩy · Cỡ lệnh · Lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
-      <tbody>{shown.map((p) => {
-        const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
-        const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
-        const flowWith = p.side > 0 ? tape.tradeBuy : 1 - tape.tradeBuy;
-        return <tr key={p.id} className={p.key === "enter" ? "live-enter" : ""}>
-          <td><b>{p.coin}</b> <span className={`pill ${p.side > 0 ? "long" : "short"}`}>{p.side > 0 ? "LONG" : "SHORT"}</span>{(() => { const d = watch?.coins.find((c) => c.coin === p.coin)?.daily; return d === p.side ? <small className="pos">★ coin cùng xu hướng ngày (tốt nhất)</small> : d ? <small>coin ngược xu hướng ngày</small> : null; })()}</td>
-          <td>{p.title}</td>
-          <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
-          <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
-          <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
-          <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
-          <td className="pos">{!l ? "—" : mode === "disciplined" ? (() => {
-            const sizing = calculateSizing(equity, riskUsd, riskPct);
-            const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-            return <>
-              <b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b>
-              <small>50% ở 0,5R (+{pnl.winTp1.toFixed(2)}$ · dời SL hòa)</small>
-              <b>{fmt(l.entry + p.side * 1.0 * Math.abs(l.entry - l.stop))}</b>
-              <small>50% ở 1R (+{pnl.winTp2.toFixed(2)}$ · Tổng +{pnl.totalWin.toFixed(2)}$)</small>
-            </>;
-          })() : mode === "bold" ? <><b>{fmt(l.entry + p.side * 0.75 * Math.abs(l.entry - l.stop))}</b><small>0,75R</small></> : <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>nửa ở 0,5R → SL về giá vào</small><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>nửa ở 1R</small></>}</td>
-          <td>{!l ? "—" : (() => {
-            if (mode === "disciplined") {
-              const sizing = calculateSizing(equity, riskUsd, riskPct);
-              const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-              return <>
-                <b>x{sizing.leverage}</b> · {sizing.margin}$ ký quỹ ({sizing.notional}$ vị thế)
-                <small className="neg">−{sizing.actualRiskUsd}$ ở SL{sizing.isCapped ? " (đã giới hạn theo vốn)" : ""}</small>
-                <small className="pos">+{pnl.winTp1.toFixed(2)}$ ở 0,5R · +{pnl.totalWin.toFixed(2)}$ ở 2 TP</small>
-              </>;
-            }
-            const lev = mode === "bold" ? Math.min(10, Math.floor(0.85 / riskPct)) : Math.min(20, (equity * 0.1) / (capital * riskPct));
-            const notional = capital * lev, win = notional * riskPct * 0.75;
-            return <><b>x{lev.toFixed(lev < 10 ? 1 : 0)}</b> · {capital}$ ký quỹ ({notional.toFixed(0)}$)<small>−{(notional * riskPct).toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small></>;
-          })()}</td>
-          <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
-        </tr>;
-      })}</tbody>
-    </table></div>}
-    {blocked.length > 0 && <p className="muted">Bị luật loại (không đánh): {blocked.map((p) => `${p.coin} ${p.side > 0 ? "LONG" : "SHORT"} – ${p.reason}`).join("; ")}.</p>}
-    {idle.length > 0 && <p className="muted">Chưa có cấu trúc 4h (xu hướng 4h / 1h): {idle.map((c) => {
-      const t = trendOf(c);
-      return t ? `${c} (4h ${t.trend4h > 0 ? "tăng" : t.trend4h < 0 ? "giảm" : "ngang"}, 1h ${t.trend1h > 0 ? "tăng" : t.trend1h < 0 ? "giảm" : "ngang"})` : c;
-    }).join(", ")}.</p>}
-    <p className="note">
-      Kỷ luật MEXC (0% phí): mục tiêu 5$/lệnh ở TP 1R (hoặc chốt 0,5R ăn 2,5$), rủi ro cố định ~5$/lệnh trên vốn 40$. Thua 2 lệnh liên tiếp (-10$) nghỉ hết ngày.
-    </p>
-  </section>;
+  return (
+    <section className="card live-scanner-card">
+      <header className="card-head scanner-header">
+        <div className="scanner-title-bar">
+          <div>
+            <h2>Scanner live · 21 coin</h2>
+            <p className="scanner-sub-status">
+              Tín hiệu 4h &amp; 1h · WebSocket OKX{levels ? ` (cập nhật ${clock(levels.computedAt)})` : ""}
+            </p>
+          </div>
+          <div className="scanner-live-badge-wrap">
+            <span className={`live-state-pill ${connection}`}>
+              <span className="live-dot" />
+              {connection === "live" ? "LIVE OKX" : connection === "connecting" ? "ĐANG KẾT NỐI…" : "KẾT NỐI LẠI…"}
+            </span>
+          </div>
+        </div>
+
+        <div className="scanner-controls-panel">
+          <div className="ctrl-group ctrl-mode">
+            <label className="ctrl-label">Kiểu giao dịch</label>
+            <div className="select-wrap">
+              <select
+                value={mode}
+                onChange={(e) => {
+                  const m = e.target.value as "disciplined" | "bold" | "safe";
+                  setMode(m);
+                  try { localStorage.setItem("scanner-mode-v2", m); } catch { /* ignore */ }
+                }}
+              >
+                <option value="disciplined">Toàn bộ vốn isolated x10 · SL cấu trúc (Khuyên dùng)</option>
+                <option value="safe">An toàn (★ xu hướng ngày, 10% vốn)</option>
+                <option value="bold">Kiểu cũ (x10, dồn lệnh, TP 0,75R)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="ctrl-row-params">
+            <div className="ctrl-group">
+              <label className="ctrl-label">Vốn tài khoản ($)</label>
+              <div className="input-group">
+                <span className="input-affix">$</span>
+                <input
+                  inputMode="decimal"
+                  value={equity}
+                  onChange={(e) => {
+                    const v = Number(e.target.value.replace(",", ".")) || 0;
+                    setEquity(v);
+                    try { localStorage.setItem("scanner-equity", String(v)); } catch { /* ignore */ }
+                  }}
+                />
+              </div>
+            </div>
+
+            {mode !== "disciplined" ? (
+              <div className="ctrl-group">
+                <label className="ctrl-label">Ký quỹ ($)</label>
+                <div className="input-group">
+                  <span className="input-affix">$</span>
+                  <input
+                    inputMode="decimal"
+                    value={capital}
+                    onChange={(e) => {
+                      const v = Number(e.target.value.replace(",", ".")) || 0;
+                      setCapital(v);
+                      try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ }
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="ctrl-group">
+                <label className="ctrl-label">Đòn bẩy MEXC</label>
+                <div className="fixed-badge">x10 Isolated</div>
+              </div>
+            )}
+          </div>
+
+          <div className="ctrl-row-actions">
+            <button
+              className={`btn-notify ${notify ? "is-active" : ""}`}
+              disabled={notify}
+              onClick={async () => {
+                if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") {
+                  setNotify(true);
+                  beep();
+                  try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ }
+                }
+              }}
+            >
+              {notify ? "✓ Đã bật chuông báo" : "🔔 Bật chuông báo khi có kèo"}
+            </button>
+
+            {shown.length > 0 && (
+              <div className="view-mode-toggle">
+                <button
+                  type="button"
+                  className={`view-mode-btn ${viewMode === "cards" ? "active" : ""}`}
+                  onClick={() => {
+                    setViewMode("cards");
+                    try { localStorage.setItem("scanner-view-mode", "cards"); } catch { /* ignore */ }
+                  }}
+                >
+                  📱 Thẻ
+                </button>
+                <button
+                  type="button"
+                  className={`view-mode-btn ${viewMode === "table" ? "active" : ""}`}
+                  onClick={() => {
+                    setViewMode("table");
+                    try { localStorage.setItem("scanner-view-mode", "table"); } catch { /* ignore */ }
+                  }}
+                >
+                  📋 Bảng
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {error && <p className="verdict bad">{error}</p>}
+
+      {/* Radar / Empty State Card */}
+      {shown.length === 0 && (
+        <div className="scanner-empty-card">
+          <div className="radar-head">
+            <div className="radar-pulse">
+              <span className="radar-ping" />
+              <span className="radar-core" />
+            </div>
+            <div>
+              <h3 className="radar-title">Chưa có lệnh nào thỏa mãn bộ lọc</h3>
+              <p className="radar-sub">Đang quét 21 cặp coin liên tục qua WebSocket OKX</p>
+            </div>
+          </div>
+
+          <div className="radar-grid">
+            <div className="radar-item">
+              <span className="radar-lbl">⏰ Nến 4H kế đóng lúc</span>
+              <b className="radar-val highlight">{next4h(now)}</b>
+              <span className="radar-hint">Chỉ vào lệnh khi nến 4h đã đóng xác nhận</span>
+            </div>
+            <div className="radar-item">
+              <span className="radar-lbl">📈 Xu hướng ngày BTC</span>
+              <b className={`radar-val ${watch?.btcDaily && watch.btcDaily > 0 ? "pos" : "neg"}`}>
+                {watch?.btcDaily ? (watch.btcDaily > 0 ? "TĂNG (Ưu tiên LONG)" : "GIẢM (Chỉ hai đỉnh SHORT)") : "Đang kiểm tra…"}
+              </b>
+              <span className="radar-hint">Lọc nhiễu theo EMA50 ngày</span>
+            </div>
+          </div>
+
+          <div className="radar-footer">
+            <span>🔔 <b>Tự động báo kèo:</b> Khi có tín hiệu xác nhận (BOS 4H hoặc Hai đỉnh/đáy), trang web sẽ rung chuông và bot sẽ bắn thông báo vào Telegram của bạn ngay lập tức.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Signals Display: Cards View */}
+      {shown.length > 0 && viewMode === "cards" && (
+        <div className="signal-cards-wrap">
+          {shown.map((p) => {
+            const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
+            const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
+            const flowWith = p.side > 0 ? tape.tradeBuy : 1 - tape.tradeBuy;
+            const ownDaily = watch?.coins.find((c) => c.coin === p.coin)?.daily ?? 0;
+            const btcDaily = watch?.btcDaily ?? 0;
+            const isStar = isStarSetup(p.side, ownDaily, btcDaily);
+            const sizing = mode === "disciplined" ? calculateSizing(equity, riskPct) : null;
+            const pnl = sizing ? calculatePartialPnL(sizing.actualRiskUsd) : null;
+
+            return (
+              <article key={p.id} className={`signal-card ${p.key === "enter" ? "is-enter" : ""}`}>
+                <div className="sig-card-head">
+                  <div className="sig-coin-group">
+                    <span className="sig-coin-sym">{p.coin}</span>
+                    <span className={`pill ${p.side > 0 ? "long" : "short"}`}>
+                      {p.side > 0 ? "LONG ↗" : "SHORT ↘"}
+                    </span>
+                    {isStar && <span className="star-tag">★ Thuận xu hướng ngày</span>}
+                  </div>
+                  <span className={`sig-verdict-badge ${p.key}`}>
+                    {p.text}
+                  </span>
+                </div>
+
+                <div className="sig-desc-row">
+                  <span className="sig-pattern-title">{p.title}</span>
+                  <span className="sig-pattern-reason">{p.reason}</span>
+                </div>
+
+                <div className="sig-prices-grid">
+                  <div className="sig-price-box">
+                    <span className="box-lbl">Giá Live</span>
+                    <b className="box-val">{tape.price ? fmt(tape.price) : "—"}</b>
+                    <span className="box-sub">{clock(tape.ts)}</span>
+                  </div>
+                  <div className="sig-price-box">
+                    <span className="box-lbl">Điểm Vào</span>
+                    <b className="box-val pos">{!l ? "—" : p.key === "enter" ? fmt(l.entry) : fmt(l.entry)}</b>
+                    <span className="box-sub">{p.key === "enter" ? "Đã xác nhận" : `Chờ ${next4h(now)}`}</span>
+                  </div>
+                  <div className="sig-price-box">
+                    <span className="box-lbl">Dừng Lỗ (SL)</span>
+                    <b className="box-val neg">{l ? fmt(l.stop) : "—"}</b>
+                    <span className="box-sub neg">{l ? `−${pct(riskPct)}` : ""}</span>
+                  </div>
+                </div>
+
+                {l && mode === "disciplined" && sizing && pnl && (
+                  <>
+                    <div className="sig-tp-panel">
+                      <div className="tp-line">
+                        <span className="tp-badge">TP 1 (0,5R)</span>
+                        <b className="tp-val">{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b>
+                        <span className="tp-sub pos">Chốt 50%: +{pnl.winTp1.toFixed(2)}$ · Dời SL hòa</span>
+                      </div>
+                      <div className="tp-line">
+                        <span className="tp-badge">TP 2 (1,0R)</span>
+                        <b className="tp-val">{fmt(l.entry + p.side * 1.0 * Math.abs(l.entry - l.stop))}</b>
+                        <span className="tp-sub pos">Đạt cả 2 TP: Tổng +{pnl.totalWin.toFixed(2)}$</span>
+                      </div>
+                    </div>
+
+                    <div className="sig-mexc-card">
+                      <div className="mexc-card-title">
+                        <span>⚡ Thông số vào app MEXC</span>
+                        <span className="mexc-sub">Phí 0% Maker</span>
+                      </div>
+                      <div className="mexc-grid">
+                        <div className="mexc-cell">
+                          <span>Đòn bẩy</span>
+                          <b className="highlight">x{sizing.leverage}</b>
+                        </div>
+                        <div className="mexc-cell">
+                          <span>Ký quỹ</span>
+                          <b>{sizing.margin}$</b>
+                        </div>
+                        <div className="mexc-cell">
+                          <span>Vị thế</span>
+                          <b>{sizing.notional}$</b>
+                        </div>
+                        <div className="mexc-cell">
+                          <span>Lỗ ở SL</span>
+                          <b className="neg">−{sizing.actualRiskUsd}$</b>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {l && mode !== "disciplined" && (
+                  <div className="sig-tp-panel">
+                    {mode === "bold" ? (
+                      <div className="tp-line">
+                        <span className="tp-badge">TP (0,75R)</span>
+                        <b className="tp-val">{fmt(l.entry + p.side * 0.75 * Math.abs(l.entry - l.stop))}</b>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="tp-line">
+                          <span className="tp-badge">TP 1 (0,5R)</span>
+                          <b className="tp-val">{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b>
+                        </div>
+                        <div className="tp-line">
+                          <span className="tp-badge">TP 2 (1,0R)</span>
+                          <b className="tp-val">{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div className="sig-tape-bar">
+                  <span>Dòng lệnh 30s: <b className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</b></span>
+                  <span>Sổ lệnh mua: <b>{(tape.bookBuy * 100).toFixed(0)}%</b></span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Signals Display: Table View */}
+      {shown.length > 0 && viewMode === "table" && (
+        <div className="table-wrap">
+          <table className="stats-table live-table">
+            <thead>
+              <tr>
+                <th>Coin</th>
+                <th>Kế hoạch</th>
+                <th>Kết luận</th>
+                <th>Giá live</th>
+                <th>Vùng / vào</th>
+                <th>Dừng lỗ</th>
+                <th>TP</th>
+                <th>Đòn bẩy · Cỡ lệnh · Lỗ/lời</th>
+                <th>Dòng lệnh</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((p) => {
+                const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
+                const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
+                const flowWith = p.side > 0 ? tape.tradeBuy : 1 - tape.tradeBuy;
+                return (
+                  <tr key={p.id} className={p.key === "enter" ? "live-enter" : ""}>
+                    <td>
+                      <b>{p.coin}</b> <span className={`pill ${p.side > 0 ? "long" : "short"}`}>{p.side > 0 ? "LONG" : "SHORT"}</span>
+                      {(() => {
+                        const d = watch?.coins.find((c) => c.coin === p.coin)?.daily;
+                        return d === p.side ? <small className="pos">★ coin cùng xu hướng ngày (tốt nhất)</small> : d ? <small>coin ngược xu hướng ngày</small> : null;
+                      })()}
+                    </td>
+                    <td>{p.title}</td>
+                    <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
+                    <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
+                    <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
+                    <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
+                    <td className="pos">
+                      {!l ? "—" : mode === "disciplined" ? (() => {
+                        const sizing = calculateSizing(equity, riskPct);
+                        const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+                        return <>
+                          <b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b>
+                          <small>TP gần · nếu chốt 50%: +{pnl.winTp1.toFixed(2)}$ · dời SL hòa</small>
+                          <b>{fmt(l.entry + p.side * 1.0 * Math.abs(l.entry - l.stop))}</b>
+                          <small>TP chính · chốt toàn bộ: +{sizing.actualRiskUsd.toFixed(2)}$; nếu đã chốt nửa: tổng +{pnl.totalWin.toFixed(2)}$</small>
+                        </>;
+                      })() : mode === "bold" ? <><b>{fmt(l.entry + p.side * 0.75 * Math.abs(l.entry - l.stop))}</b><small>0,75R</small></> : <><b>{fmt(l.entry + p.side * 0.5 * Math.abs(l.entry - l.stop))}</b><small>nửa ở 0,5R → SL về giá vào</small><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>nửa ở 1R</small></>}
+                    </td>
+                    <td>
+                      {!l ? "—" : (() => {
+                        if (mode === "disciplined") {
+                          const sizing = calculateSizing(equity, riskPct);
+                          const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+                          return <>
+                            <b>x{sizing.leverage}</b> · {sizing.margin}$ ký quỹ ({sizing.notional}$ vị thế)
+                            <small className="neg">−{sizing.actualRiskUsd}$ ở SL{sizing.isCapped ? " (đã giới hạn theo vốn)" : ""}</small>
+                            <small className="pos">TP gần +{pnl.winTp1.toFixed(2)}$ nếu chốt nửa · đạt TP chính tổng +{pnl.totalWin.toFixed(2)}$</small>
+                          </>;
+                        }
+                        const lev = mode === "bold" ? Math.min(10, Math.floor(0.85 / riskPct)) : Math.min(20, (equity * 0.1) / (capital * riskPct));
+                        const notional = capital * lev, win = notional * riskPct * 0.75;
+                        return <><b>x{lev.toFixed(lev < 10 ? 1 : 0)}</b> · {capital}$ ký quỹ ({notional.toFixed(0)}$)<small>−{(notional * riskPct).toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small></>;
+                      })()}
+                    </td>
+                    <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Blocked and Disqualified Setups */}
+      {blocked.length > 0 && (
+        <details className="blocked-coins-details">
+          <summary className="blocked-coins-summary">
+            <span>🚫 Setup bị bộ lọc loại ({blocked.length})</span>
+          </summary>
+          <ul className="blocked-list">
+            {blocked.map((p) => (
+              <li key={p.id}>
+                <b>{p.coin}</b> <span className={`pill ${p.side > 0 ? "long" : "short"}`}>{p.side > 0 ? "LONG" : "SHORT"}</span>: {p.reason}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {/* Market 21 Coins Overview */}
+      {idle.length > 0 && (
+        <details className="market-coins-details">
+          <summary className="market-coins-summary">
+            <div className="summary-left">
+              <span>📊 Xu hướng 21 coin trên thị trường</span>
+            </div>
+            <span className="market-count">{idle.length} coin</span>
+          </summary>
+          <div className="market-coins-grid">
+            {idle.map((c) => {
+              const t = trendOf(c);
+              return (
+                <div key={c} className="coin-trend-chip">
+                  <span className="coin-chip-sym">{c}</span>
+                  {t ? (
+                    <div className="coin-chip-tags">
+                      <span className={`tf-tag ${t.trend4h > 0 ? "pos" : t.trend4h < 0 ? "neg" : "flat"}`}>
+                        4H {t.trend4h > 0 ? "↗" : t.trend4h < 0 ? "↘" : "—"}
+                      </span>
+                      <span className={`tf-tag ${t.trend1h > 0 ? "pos" : t.trend1h < 0 ? "neg" : "flat"}`}>
+                        1H {t.trend1h > 0 ? "↗" : t.trend1h < 0 ? "↘" : "—"}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
+
+      <p className="note">
+        Cấu hình hiện tại: dùng toàn bộ vốn làm isolated margin x10 (40$ → vị thế 400$). SL theo cấu trúc trên đỉnh/dưới đáy, nên số tiền lỗ thay đổi theo khoảng cách SL; SL 4% ≈ −16$, SL 8% ≈ −32$. Không có giới hạn lỗ cố định 5$.
+      </p>
+    </section>
+  );
 }
