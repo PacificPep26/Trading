@@ -8,6 +8,9 @@ import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from service.backtest.data import Candle
 from service.backtest.patterns import STYLES, build, confirmed, trend
 
