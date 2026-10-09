@@ -1,27 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { calculateSizing, calculatePartialPnL, isStarSetup } from "@/lib/trading-policy";
+import { calculatePartialPnL, isStarSetup } from "@/lib/trading-policy";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
 
-type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null; level?: number };
-type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number; daily?: number }[]; btcDaily?: number };
-type LevelsData = { rows: { coin: string; trend4h: number; trend1h: number }[]; computedAt: number };
+type Sizing = { notional: number; leverage: number; margin: number; actualRiskUsd: number };
+type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number; blocked?: string | null; level?: number; decision: { accepted: boolean; code: string; strategyVersion: string; plan?: { entry: number; stop: number; tp1: number; tp2: number; sizing: Sizing } } };
+type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number; daily?: number }[]; btcDaily?: number; paper?: { strategyVersion: string; locked: boolean; drawdown: number } };
 type Tape = { price: number; bid: number; ask: number; bookBuy: number; tradeBuy: number; tradeVolume: number; ts: number };
 type Trade = { ts: number; side: "buy" | "sell"; size: number };
 type Key = "enter" | "wait" | "skip";
 type Plan = {
   id: string; coin: string; kind: "4h"; side: 1 | -1; title: string; key: Key; text: string; reason: string;
   levels?: { entry: number; stop: number; tp1: number; tp2: number };
+  sizing?: Sizing;
   exitLevel?: number;
 };
 
 const emptyTape = (): Tape => ({ price: 0, bid: 0, ask: 0, bookBuy: 0.5, tradeBuy: 0.5, tradeVolume: 0, ts: 0 });
 const fmt = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
 const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
-const clock = (v: number) => (v ? new Date(v).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—");
 const ORDER: Record<Key, number> = { enter: 0, wait: 1, skip: 2 };
 
 // identical to rejection() in service/backtest/patterns.py
@@ -44,24 +44,10 @@ function next4h(now: number) {
 function fourHourPlan(coin: string, s: Setup, tape: Tape, lastBarTime: number, now: number): Plan {
   const title = s.style === "bos" ? "Phá cấu trúc (BOS) 4h" : "Hai đỉnh / hai đáy 4h";
   const base = { id: `${coin}-4h-${s.style}`, coin, kind: "4h" as const, side: s.side, title, exitLevel: s.level, levels: { entry: s.entry, stop: s.stop, tp1: s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop), tp2: s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop) } };
-  const p = tape.price;
-  if (s.blocked) return { ...base, key: "skip", text: "KHÔNG ĐÁNH", reason: s.blocked };
-  if (!p) return { ...base, key: "wait", text: "ĐANG LẤY GIÁ", reason: "Chờ WebSocket" };
-  if (s.side > 0 ? p <= s.stop : p >= s.stop) return { ...base, key: "skip", text: "BỎ QUA", reason: "Giá đã vượt dừng lỗ" };
-  if (s.state === "pending") {
-    const crossed = s.side > 0 ? p > s.entry : p < s.entry;
-    const dist = Math.abs(p / s.entry - 1);
-    if (crossed) return { ...base, key: "wait", text: "CHỜ ĐÓNG 4H", reason: "Giá đã qua mức kích hoạt, cần nến 4h đóng cửa xác nhận" };
-    const close = s.side > 0 ? "trên" : "dưới";
-    return { ...base, key: "wait", text: dist <= 0.01 ? "SẮP KÍCH HOẠT" : "THEO DÕI", reason: `Chưa vào: cần nến 4h đóng ${close} ${fmt(s.entry)} (còn cách ${pct(dist)})` };
-  }
-  // triggered on the last closed 4h bar: valid until the next 4h bar closes
-  const barClose = lastBarTime + 4 * 3_600_000;
-  if (now - barClose > 4 * 3_600_000) return { ...base, key: "skip", text: "HẾT HẠN", reason: "Tín hiệu từ nến 4h trước, đã qua một nến" };
-  const r0 = Math.abs(s.entry - s.stop);
-  if (s.side * (p - s.entry) > 0.5 * r0) return { ...base, key: "skip", text: "ĐÃ CHẠY", reason: "Giá đã đi quá 0,5R từ điểm kích hoạt, không đuổi" };
-  if (s.side * (p - (s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop))) >= 0) return { ...base, key: "skip", text: "ĐÃ TỚI TP", reason: "Đã chạm chốt lời 1R" };
-  return { ...base, key: "enter", text: "VÀO NGAY", reason: "Nến 4h vừa đóng xác nhận setup", levels: targets(s.side, s.entry, s.stop, s.tp2) };
+  void tape; void lastBarTime; void now;
+  if (s.decision.accepted) return { ...base, key: "enter", text: "PAPER ENTRY", reason: `${s.decision.code} · ${s.decision.strategyVersion}`, levels: targets(s.side, s.entry, s.stop, s.tp2), sizing: s.decision.plan?.sizing };
+  if (s.decision.code === "PENDING_CONFIRMATION") return { ...base, key: "wait", text: "CHỜ ĐÓNG 4H", reason: `${s.decision.code} · ${s.decision.strategyVersion}` };
+  return { ...base, key: "skip", text: "KHÔNG PAPER", reason: `${s.decision.code} · ${s.decision.strategyVersion}` };
 }
 
 function beep() {
@@ -73,9 +59,6 @@ function beep() {
 
 export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
-  const [levels, setLevels] = useState<LevelsData | null>(null);
-  const [equity, setEquity] = useState(40);
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [tapes, setTapes] = useState<Record<string, Tape>>({});
   const [connection, setConnection] = useState<"connecting" | "live" | "retrying">("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -88,14 +71,6 @@ export default function LiveScanner() {
   useEffect(() => {
     const t = setTimeout(() => {
       try {
-        const vm = localStorage.getItem("scanner-view-mode");
-        if (vm === "cards" || vm === "table") {
-          setViewMode(vm);
-        } else if (typeof window !== "undefined" && window.innerWidth >= 860) {
-          setViewMode("table");
-        }
-        const e = Number(localStorage.getItem("scanner-equity"));
-        if (e > 0) setEquity(e);
         if (localStorage.getItem("scanner-notify") === "1" && typeof Notification !== "undefined" && Notification.permission === "granted") {
           setNotify(true);
         }
@@ -108,10 +83,9 @@ export default function LiveScanner() {
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      Promise.all([
-        fetch("/api/watchlist", { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`watchlist ${r.status}`)))),
-        fetch("/api/live/levels", { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`levels ${r.status}`)))),
-      ]).then(([w, l]: [WatchData, LevelsData]) => { if (!cancelled) { setWatch(w); setLevels(l); } })
+      fetch("/api/watchlist", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`watchlist ${r.status}`))))
+        .then((w: WatchData) => { if (!cancelled) setWatch(w); })
         .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Không tải được tín hiệu 4h"); });
     };
     const first = setTimeout(load, 0), timer = setInterval(load, 60_000);
@@ -219,24 +193,7 @@ export default function LiveScanner() {
       {/* Ultra Clean Toolbar */}
       <div className="clean-toolbar">
         <div className="tool-item">
-          <label className="tool-lbl">Vốn ($)</label>
-          <div className="clean-input-box">
-            <span className="prefix">$</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={equity}
-              onChange={(e) => {
-                const v = Number(e.target.value.replace(",", ".")) || 0;
-                setEquity(v);
-                try { localStorage.setItem("scanner-equity", String(v)); } catch {}
-              }}
-            />
-          </div>
-        </div>
-
-        <div className="tool-item">
-          <label className="tool-lbl">Đòn bẩy MEXC</label>
+          <label className="tool-lbl">Paper OKX</label>
           <div className="clean-badge">x10 Isolated</div>
         </div>
 
@@ -273,7 +230,7 @@ export default function LiveScanner() {
               ⏰ Nến 4H kế đóng lúc: <b>{next4h(now)}</b>
             </p>
             <p className="note-telegram">
-              ⚡ Khi nến 4H đóng xác nhận kèo (BOS / Hai đỉnh), trang sẽ reo chuông và gửi Telegram ngay.
+              ⚡ Khi nến 4H đóng xác nhận setup paper (BOS / hai đỉnh-đáy), trang sẽ reo chuông và ghi ledger.
             </p>
           </div>
         </div>
@@ -285,8 +242,8 @@ export default function LiveScanner() {
             const ownDaily = watch?.coins.find((c) => c.coin === p.coin)?.daily ?? 0;
             const btcDaily = watch?.btcDaily ?? 0;
             const isStar = isStarSetup(p.side, ownDaily, btcDaily);
-            const sizing = calculateSizing(equity, riskPct);
-            const pnl = calculatePartialPnL(sizing.actualRiskUsd);
+            const sizing = p.sizing;
+            const pnl = calculatePartialPnL(sizing?.actualRiskUsd ?? 0);
 
             return (
               <article key={p.id} className={`clean-card ${p.key === "enter" ? "is-enter" : ""}`}>
@@ -323,7 +280,7 @@ export default function LiveScanner() {
                 </div>
 
                 {/* Targets */}
-                {l && (
+                {l && sizing && (
                   <div className="tp-container">
                     <div className="tp-line">
                       <span className="tp-tag">TP 1 (0,5R)</span>
@@ -338,8 +295,8 @@ export default function LiveScanner() {
                   </div>
                 )}
 
-                {/* MEXC execution info */}
-                {l && (
+                {/* Paper execution info */}
+                {l && sizing && (
                   <div className="mexc-info-box">
                     <div className="mexc-row">
                       <span>Đòn bẩy: <b>x{sizing.leverage}</b></span>
@@ -356,7 +313,7 @@ export default function LiveScanner() {
       )}
 
       <footer className="clean-footer">
-        Kỷ luật MEXC · Isolated x10 · Dừng lỗ cấu trúc 4H · Đóng 2 lệnh thua liên tiếp nghỉ hết ngày
+        PAPER {watch?.paper?.strategyVersion ?? "paper-v1"} · OKX · rủi ro tối đa 10%/lệnh · khóa tại drawdown 20%
       </footer>
     </section>
   );

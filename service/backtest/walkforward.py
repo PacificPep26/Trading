@@ -14,6 +14,11 @@ def year_folds(candles: list[Candle]) -> list[tuple[str, int, int]]:
 
 
 def evaluate(candles: list[Candle], strategy: Strategy, p: Params = Params(), runs: int = 300) -> list[dict]:
+    """Expanding historical report by calendar fold.
+
+    Historical folds are exploratory because all available years have been
+    inspected. Promotion to live trading requires the separate paper cohort.
+    """
     rows = []
     for label, s, e in year_folds(candles):
         res = run(candles, strategy, p, s, e)

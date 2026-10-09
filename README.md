@@ -1,33 +1,31 @@
 # Northstar Crypto Lab
 
-Personal research lab for crypto perpetuals (SOL, BTC, ETH, HYPE and ~20 altcoins): live OKX dashboard, backtests of common chart-analysis styles, and a knowledge base built from trading videos. Research only, not investment advice. Nothing here places orders.
+Phòng nghiên cứu và paper trade crypto perpetual bằng dữ liệu OKX. Hệ thống không đặt lệnh tiền thật.
 
-Start with [PLAN.md](PLAN.md) (current conclusions, what was tested, open plans). Daily logs: [docs/nhat-ky-giao-dich.md](docs/nhat-ky-giao-dich.md), [docs/nhat-ky-nghien-cuu.md](docs/nhat-ky-nghien-cuu.md).
+Nguồn chân lý: [đặc tả bot](docs/bot-spec.md). Trạng thái hiện tại: [PLAN.md](PLAN.md). Ngữ cảnh cho trợ lý: [CONTEXT.md](CONTEXT.md).
 
-## Web (Next.js)
-
-One page: a live scanner for 21 OKX perpetuals. The browser streams OKX public WebSocket data; `/api/watchlist` finds the tested 4h setups and `/api/live/levels` gives 4h/1h trend context. Each row shows VÀO NGAY / CHỜ / BỎ QUA with entry, structural stop, explicit TP prices and full-account isolated-x10 sizing. Telegram keeps 1h double-top messages as clearly labelled early watch alerts, not verified 4h entries. No API key, no orders.
+## Chạy web
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Deployed on Railway with `npm run build` / `npm run start`.
+Web Next.js 16 gồm scanner 21 coin, API watchlist, paper ledger và Telegram alert. Trước khi sửa Next.js, đọc guide tương ứng trong `node_modules/next/dist/docs/`.
 
-## Research scripts (Python, local)
+## Kiểm tra
 
 ```powershell
-python -m pip install -r service\requirements-dev.txt
-python service\scripts\download_klines.py SOLUSDT --interval 15m --start 2023-01 --market futures
-python -m service.scripts.run_backtest trend_volume --symbols SOLUSDT --interval 4h --fee 0
-python -m service.scripts.intraday_study --interval 15m
-python -m service.scripts.btc_lead_study --interval 1h
-python -m service.scripts.styles_study --fee-market 0.0004 --fee-limit 0.0002   # 10 chart styles, MEXC-like fees
-python -m service.scripts.trend_ride_study --lev 20
-python -m service.scripts.market_brief SOL   # live multi-timeframe brief used in chat
-python service\scripts\fetch_transcripts.py --delay 30
-python -m pytest tests\test_backtest.py
+npm run test:policy
+.\.venv\Scripts\python.exe -m pytest -q
+npm run lint
+npm run build
 ```
 
-`data/` (candles, transcripts database) is git-ignored and rebuilt by the scripts. Transcripts are for personal study only.
+## Policy tóm tắt
+
+- Version `paper-v1.0.0`; chỉ BOS LONG 4H và hai đỉnh/đáy 4H thuận xu hướng ngày được paper trade.
+- Setup 1H và pinbar là research-only. BOS SHORT bị loại.
+- Isolated tối đa x10; sizing giảm theo SL để rủi ro không quá 10% equity.
+- Drawdown 20% khóa lệnh mới. Không có đường dẫn đặt lệnh thật.
+- Ledger cục bộ: `data/paper-ledger.ndjson`.

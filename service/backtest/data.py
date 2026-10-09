@@ -5,7 +5,8 @@ from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "crypto"
 
-# Data from this date on is the final holdout: run it once, at the very end.
+# Legacy split only. 2026 has been inspected repeatedly and is NOT a pristine
+# holdout anymore; use walk-forward folds plus live paper-forward validation.
 HOLDOUT_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 

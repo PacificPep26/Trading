@@ -105,7 +105,7 @@ export function analyse(all: Candle[]) {
     const lastLow = cs[lows.at(-1)!].l;
     const range = c.h - c.l;
     if (range > 0.4 * atr) {
-      // Bearish Pinbar: Râu trên dài >= 50% thân nến quét sát/vượt đỉnh cũ -> SHORT
+      // Bearish Pinbar: Râu trên dài >= 50% quét sát đỉnh cũ -> SHORT
       const upperWick = c.h - Math.max(c.o, c.c);
       const body = Math.abs(c.c - c.o);
       if (upperWick >= 0.5 * range && body <= 0.4 * range && c.h >= lastHigh * 0.995) {
@@ -122,7 +122,7 @@ export function analyse(all: Candle[]) {
         });
       }
 
-      // Bullish Pinbar: Râu dưới dài >= 50% thân nến quét sát/thủng đáy cũ rồi rút chân -> LONG
+      // Bullish Pinbar: Râu dưới dài >= 50% quét sát đáy cũ rồi rút chân -> LONG
       const lowerWick = Math.min(c.o, c.c) - c.l;
       if (lowerWick >= 0.5 * range && body <= 0.4 * range && c.l <= lastLow * 1.005) {
         const stop = c.l - 0.05 * atr;

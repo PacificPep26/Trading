@@ -19,6 +19,13 @@ def summary(res: Result) -> dict:
         mdd = max(mdd, 1 - eq / peak)
     mean = sum(r) / n
     sd = math.sqrt(sum((x - mean) ** 2 for x in r) / (n - 1)) if n > 1 else 0.0
+    losing_streak = max_streak = 0
+    for x in r:
+        losing_streak = losing_streak + 1 if x <= 0 else 0
+        max_streak = max(max_streak, losing_streak)
+    # Deterministic non-parametric bootstrap interval for mean return.
+    rng = random.Random(0)
+    means = sorted(sum(rng.choice(r) for _ in range(n)) / n for _ in range(1000))
     return {
         "trades": n,
         "win_rate": len(wins) / n,
@@ -27,6 +34,8 @@ def summary(res: Result) -> dict:
         "total_return": eq - 1,
         "max_drawdown": mdd,
         "t_stat": mean / (sd / math.sqrt(n)) if sd > 0 else 0.0,
+        "max_losing_streak": max_streak,
+        "expectancy_ci95": [means[24], means[974]],
     }
 
 

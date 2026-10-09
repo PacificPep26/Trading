@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Northstar | Crypto Lab",
-  description: "Scanner live 21 coin theo thời gian thực trên OKX/MEXC.",
+  description: "Scanner và paper trade 21 coin bằng dữ liệu OKX.",
 };
 
 export const viewport: Viewport = {

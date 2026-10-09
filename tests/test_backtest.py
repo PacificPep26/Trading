@@ -62,3 +62,12 @@ def test_summary():
     res = run(cs, lambda c, i: 1 if i == 5 else 0, P)
     s = summary(res)
     assert s["trades"] == 1 and s["win_rate"] == 0.0
+    assert s["max_losing_streak"] == 1
+    assert len(s["expectancy_ci95"]) == 2
+
+
+def test_funding_cost_is_charged_per_held_bar():
+    cs = flat(10)
+    tr = simulate_trade(cs, 2, 1, Params(sl_atr=10, tp_atr=20, max_hold=2, atr_len=2, fee=0, slippage=0, funding_per_bar=0.001))
+    assert tr.reason == "time"
+    assert abs(tr.ret + 0.002) < 1e-9

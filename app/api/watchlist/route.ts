@@ -1,13 +1,14 @@
 import { analyse } from "@/lib/patterns";
 import { candles } from "@/lib/okx";
 import styles from "@/lib/styles-stats.json";
+import { evaluateSetup } from "@/lib/decision-engine";
+import { paperSummary } from "@/lib/paper-ledger";
 
 export const runtime = "nodejs";
 
 // OKX USDT perps matching the 21 backtested Binance symbols (1000PEPE -> PEPE)
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const CACHE_MS = 5 * 60_000;
-const RISK_RANGE = [0.004, 0.08]; // same filter as the 4h backtest
 let cache: { at: number; body: unknown } | null = null;
 
 type Row = { style: string; interval: string; target: string; train: { n: number; winRate?: number; expR?: number; coinsPositive?: number }; test: { n: number; expR?: number } };
@@ -16,8 +17,6 @@ const STATS = Object.fromEntries(
     .filter((r) => r.interval === "4h" && r.target === "1.5R")
     .map((r) => [r.style, { n: r.train.n, winRate: r.train.winRate, expR: r.train.expR, coinsPositive: r.train.coinsPositive, expR2026: r.test.expR }]),
 );
-
-import { isAllowedSetup } from "@/lib/trading-policy";
 
 // Daily trend = last closed daily candle vs daily EMA50 (same as service/scripts/rule_study.py)
 async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
@@ -28,27 +27,16 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   return d.at(-1)!.c > ema ? 1 : -1;
 }
 
-// Unified rule: 4H BOS LONG; double top/bottom only with BTC + coin daily alignment.
-function blockReason(style: string, side: 1 | -1, btc: number, own: number) {
-  if (!isAllowedSetup(style, side, "4H", btc, own)) {
-    if (style === "bos" && side < 0) return "BOS SHORT: không có lợi thế qua kiểm chứng";
-    if (style === "double_top_bottom") return "Hai đỉnh/đáy chỉ đánh khi BTC và coin cùng xu hướng ngày với lệnh";
-    return "Không nằm trong danh mục setup đã kiểm chứng";
-  }
-  return null;
-}
-
 export async function GET() {
   if (cache && Date.now() - cache.at < CACHE_MS) return Response.json(cache.body);
+  const paper = paperSummary(Number(process.env.ALERT_CAPITAL ?? 40));
   const btcDaily = await dailyTrend("BTC").catch(() => 0 as const);
   const scanOne = async (coin: string) => {
     const [a, own] = await Promise.all([analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)), coin === "BTC" ? btcDaily : dailyTrend(coin)]);
-    const setups = a.setups
-      .filter((s) => {
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        return risk >= RISK_RANGE[0] && risk <= RISK_RANGE[1];
-      })
-      .map((s) => ({ ...s, blocked: blockReason(s.style, s.side, btcDaily, own) }));
+    const setups = a.setups.map((s) => {
+      const decision = evaluateSetup(s, { coin, timeframe: "4H", btcDaily, ownDaily: own, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a.lastBarTime });
+      return { ...s, decision, blocked: decision.accepted || decision.code === "PENDING_CONFIRMATION" ? null : decision.code };
+    });
     return { coin, ...a, daily: own, setups };
   };
   // OKX rate-limits bursts on /market/candles: scan in small batches and retry once
@@ -63,7 +51,7 @@ export async function GET() {
   }
   const coins = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
   const failed = COINS.filter((_, i) => results[i].status === "rejected");
-  const body = { coins, failed, stats: STATS, btcDaily, fetchedAt: Date.now() };
+  const body = { coins, failed, stats: STATS, btcDaily, paper, fetchedAt: Date.now() };
   cache = { at: Date.now(), body };
   return Response.json(body);
 }

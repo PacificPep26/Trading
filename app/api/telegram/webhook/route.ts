@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { candles, ticker } from "@/lib/okx";
 import { analyse, swings } from "@/lib/patterns";
-import {
-  isAllowedSetup,
-  isStarSetup,
-  calculateSizing,
-  calculatePartialPnL,
-} from "@/lib/trading-policy";
+import { evaluateSetup } from "@/lib/decision-engine";
+import { paperSummary } from "@/lib/paper-ledger";
+import { isStarSetup, calculatePartialPnL } from "@/lib/trading-policy";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -51,7 +48,6 @@ async function getDailyTrend(coin: string): Promise<1 | -1 | 0> {
 
 function getStyleName(style: string, side: 1 | -1, tf: "4H" | "1H") {
   if (style === "bos") return side > 0 ? `BOS ${tf}` : `Gãy đáy BOS ${tf}`;
-  if (style === "pinbar_reversal") return `Pinbar quét râu ${tf}`;
   return side > 0 ? `Hai đáy ${tf}` : `Hai đỉnh ${tf}`;
 }
 
@@ -82,28 +78,45 @@ async function analyzeCoin(coin: string): Promise<string> {
     text += `• *Bối cảnh BTC Ngày:* ${btcText}\n\n`;
 
     // 1. Check 4H setups
-    const validSetups4h = a4.setups.filter((s) => {
-      if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) return false;
-      const risk = Math.abs(s.entry - s.stop) / s.entry;
-      // Min SL 1.5%, Max SL 6%
-      if (risk < 0.015 || risk > 0.06) return false;
-      if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) return false;
-      return true;
-    });
+    const paper = paperSummary(CAPITAL);
+    const accepted4h = a4.setups
+      .map((setup) => ({
+        setup,
+        decision: evaluateSetup(setup, {
+          coin,
+          timeframe: "4H",
+          btcDaily,
+          ownDaily,
+          equity: paper.equity,
+          peakEquity: paper.peakEquity,
+          lastBarTime: a4.lastBarTime,
+          livePrice,
+        }),
+      }))
+      .find((item) => item.decision.accepted && item.decision.plan);
 
     // 2. Check 1H setups
-    const validSetups1h = a1.setups.filter((s) => {
-      if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) return false;
-      const risk = Math.abs(s.entry - s.stop) / s.entry;
-      if (risk < 0.015 || risk > 0.04) return false;
-      if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) return false;
-      return true;
-    });
+    const accepted1h = a1.setups
+      .map((setup) => ({
+        setup,
+        decision: evaluateSetup(setup, {
+          coin,
+          timeframe: "1H",
+          btcDaily,
+          ownDaily,
+          equity: paper.equity,
+          peakEquity: paper.peakEquity,
+          lastBarTime: a1.lastBarTime,
+          livePrice,
+        }),
+      }))
+      .find((item) => item.decision.accepted && item.decision.plan);
 
-    if (validSetups4h.length > 0) {
-      const s = validSetups4h[0];
+    if (accepted4h?.decision.plan) {
+      const s = accepted4h.setup;
+      const decisionPlan = accepted4h.decision.plan;
       const riskPct = Math.abs(s.entry - s.stop) / s.entry;
-      const sizing = calculateSizing(CAPITAL, riskPct);
+      const sizing = decisionPlan.sizing;
       const pnl = calculatePartialPnL(sizing.actualRiskUsd);
       const isStar = isStarSetup(s.side, ownDaily, btcDaily);
       const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
@@ -113,17 +126,18 @@ async function analyzeCoin(coin: string): Promise<string> {
       text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 4H ĐÓNG"}\n`;
       text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
       text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
-      text += `• *TP 1 (0.5R):* \`${f(s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop))}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
-      text += `• *TP 2 (1.0R):* \`${f(s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop))}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
+      text += `• *TP 1 (1.0R):* \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
+      text += `• *TP 2 (2.0R):* \`${f(decisionPlan.tp2)}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
       text += `⚡ *THÔNG SỐ VÀO APP MEXC (VỐN ${CAPITAL}$):*\n`;
       text += `• Đòn bẩy: *x${sizing.leverage} Isolated*\n`;
       text += `• Ký quỹ: *${sizing.margin}$*\n`;
       text += `• Vị thế: *${sizing.notional}$*\n`;
       text += `• Rủi ro chạm SL: *-${sizing.actualRiskUsd}$*\n`;
-    } else if (validSetups1h.length > 0) {
-      const s = validSetups1h[0];
+    } else if (accepted1h?.decision.plan) {
+      const s = accepted1h.setup;
+      const decisionPlan = accepted1h.decision.plan;
       const riskPct = Math.abs(s.entry - s.stop) / s.entry;
-      const sizing = calculateSizing(CAPITAL, riskPct);
+      const sizing = decisionPlan.sizing;
       const pnl = calculatePartialPnL(sizing.actualRiskUsd);
       const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
       const styleStr = getStyleName(s.style, s.side, "1H");
@@ -132,8 +146,8 @@ async function analyzeCoin(coin: string): Promise<string> {
       text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 1H ĐÓNG"}\n`;
       text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
       text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
-      text += `• *TP 1 (0.5R):* \`${f(s.entry + s.side * 0.5 * Math.abs(s.entry - s.stop))}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
-      text += `• *TP 2 (1.0R):* \`${f(s.entry + s.side * 1.0 * Math.abs(s.entry - s.stop))}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
+      text += `• *TP 1 (1.0R):* \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
+      text += `• *TP 2 (2.0R):* \`${f(decisionPlan.tp2)}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
       text += `⚡ *THÔNG SỐ VÀO APP MEXC (VỐN ${CAPITAL}$):*\n`;
       text += `• Đòn bẩy: *x${sizing.leverage} Isolated*\n`;
       text += `• Ký quỹ: *${sizing.margin}$*\n`;
@@ -145,13 +159,10 @@ async function analyzeCoin(coin: string): Promise<string> {
       const rawSetup = a4.setups[0] ?? a1.setups[0];
       if (rawSetup) {
         const rawRisk = Math.abs(rawSetup.entry - rawSetup.stop) / rawSetup.entry;
-        if (rawRisk > 0.08) {
-          text += `⚠️ *Cảnh báo rủi ro:* Khoảng cách dừng lỗ quá rộng (${(rawRisk * 100).toFixed(1)}% > 8%). Đánh x10 sẽ bị *cháy tài khoản trước khi chạm SL*. Tuyệt đối không vào!\n`;
-        } else if (Math.abs(rawSetup.distancePct) > 0.015) {
-          text += `📌 Giá còn cách xa mức phá vỡ (${(Math.abs(rawSetup.distancePct) * 100).toFixed(1)}% > 1.5%), chưa có điểm kích hoạt.\n`;
-        }
+        if (rawRisk > 0.06) text += `⚠️ *Cảnh báo SL rộng:* Khoảng cách SL ${(rawRisk * 100).toFixed(1)}% vượt trần an toàn 6%.\n`;
+        if (rawRisk < 0.015) text += `⚠️ *Cảnh báo SL hẹp:* Khoảng cách SL ${(rawRisk * 100).toFixed(2)}% nhỏ hơn 1.5% (dễ bị quét râu & phí sàn nuốt lãi).\n`;
       }
-      text += `\n💡 *Lời khuyên:* Không FOMO đu đỉnh/đu đáy. Chờ nến 1H/4H xác nhận rõ ràng.\n`;
+      text += `\n💡 Nhắn \`canh\` để xem các coin đang áp sát đỉnh/đáy chuẩn bị kích hoạt.\n`;
     }
 
     return text;
@@ -165,6 +176,7 @@ async function scanWatchlist(): Promise<string> {
   const btcDaily = await getDailyTrend("BTC");
   const cand4h: string[] = [];
   const cand1h: string[] = [];
+  const paper = paperSummary(CAPITAL);
 
   for (const c of COINS) {
     try {
@@ -175,10 +187,8 @@ async function scanWatchlist(): Promise<string> {
       ]);
       const a4 = analyse(c4);
       for (const s of a4.setups) {
-        if (!isAllowedSetup(s.style, s.side, "4H", btcDaily, ownDaily)) continue;
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.015 || risk > 0.06) continue;
-        if (s.state === "pending" && Math.abs(s.distancePct) > 0.015) continue;
+        const decision = evaluateSetup(s, { coin: c, timeframe: "4H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime });
+        if (!decision.accepted && decision.code !== "PENDING_CONFIRMATION") continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = getStyleName(s.style, s.side, "4H");
         cand4h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
@@ -186,10 +196,8 @@ async function scanWatchlist(): Promise<string> {
 
       const a1 = analyse(c1);
       for (const s of a1.setups) {
-        if (!isAllowedSetup(s.style, s.side, "1H", btcDaily, ownDaily)) continue;
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.015 || risk > 0.04) continue;
-        if (s.state === "pending" && Math.abs(s.distancePct) > 0.012) continue;
+        const decision = evaluateSetup(s, { coin: c, timeframe: "1H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a1.lastBarTime });
+        if (!decision.accepted && decision.code !== "PENDING_CONFIRMATION") continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = getStyleName(s.style, s.side, "1H");
         cand1h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
@@ -252,14 +260,14 @@ async function scanKeyLevels(): Promise<string> {
 
   if (nearHigh.length > 0) {
     text += `🏔️ *SẮP CHẠM ĐỈNH CŨ (Cản mạnh):*\n${nearHigh.join("\n")}\n`;
-    text += `👉 *Chiến thuật:* Quan sát nến 1H/4H. Nếu xuất hiện râu dài bị bán dội ngược ➔ Canh *SHORT*. Nếu nến đóng nến xanh vượt đỉnh dứt khoát ➔ Canh *LONG phá đỉnh*.\n\n`;
+    text += `Đây chỉ là vùng quan sát; không phải tín hiệu paper.\n\n`;
   } else {
     text += `🏔️ *Đỉnh cũ:* Hiện chưa có coin nào áp sát đỉnh cũ trong phạm vi 2%.\n\n`;
   }
 
   if (nearLow.length > 0) {
     text += `🏖️ *SẮP CHẠM ĐÁY CŨ (Hỗ trợ mạnh):*\n${nearLow.join("\n")}\n`;
-    text += `👉 *Chiến thuật:* Quan sát nến 1H/4H. Nếu nến rút chân pinbar ➔ Canh *LONG bắt đáy*. Nếu nến đỏ đóng thủng đáy ➔ Canh *SHORT theo đà xả*.\n\n`;
+    text += `Đây chỉ là vùng quan sát; không phải tín hiệu paper.\n\n`;
   } else {
     text += `🏖️ *Đáy cũ:* Hiện chưa có coin nào áp sát đáy cũ trong phạm vi 2%.\n\n`;
   }
@@ -314,9 +322,9 @@ export async function POST(req: NextRequest) {
       let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading của bạn.*\n\n`;
       welcome += `Bạn có thể nhắn trực tiếp với tôi bất cứ lúc nào trên điện thoại:\n\n`;
       welcome += `• Nhắn \`canh\` hoặc \`/canh\` để *bật Radar canh coin sắp chạm Đỉnh cũ / Đáy cũ*.\n`;
-      welcome += `• Nhắn \`keo\` hoặc \`quét\` để quét tín hiệu nến 4H và 1H.\n`;
+      welcome += `• Nhắn \`keo\` hoặc \`quét\` để quét setup paper 4H.\n`;
       welcome += `• Nhắn tên coin (ví dụ: \`SOL\`, \`BTC\`, \`TIA\`) để xem chi tiết thông số vào lệnh, SL, TP.\n`;
-      welcome += `• Nhắn \`von\` hoặc \`luật\` để xem quy tắc quản lý vốn 40$ x10.\n`;
+      welcome += `• Nhắn \`von\` hoặc \`luật\` để xem policy paper 40$, rủi ro tối đa 10%.\n`;
       await sendTelegramReply(token, chatId, welcome);
       return NextResponse.json({ ok: true });
     }
@@ -356,11 +364,11 @@ export async function POST(req: NextRequest) {
 
     // 3. Capital & Discipline rule
     if (lower.includes("vốn") || lower.includes("von") || lower.includes("luật") || lower.includes("luat") || lower.includes("kỷ luật")) {
-      let rule = `🛡️ *KỶ LUẬT QUẢN LÝ VỐN MEXC (40$)*\n\n`;
-      rule += `1. *Đòn bẩy cố định:* x10 Isolated (Vị thế 400$).\n`;
+      let rule = `🛡️ *POLICY PAPER OKX (40$)*\n\n`;
+      rule += `1. *Isolated tối đa x10:* vị thế tự giảm theo khoảng SL để lỗ tối đa 10% equity.\n`;
       rule += `2. *Dừng lỗ (SL):* Bắt buộc đặt theo cấu trúc nến 4H (dưới đáy với Long, trên đỉnh với Short). Không gồng lỗ.\n`;
       rule += `3. *Chốt lời:* Chia 2 bước (50% ở TP1 0.5R để dời SL về hòa vốn; 50% còn lại giữ đến TP2 1.0R).\n`;
-      rule += `4. *Quy tắc sống còn:* Thua 2 lệnh liên tiếp trong ngày -> *Nghỉ hết ngày*, tuyệt đối không gỡ gạc!\n`;
+      rule += `4. *Circuit breaker:* drawdown từ đỉnh đạt 20% thì khóa lệnh mới để audit.\n`;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
     }

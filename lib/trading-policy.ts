@@ -1,18 +1,33 @@
-/**
- * trading-policy.ts
- * Hợp nhất TOÀN BỘ luật giao dịch giữa Website, Watchlist API và Bot Telegram.
- * Không để xảy ra tình trạng website một kiểu, bot một kiểu.
- */
-
+/** Nguồn chân lý cho policy trading. Chuẩn hóa v2.0.0 */
+export const STRATEGY_VERSION = "paper-v2.0.0";
 export const MAX_LEVERAGE = 10;
+export const RISK_PER_TRADE = 0.10;
+export const MAX_DRAWDOWN = 0.20;
+export const MIN_STOP_DISTANCE = 0.015; // 1.5% tối thiểu (chặn micro-stop, tránh phí sàn nuốt lãi)
+export const MAX_STOP_DISTANCE = 0.060; // 6.0% tối đa (chặn mega-stop, an toàn cho isolated x10)
+export const MAX_PRICE_DRIFT = 0.0025;   // 0.25% tối đa trôi giá (chống vào trễ, đu đỉnh/đu đáy)
 
-export interface SetupPolicy {
-  style: string;
-  side: 1 | -1;
-  entry: number;
-  stop: number;
-  timeframe: "4H" | "1H";
-}
+export type StrategyStatus = "research" | "paper" | "rejected";
+export type Timeframe = "4H" | "1H";
+export type DecisionCode =
+  | "ACCEPTED"
+  | "PENDING_CONFIRMATION"
+  | "RUNAWAY_PRICE"
+  | "STRATEGY_NOT_PAPER"
+  | "TREND_MISMATCH"
+  | "INVALID_STOP"
+  | "INVALID_DATA"
+  | "STALE_SIGNAL"
+  | "BOT_LOCKED";
+
+export const STRATEGY_REGISTRY = {
+  bos: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
+  double_top_bottom: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
+  pinbar_reversal: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
+  bos_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
+  double_top_bottom_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
+  pinbar_reversal_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
+} as const;
 
 export interface TradeSizing {
   notional: number;
@@ -22,12 +37,8 @@ export interface TradeSizing {
   isCapped: boolean;
 }
 
-/**
- * Kiểm tra xem một setup có được phép giao dịch theo luật hệ thống:
- * - 4H: BOS Long/Short, Hai đỉnh/Hai đáy, Pinbar quét râu đảo chiều.
- * - 1H: Cho phép lướt sóng khi có mô hình nến rõ ràng với SL chặt <= 4%.
- */
-export function isAllowedSetup(style: string, side: 1 | -1, tf: "4H" | "1H", btcDaily = 0, ownDaily = 0): boolean {
+/** Kiểm tra điều kiện cấu trúc & xu hướng */
+export function isAllowedSetup(style: string, side: 1 | -1, tf: Timeframe, btcDaily = 0, ownDaily = 0): boolean {
   if (tf === "4H") {
     if (style === "bos") {
       if (side > 0) return !(btcDaily < 0 && ownDaily < 0);
@@ -47,65 +58,56 @@ export function isAllowedSetup(style: string, side: 1 | -1, tf: "4H" | "1H", btc
   return false;
 }
 
-/** 1H setups cho cảnh báo sớm hoặc vào lệnh lướt sóng */
-export function isWatchSetup(style: string, side: 1 | -1, tf: "4H" | "1H"): boolean {
+/** Setup 1H hợp lệ để lướt sóng hoặc cảnh báo sớm */
+export function isWatchSetup(style: string, side: 1 | -1, tf: Timeframe): boolean {
   return tf === "1H" && (style === "double_top_bottom" || style === "pinbar_reversal" || style === "bos");
 }
 
-/**
- * Kiểm tra xem setup có phải là KÈO ĐẸP ★★★ (thuận xu hướng ngày) không.
- * - LONG: khi BTC tăng VÀ coin tăng (so với EMA50 ngày)
- * - SHORT: khi BTC giảm HOẶC coin giảm (so với EMA50 ngày)
- */
+/** Đánh dấu KÈO ĐẸP ★★★ thuận đà sóng lớn */
 export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): boolean {
   if (side > 0) {
-    return btcDaily > 0 && ownDaily > 0;
+    return ownDaily > 0 && btcDaily > 0;
   } else {
-    return ownDaily < 0;
+    return ownDaily < 0 || btcDaily < 0;
   }
 }
 
 /**
- * Tính toán vị thế an toàn, giới hạn không vượt quá số dư tài khoản.
- * @param equity Vốn thực tế trong tài khoản (ví dụ 40$)
- * @param riskPct Khoảng cách dừng lỗ (|entry - stop| / entry)
+ * Tính toán vị thế chuẩn vốn 40$, rủi ro tối đa 10% equity (4$) tại điểm cắt lỗ.
  */
-export function calculateSizing(equity: number, riskPct: number): TradeSizing {
-  if (!Number.isFinite(equity) || !Number.isFinite(riskPct) || equity <= 0 || riskPct <= 0) {
+export function calculateSizing(equity: number, stopDistancePct: number): TradeSizing {
+  if (!Number.isFinite(equity) || !Number.isFinite(stopDistancePct) || equity <= 0 || stopDistancePct <= 0) {
     return { notional: 0, leverage: 1, margin: 0, actualRiskUsd: 0, isCapped: false };
   }
-
-  // Chủ tài khoản giao dịch isolated x10; position size thay đổi theo SL cấu trúc.
-  const safeLev = MAX_LEVERAGE;
-
-  // Chủ tài khoản chọn luôn dùng toàn bộ equity làm isolated margin ở x10.
-  const maxNotional = equity * safeLev;
-  const margin = equity;
-  const actualRiskUsd = maxNotional * riskPct;
+  const riskBudget = equity * RISK_PER_TRADE; // 4$ trên 40$
+  const maxNotional = equity * MAX_LEVERAGE;  // 400$
+  const riskSizedNotional = riskBudget / stopDistancePct;
+  const notional = Math.min(maxNotional, riskSizedNotional);
+  const margin = notional / MAX_LEVERAGE;
+  const actualRiskUsd = notional * stopDistancePct;
 
   return {
-    notional: Math.round(maxNotional * 10) / 10,
-    leverage: safeLev,
+    notional: Math.round(notional * 10) / 10,
+    leverage: MAX_LEVERAGE,
     margin: Math.round(margin * 10) / 10,
     actualRiskUsd: Math.round(actualRiskUsd * 100) / 100,
-    isCapped: false,
+    isCapped: riskSizedNotional > maxNotional,
   };
 }
 
 /**
- * Tính toán lợi nhuận chuẩn toán học khi chốt 2 bước (50% ở TP1, 50% ở TP2).
- * Nếu risk = R ($):
- * TP1 ở 0.5R: lãi = 50% × 0.5 × R = +0.25R ($)
- * TP2 ở 1.0R: lãi = 50% × 1.0 × R = +0.50R ($)
- * Tổng lãi khi đạt cả 2 TP = +0.75R ($)
+ * Tính toán lợi nhuận 2 bước:
+ * - TP1 ở 1.0R (50% vị thế) = +0.50R
+ * - TP2 ở 2.0R (50% vị thế) = +1.00R
+ * Tổng lãi khi ăn cả 2 TP = +1.50R ($6 - $10)
  */
 export function calculatePartialPnL(riskUsd: number) {
-  const winTp1 = riskUsd * 0.25; // 50% vị thế ở 0.5R
-  const winTp2 = riskUsd * 0.50; // 50% vị thế ở 1.0R
-  const totalWin = winTp1 + winTp2; // 0.75R
-  return {
-    winTp1,
-    winTp2,
-    totalWin,
-  };
+  const winTp1 = Math.round(riskUsd * 0.50 * 100) / 100;
+  const winTp2 = Math.round(riskUsd * 1.00 * 100) / 100;
+  return { winTp1, winTp2, totalWin: Math.round((winTp1 + winTp2) * 100) / 100 };
+}
+
+export function isDrawdownLocked(equity: number, peakEquity: number): boolean {
+  if (!Number.isFinite(equity) || !Number.isFinite(peakEquity) || equity <= 0 || peakEquity <= 0) return true;
+  return 1 - equity / peakEquity >= MAX_DRAWDOWN;
 }

@@ -7,13 +7,9 @@ import fs from "fs";
 import path from "path";
 import { analyse } from "@/lib/patterns";
 import { candles, ticker } from "@/lib/okx";
-import {
-  isAllowedSetup,
-  isWatchSetup,
-  isStarSetup,
-  calculateSizing,
-  calculatePartialPnL,
-} from "@/lib/trading-policy";
+import { evaluateSetup } from "@/lib/decision-engine";
+import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
+import { isStarSetup, calculatePartialPnL } from "@/lib/trading-policy";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -66,7 +62,7 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
     const tr = d.at(-1)!.c > ema ? 1 : -1;
     dailyTrendCache[coin] = { trend: tr, ts: Date.now() };
     return tr;
-  } catch (e) {
+  } catch {
     if (cached) return cached.trend;
     return 0;
   }
@@ -100,43 +96,48 @@ export async function send(text: string): Promise<boolean> {
 /** Scan the verified 4H setups. */
 export async function scanAndAlert(): Promise<string[]> {
   const btc = await dailyTrend("BTC");
+  const paper = paperSummary(CAPITAL);
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
   for (const coin of COINS) {
     try {
       await new Promise((r) => setTimeout(r, 60));
-      const [a4, own] = await Promise.all([
-        analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)),
+      const [bars4h, own] = await Promise.all([
+        candles(`${coin}-USDT-SWAP`, "4H", 300),
         coin === "BTC" ? btc : dailyTrend(coin)
       ]);
+      reconcilePaperPositions(coin, bars4h, CAPITAL);
+      const a4 = analyse(bars4h);
 
-      // 1. Quét 4H (BOS LONG & Hai đỉnh SHORT)
+      const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+
+      // 1. Quét 4H
       for (const s of a4.setups) {
         if (s.state !== "triggered") continue;
-        if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
-
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        // Min SL 1.5% (tránh nhiễu, tránh phí sàn nuốt lãi), Max SL 6% (an toàn cho x10)
-        if (risk < 0.015 || risk > 0.06) continue;
+        const decision = evaluateSetup(s, {
+          coin,
+          timeframe: "4H",
+          btcDaily: btc,
+          ownDaily: own,
+          equity: paper.equity,
+          peakEquity: paper.peakEquity,
+          lastBarTime: a4.lastBarTime,
+          livePrice: tLive?.last,
+        });
+        if (!decision.accepted || !decision.plan) continue;
+        const plan = decision.plan;
+        const risk = plan.riskPct;
 
         const key = `4H:${coin}:${s.style}:${s.side}:${a4.lastBarTime}`;
         if (sent.has(key)) continue;
 
-        // Bỏ qua nếu giá live đã chạy quá xa điểm vào (> 0.25%)
-        const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
-        if (tLive && Math.abs(tLive.last - s.entry) / s.entry > 0.0025) continue;
-
-        const R = Math.abs(s.entry - s.stop);
-        const sizing = calculateSizing(CAPITAL, risk);
+        const sizing = plan.sizing;
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-        if (pnl.winTp1 < 2.0) continue; // Không bõ công giao dịch
-        const tp05 = s.entry + s.side * 0.5 * R;
-        const tp10 = s.entry + s.side * R;
 
         const isStar = isStarSetup(s.side, own, btc);
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const styleStr = s.style === "bos" ? "BOS 4H" : s.style === "pinbar_reversal" ? "Pinbar quét râu 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
+        const styleStr = s.style === "bos" ? "BOS 4H" : s.style === "pinbar_reversal" ? "Pinbar 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
         const header = isStar
           ? `🌟 [KÈO ĐẸP ★★★ - ĂN SÓNG LỚN] 4H ${coin} ${sideStr} (${styleStr})\n🔥 THUẬN XU HƯỚNG NGÀY`
           : `🚨 [4H SÓNG LỚN] ${coin} ${sideStr} (${styleStr})`;
@@ -145,48 +146,53 @@ export async function scanAndAlert(): Promise<string[]> {
           key,
           msg:
             `${header}\n` +
-            `• Vào ngay: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > ${f(s.entry + s.side * 0.3 * R)})\n` +
+            `• Vào ngay: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > 0.25%)\n` +
             `• Dừng lỗ (SL): ${f(s.stop)} (-${(risk * 100).toFixed(2)}%)\n` +
             `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
-            `• TP 1 (0.5R): ${f(tp05)} (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
-            `• TP 2 (1.0R): ${f(tp10)} (Tổng +${pnl.totalWin.toFixed(2)}$)${isStar ? " · Có thể gồng thêm theo trend" : ""}\n` +
-            `• MEXC: Ký quỹ ~${sizing.margin}$ · Đòn bẩy x${sizing.leverage} Isolated · Rủi ro SL: -${sizing.actualRiskUsd}$`
+            `• TP 1 (1.0R): ${f(plan.tp1)} (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
+            `• TP 2 (2.0R): ${f(plan.tp2)} (Tổng +${pnl.totalWin.toFixed(2)}$)${isStar ? " · Có thể gồng theo trend" : ""}\n` +
+            `• MEXC (${plan.strategyVersion}): Ký quỹ ~${sizing.margin}$ · Vị thế ${sizing.notional}$ · x${sizing.leverage} Isolated · Rủi ro SL: -${sizing.actualRiskUsd}$`
         });
+        openPaperPlan(key, decision, bars4h, CAPITAL);
       }
 
-      // 1H actionable scalping alert
-      const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
+      // 2. Quét 1H (Lướt sóng sớm)
+      const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 120);
+      const a1 = analyse(bars1h);
       for (const s of a1.setups) {
-        if (s.state !== "triggered" || !isWatchSetup(s.style, s.side, "1H")) continue;
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        // Min SL 1.5% đến 4.0% cho 1H
-        if (risk < 0.015 || risk > 0.04) continue;
-        const key = `WATCH:1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
-        if (sent.has(key)) continue;
+        if (s.state !== "triggered") continue;
+        const decision1h = evaluateSetup(s, {
+          coin,
+          timeframe: "1H",
+          btcDaily: btc,
+          ownDaily: own,
+          equity: paper.equity,
+          peakEquity: paper.peakEquity,
+          lastBarTime: a1.lastBarTime,
+          livePrice: tLive?.last,
+        });
+        if (!decision1h.accepted || !decision1h.plan) continue;
+        const plan1h = decision1h.plan;
 
-        // Bỏ qua nếu giá live đã chạy quá xa điểm vào (> 0.25%)
-        const tLive1h = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
-        if (tLive1h && Math.abs(tLive1h.last - s.entry) / s.entry > 0.0025) continue;
+        const key1h = `1H:${coin}:${s.style}:${s.side}:${a1.lastBarTime}`;
+        if (sent.has(key1h)) continue;
 
-        const R = Math.abs(s.entry - s.stop);
-        const sizing = calculateSizing(CAPITAL, risk);
-        const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-        if (pnl.winTp1 < 1.5) continue; // Phải bõ công lướt sóng
-        const tp05 = s.entry + s.side * 0.5 * R;
-        const tp10 = s.entry + s.side * R;
+        const sizing1h = plan1h.sizing;
+        const pnl1h = calculatePartialPnL(sizing1h.actualRiskUsd);
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const styleStr = s.style === "bos" ? "BOS 1H" : s.style === "pinbar_reversal" ? "Pinbar quét râu 1H" : (s.side > 0 ? "Hai đáy 1H" : "Hai đỉnh 1H");
+        const styleStr = s.style === "bos" ? "BOS 1H" : s.style === "pinbar_reversal" ? "Pinbar 1H" : (s.side > 0 ? "Hai đáy 1H" : "Hai đỉnh 1H");
 
         itemsToSend.push({
-          key,
+          key: key1h,
           msg:
             `⚡ [LƯỚT SÓNG 1H] ${coin} ${sideStr} (${styleStr})\n` +
             `• Vào ngay: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
-            `• Dừng lỗ (SL): ${f(s.stop)} (-${(risk * 100).toFixed(2)}%)\n` +
-            `• TP 1 (0.5R): ${f(tp05)} (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
-            `• TP 2 (1.0R): ${f(tp10)} (Tổng +${pnl.totalWin.toFixed(2)}$)\n` +
-            `• MEXC: Đòn bẩy x${sizing.leverage} Isolated · Ký quỹ ~${sizing.margin}$ · Rủi ro SL: -${sizing.actualRiskUsd}$`
+            `• Dừng lỗ (SL): ${f(s.stop)} (-${(plan1h.riskPct * 100).toFixed(2)}%)\n` +
+            `• TP 1 (1.0R): ${f(plan1h.tp1)} (+${pnl1h.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
+            `• TP 2 (2.0R): ${f(plan1h.tp2)} (Tổng +${pnl1h.totalWin.toFixed(2)}$)\n` +
+            `• MEXC (${plan1h.strategyVersion}): Ký quỹ ~${sizing1h.margin}$ · Vị thế ${sizing1h.notional}$ · x${sizing1h.leverage} Isolated · Rủi ro SL: -${sizing1h.actualRiskUsd}$`
         });
+        openPaperPlan(key1h, decision1h, bars4h, CAPITAL);
       }
 
     } catch (e) {
@@ -207,26 +213,22 @@ export async function scanAndAlert(): Promise<string[]> {
 }
 
 const H4 = 4 * 3_600_000;
-const H1 = 3_600_000;
 const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 
 /** Báo trước: ~5 phút trước khi nến đóng (chỉ báo khi coin áp sát mức kích hoạt <= 1%) */
 export async function preAlert(now = Date.now(), force = false): Promise<string | null> {
   const close4h = Math.floor(now / H4) * H4 + H4;
   const left4h = close4h - now;
-  const close1h = Math.floor(now / H1) * H1 + H1;
-  const left1h = close1h - now;
   // Báo trước ~5 phút (từ phút 53 đến 58)
   const is4hSlot = force || (left4h <= 7 * 60_000 && left4h >= 1 * 60_000);
-  const is1hSlot = !is4hSlot && left1h <= 7 * 60_000 && left1h >= 1 * 60_000;
-  if (!is4hSlot && !is1hSlot) return null;
+  if (!is4hSlot) return null;
 
-  const key = is4hSlot ? `4H:${close4h}` : `WATCH:1H:${close1h}`;
+  const key = `4H:${close4h}`;
   if (!force && preSent.has(key)) return null;
 
   const btc = await dailyTrend("BTC");
   const lines4h: string[] = [];
-  const lines1h: string[] = [];
+  const paper = paperSummary(CAPITAL);
 
   for (const coin of COINS) {
     try {
@@ -238,34 +240,18 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
         const a4 = analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300));
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
-          if (!isAllowedSetup(s.style, s.side, "4H", btc, own)) continue;
-
+          const decision = evaluateSetup(s, { coin, timeframe: "4H", btcDaily: btc, ownDaily: own, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime, now });
+          if (decision.code !== "PENDING_CONFIRMATION" || Math.abs(s.distancePct) > 0.015) continue;
           const risk = Math.abs(s.entry - s.stop) / s.entry;
-          if (risk < 0.015 || risk > 0.06 || Math.abs(s.distancePct) > 0.015) continue;
-
-          const sizing = calculateSizing(CAPITAL, risk);
           const isStar = isStarSetup(s.side, own, btc);
           const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-          const styleStr = s.style === "bos" ? "BOS 4H" : s.style === "pinbar_reversal" ? "Pinbar 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
+          const styleStr = s.style === "bos" ? "BOS 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
 
           lines4h.push(
             `• ${coin} ${sideStr} (${styleStr})${isStar ? " ⭐ [KÈO ĐẸP ★★★]" : ""}: ` +
-            `cần đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (-${(risk * 100).toFixed(1)}%) · x${sizing.leverage}`
+            `cần đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (-${(risk * 100).toFixed(1)}%)`
           );
         }
-      }
-
-      const a1 = analyse(await candles(`${coin}-USDT-SWAP`, "1H", 120));
-      for (const s of a1.setups) {
-        if (s.state !== "pending" || !isWatchSetup(s.style, s.side, "1H")) continue;
-        const risk = Math.abs(s.entry - s.stop) / s.entry;
-        if (risk < 0.015 || risk > 0.04 || Math.abs(s.distancePct) > 0.012) continue;
-        const sizing = calculateSizing(CAPITAL, risk);
-        const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const styleStr = s.style === "bos" ? "BOS 1H" : s.style === "pinbar_reversal" ? "Pinbar 1H" : (s.side > 0 ? "Hai đáy 1H" : "Hai đỉnh 1H");
-        lines1h.push(
-          `• ${coin} ${sideStr} (${styleStr}): cần đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (-${(risk * 100).toFixed(1)}%) · x${sizing.leverage}`
-        );
       }
 
     } catch (e) {
@@ -274,17 +260,12 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
   }
 
   // Nếu KHÔNG có coin nào (cả 4h lẫn 1h) sắp kích hoạt: TUYỆT ĐỐI IM LẶNG, không gửi tin rác
-  if (!lines4h.length && !lines1h.length) {
+  if (!lines4h.length) {
     return null;
   }
 
-  const msg = is4hSlot
-    ? `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
-      `${lines4h.length ? `📌 Sóng lớn 4H sắp kích hoạt:\n${lines4h.join("\n")}\n` : ""}` +
-      `${lines1h.length ? `\n⚡ Lướt sóng 1H sắp kích hoạt:\n${lines1h.join("\n")}\n` : ""}` +
-      `\n💡 Chuẩn bị mở app MEXC, vào lệnh ngay khi nến đóng!`
-    : `⚡ [LƯỚT SÓNG 1H] Còn ~${Math.round(left1h / 60_000)} phút đóng nến:\n` +
-      `${lines1h.join("\n")}\n\n💡 Mở chart canh điểm đóng nến, đặt SL chặt theo kế hoạch!`;
+  const msg = `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
+    `📌 Setup PAPER sắp xác nhận:\n${lines4h.join("\n")}\n\n💡 Chỉ theo dõi; decision engine sẽ đánh giá lại sau khi nến đóng.`;
 
   const ok = await send(msg);
   if (ok) {

@@ -24,6 +24,7 @@ class Params:
     atr_len: int = 14
     fee: float = 0.001
     slippage: float = 0.0002
+    funding_per_bar: float = 0.0
 
 
 @dataclass
@@ -76,7 +77,10 @@ def simulate_trade(candles: list[Candle], signal_i: int, side: int, p: Params, e
             exit_i, exit_px, reason = k, tp, "tp"
             break
     exit_px *= 1 - side * p.slippage
-    ret = side * (exit_px / entry - 1) - 2 * p.fee
+    # Funding is supplied as a conservative cost per held bar. Use a signed
+    # series in strategy-specific studies when direction-aware history exists.
+    funding_cost = max(0, exit_i - entry_i + 1) * p.funding_per_bar
+    ret = side * (exit_px / entry - 1) - 2 * p.fee - funding_cost
     return Trade(side, entry_i, exit_i, entry, exit_px, reason, ret)
 
 

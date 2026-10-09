@@ -1,25 +1,29 @@
 # Ngữ cảnh cho trợ lý AI
 
-**Đọc [PLAN.md](PLAN.md) trước**, và khi phân tích/đề xuất lệnh thì làm đúng [docs/quy-trinh-phan-tich.md](docs/quy-trinh-phan-tich.md) (chủ dự án, cách đánh hiện tại, những gì đã kiểm chứng, việc đang mở). File này chỉ ghi quy ước kỹ thuật.
+Cập nhật 2026-10-09, sau chuẩn hóa toàn diện `paper-v2.0.0`. Đọc [docs/bot-spec.md](docs/bot-spec.md) trước; file đó là nguồn chân lý.
 
-## Dự án là gì
+## Dự án hiện tại
 
-Phòng thí nghiệm cá nhân về giao dịch hợp đồng vĩnh cửu crypto (SOL, BTC, ETH, HYPE và ~20 altcoin): backtest các kiểu vào lệnh trên dữ liệu thật, web phân tích trực tiếp, kho kiến thức từ video/sách. Chỉ để nghiên cứu, không phải lời khuyên đầu tư. Không có chức năng đặt lệnh.
+Northstar là bot hỗ trợ giao dịch và paper trade crypto perpetual dùng dữ liệu OKX; tích hợp Telegram bot tương tác trực tiếp với trader Victor Huynh để quản lý vị thế trên sàn MEXC (Vốn 40$, x10 Isolated). Web dùng Next.js 16.
 
-## Cấu trúc
+Luồng chuẩn: nến OKX đã đóng → `lib/patterns.ts` → `lib/decision-engine.ts` → scanner/Telegram Alert & Webhook → `data/paper-ledger.ndjson`. `lib/trading-policy.ts` chứa version, registry, sizing và circuit breaker.
 
-- `app/`, `lib/`: web Next.js 16 (tiếng Việt), triển khai trên Railway. Chỉ một trang: `app/live-scanner.tsx` + API `/api/watchlist`, `/api/live/levels`. Đọc `node_modules/next/dist/docs/` trước khi sửa (bản Next này có thay đổi so với trước, xem `AGENTS.md`).
-  - `lib/okx.ts`: dữ liệu công khai OKX (không cần key). `lib/patterns.ts`: bản TypeScript của luật 4h đã backtest (BOS, hai đỉnh/hai đáy), phải giữ **giống hệt** bản Python.
-  - `lib/*.json`: kết quả thống kê sinh từ script Python (không sửa tay).
-- `service/backtest/`: bộ khung backtest + định nghĩa các kiểu vào lệnh (`patterns.py`, `setups.py`, `structure.py`).
-- `service/scripts/`: tải dữ liệu, các nghiên cứu, `market_brief.py` (phân tích nhanh trong chat).
-- `data/` (không lên git): nến Binance perp 15m/1h 2023–2026, transcript, sách, bảng phí MEXC.
+## Policy đã chốt (`paper-v2.0.0`)
 
-## Quy ước
+- **Chiến lược được phép (`paper`):**
+  - 4H: BOS Long, BOS Short, Hai đỉnh/Hai đáy, Pinbar quét râu đảo chiều.
+  - 1H: Lướt sóng sớm Hai đỉnh/Hai đáy 1H, Pinbar quét râu 1H (SL chặt 1.5% - 4.0%).
+- **Khoảng SL hợp lệ:** **1.5% đến 6.0%** entry. Tuyệt đối loại bỏ SL < 1.5% (phí sàn nuốt và quét râu) và SL > 6.0% (cháy tài khoản x10).
+- **Chống trôi giá (Max Drift):** Giá live lệch không quá 0.25% so với điểm kích hoạt đóng nến; lệch quá thì trả `RUNAWAY_PRICE` để tránh đu đỉnh.
+- **Chốt lời 2 bước:** TP1 ở 1.0R (đóng 50%, dời SL về hòa vốn); TP2 ở 2.0R hoặc cản cấu trúc nến Ngày (đóng 50% còn lại).
+- **Vốn & Quản trị rủi ro:** Vốn 40 USDT; isolated x10; rủi ro tối đa 10% equity (4$) tại SL bằng cách điều chỉnh notional. Drawdown $\ge 20\%$ từ đỉnh thì khóa lệnh mới (`BOT_LOCKED`).
 
-- Mọi giá và quyết định dựa trên dữ liệu thật có thời điểm; lỗi thì hiện rõ, không bịa giá.
-- Backtest: chỉ dùng nến đã đóng, vào lệnh ở giá mở nến sau, dừng lỗ được tính trước khi cùng nến chạm cả hai. Chủ dự án giao dịch trên sàn MEXC miễn phí giao dịch (0% phí sàn) -> backtest/thống kê tính theo 0% phí sàn (zero-fee); 2026 là năm kiểm tra.
-- Không lưu key/secret trong code hay git (repo GitHub là public). Biến môi trường để trên Railway.
-- Trả lời chủ dự án bằng tiếng Việt, dứt khoát, kèm số liệu kiểm chứng; không hứa dự đoán.
-- Cấu hình thực chiến hiện tại: dùng toàn bộ vốn làm isolated margin x10 (40$ → khoảng 400$ vị thế). SL theo cấu trúc — dưới đáy với LONG, trên đỉnh với SHORT — không giới hạn lỗ cố định 5$. Luôn hiển thị giá TP và PnL ước tính.
-- Tín hiệu chính là setup 4h. Hai đỉnh SHORT 1h chỉ là cảnh báo sớm để mở chart canh và phải ghi rõ chưa phải tín hiệu 4h.
+## Quy ước kỹ thuật
+
+- Mọi quyết định và tín hiệu vào lệnh (kể cả Telegram) phải đi qua `evaluateSetup()` trong `lib/decision-engine.ts`.
+- Mọi lỗi dữ liệu phải fail-closed và có decision code.
+- Trả lời chủ dự án bằng tiếng Việt, giải thích số liệu rõ ràng, thực chiến.
+
+## Lệnh kiểm tra
+
+`node tests/test_policy.mjs`; `node tests/test_decision.mjs`; `npm run build`.
