@@ -34,6 +34,12 @@ export async function send(text: string) {
   if (!res.ok) throw new Error(`Telegram ${res.status}`);
 }
 
+// History (21 coins 2023–2026, 4h, TP 0.75R, 48h): share that hit TP first / SL first / neither
+const ODDS: Record<string, [number, number, number]> = {
+  "bos:1": [42, 25, 33], "bos:-1": [39, 25, 36], "double_top_bottom:1": [41, 24, 35], "double_top_bottom:-1": [44, 26, 30],
+};
+const odds = (style: string, side: number) => { const o = ODDS[`${style}:${side}`]; return o ? `Lịch sử (TP 0,75R): chạm TP trước ${o[0]}% · chạm SL trước ${o[1]}% · 48h chưa chạm ${o[2]}%` : ""; };
+
 /** Scan once; send new tradeable signals. Returns the messages sent. */
 export async function scanAndAlert(): Promise<string[]> {
   const btc = await dailyTrend("BTC");
@@ -59,7 +65,8 @@ export async function scanAndAlert(): Promise<string[]> {
           `Vào ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu giá đã chạy quá ${f(s.entry + s.side * 0.5 * R)})\n` +
           `SL ${f(s.stop)} (${(risk * 100).toFixed(2)}%) · THOÁT SỚM nếu nến 4h đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
           (BOLD ? `TP ${f(s.entry + s.side * 0.75 * R)} (0,75R)\n` : `TP: nửa ở ${f(s.entry + s.side * 0.5 * R)} (0,5R) → dời SL về giá vào · nửa ở ${f(s.entry + s.side * R)} (1R)\n`) +
-          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ ở TP`,
+          `Đòn bẩy x${lev.toFixed(lev < 10 ? 1 : 0)} · ký quỹ ${MARGIN}$ (vị thế ${notional.toFixed(0)}$) · mất ~${riskUsd.toFixed(1)}$ ở SL / lời ~${(riskUsd * 0.75).toFixed(1)}$ ở TP + `
+${odds(s.style, s.side)}`,
         );
       }
     } catch (e) {
