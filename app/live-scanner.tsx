@@ -4,21 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"];
 const PUBLIC_WS = "wss://ws.okx.com:8443/ws/v5/public";
-const BUSINESS_WS = "wss://ws.okx.com:8443/ws/v5/business"; // candle channels live here
-const MARGIN = 40, LEV = 15, NOTIONAL = MARGIN * LEV; // owner's usual 40$ margin at 15x
+const MARGIN = 40; // owner's usual margin
 const RISK_4H = 3; // 4h stops are 4-8% away: size the position so the stop costs ~3$
 
-type Bar = { t: number; o: number; h: number; l: number; c: number; v: number };
 type Setup = { style: "bos" | "double_top_bottom"; state: "triggered" | "pending"; side: 1 | -1; entry: number; stop: number; tp15: number; tp2: number; distancePct: number };
 type WatchData = { coins: { coin: string; setups: Setup[]; lastBarTime: number }[] };
-type Zone = { coin: string; side: 1 | -1; zoneLow: number; zoneHigh: number; stop: number; target2: number; ema20: number; swing: number; stopPct: number };
-type LevelsData = { rows: { coin: string; trend4h: number; trend1h: number; zone: Zone | null; last15m: (Bar & { closed: boolean }) | null }[]; computedAt: number };
+type LevelsData = { rows: { coin: string; trend4h: number; trend1h: number }[]; computedAt: number };
 type Tape = { price: number; bid: number; ask: number; bookBuy: number; tradeBuy: number; tradeVolume: number; ts: number };
 type Trade = { ts: number; side: "buy" | "sell"; size: number };
 type Key = "enter" | "wait" | "skip";
 type Plan = {
-  id: string; coin: string; kind: "zone" | "4h"; side: 1 | -1; title: string; key: Key; text: string; reason: string;
-  levels?: { entry: number; stop: number; tp1: number; tp2: number; zone?: [number, number] };
+  id: string; coin: string; kind: "4h"; side: 1 | -1; title: string; key: Key; text: string; reason: string;
+  levels?: { entry: number; stop: number; tp1: number; tp2: number };
 };
 
 const emptyTape = (): Tape => ({ price: 0, bid: 0, ask: 0, bookBuy: 0.5, tradeBuy: 0.5, tradeVolume: 0, ts: 0 });
@@ -67,13 +64,11 @@ export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
   const [levels, setLevels] = useState<LevelsData | null>(null);
   const [tapes, setTapes] = useState<Record<string, Tape>>({});
-  const [bars, setBars] = useState<Record<string, Bar>>({});
   const [connection, setConnection] = useState<"connecting" | "live" | "retrying">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [notify, setNotify] = useState(false);
   const [now, setNow] = useState(0);
   const tapeRef = useRef<Record<string, Tape>>({});
-  const barRef = useRef<Record<string, Bar>>({});
   const tradesRef = useRef<Record<string, Trade[]>>({});
   const prevKey = useRef<Record<string, Key>>({});
 
@@ -87,7 +82,7 @@ export default function LiveScanner() {
     return () => clearTimeout(t);
   }, []);
 
-  // structural levels: 4h setups + 1h pullback zones, refreshed every 60s
+  // 4h setups + 4h/1h trend context, refreshed every 60s
   useEffect(() => {
     let cancelled = false;
     const load = () => {
@@ -95,7 +90,7 @@ export default function LiveScanner() {
         fetch("/api/watchlist", { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`watchlist ${r.status}`)))),
         fetch("/api/live/levels", { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`levels ${r.status}`)))),
       ]).then(([w, l]: [WatchData, LevelsData]) => { if (!cancelled) { setWatch(w); setLevels(l); } })
-        .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Không tải được vùng giá"); });
+        .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Không tải được tín hiệu 4h"); });
     };
     const first = setTimeout(load, 0), timer = setInterval(load, 60_000);
     return () => { cancelled = true; clearTimeout(first); clearInterval(timer); };
@@ -104,7 +99,7 @@ export default function LiveScanner() {
   useEffect(() => {
     let stopped = false;
     const sockets: WebSocket[] = [], timers: ReturnType<typeof setTimeout>[] = [];
-    const flush = setInterval(() => { setTapes({ ...tapeRef.current }); setBars({ ...barRef.current }); setNow(Date.now()); }, 1000);
+    const flush = setInterval(() => { setTapes({ ...tapeRef.current }); setNow(Date.now()); }, 1000);
     const ping = setInterval(() => sockets.forEach((s) => s.readyState === WebSocket.OPEN && s.send("ping")), 25_000);
 
     const open = (url: string, args: { channel: string; instId: string }[], onData: (channel: string, coin: string, rows: unknown[]) => void, main: boolean) => {
@@ -145,10 +140,6 @@ export default function LiveScanner() {
       }
     }, true);
 
-    // closed 15m candles in real time (confirm flag = "1")
-    open(BUSINESS_WS, COINS.map((coin) => ({ channel: "candle15m", instId: `${coin}-USDT-SWAP` })), (_channel, coin, rows) => {
-      for (const r of rows as string[][]) if (r[8] === "1") barRef.current[coin] = { t: +r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[6] };
-    }, false);
 
     return () => { stopped = true; clearInterval(flush); clearInterval(ping); timers.forEach(clearTimeout); sockets.forEach((s) => s.close()); };
   }, []);
@@ -197,7 +188,7 @@ export default function LiveScanner() {
       </div>
     </header>
     <p className="muted">
-      Giá, sổ lệnh 5 mức, giao dịch 30 giây và nến 15m qua WebSocket (cập nhật mỗi giây); vùng giá tính lại mỗi 60 giây{levels ? ` (lần cuối ${clock(levels.computedAt)})` : ""}.
+      Giá, sổ lệnh 5 mức và giao dịch 30 giây qua WebSocket (mỗi giây); tín hiệu 4h và xu hướng tính lại mỗi 60 giây{levels ? ` (lần cuối ${clock(levels.computedAt)})` : ""}.
       <b> VÀO NGAY</b> chỉ khi: nến 4h vừa đóng xác nhận BOS / hai đỉnh-hai đáy (2 kiểu duy nhất gần có lãi qua kiểm chứng) và giá chưa chạy quá 0,5R. Đã bỏ kiểu vùng hồi 1h (lỗ -0,11R/lệnh trên 5.471 lệnh).
     </p>
     {error && <p className="verdict bad">{error}</p>}
@@ -212,10 +203,10 @@ export default function LiveScanner() {
           <td>{p.title}</td>
           <td><b className={`live-verdict ${p.key}`}>{p.text}</b><small>{p.reason}</small></td>
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
-          <td>{l?.zone ? `${fmt(l.zone[0])} – ${fmt(l.zone[1])}` : l ? fmt(l.entry) : "—"}{l?.zone && p.key === "enter" && <small>vào {fmt(l.entry)}</small>}</td>
+          <td>{l ? fmt(l.entry) : "—"}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
           <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
-          <td>{!l ? "—" : p.kind === "zone" ? <>15x ({NOTIONAL}$)<small>−{(NOTIONAL * (riskPct + 0.001)).toFixed(1)}$ / +{(NOTIONAL * (1.5 * riskPct - 0.001)).toFixed(1)}$</small></> : (() => {
+          <td>{!l ? "—" : (() => {
             const notional = RISK_4H / (riskPct + 0.001), lev = notional / MARGIN;
             return <>{lev < 1 ? `${notional.toFixed(0)}$ (<1x)` : `≤ ${lev.toFixed(1)}x`}<small className="neg">KHÔNG dùng 15x: thanh lý trước dừng lỗ</small><small>−{RISK_4H}$ / +{(notional * (1.5 * riskPct - 0.001)).toFixed(1)}$</small></>;
           })()}</td>

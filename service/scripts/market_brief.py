@@ -11,6 +11,9 @@ from datetime import datetime, timedelta, timezone
 from service.backtest.data import Candle
 from service.backtest.patterns import STYLES, build, confirmed, trend
 
+# the one agreed rule (PLAN.md): only these two styles, only on the 4h frame
+TESTED = {"bos", "double_top_bottom"}
+
 VN = timezone(timedelta(hours=7))
 COINS = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK", "DOT", "LTC", "SUI", "ARB", "OP",
          "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"]
@@ -40,6 +43,8 @@ def frame(coin, tf):
     fired = []
     for ago in range(3):
         for key, (title, det) in STYLES.items():
+            if key not in TESTED:
+                continue
             s = det(ctx, i - ago)
             if s:
                 fired.append(f"{title} {'LONG' if s['side'] > 0 else 'SHORT'} ({ago} nến trước) stop {fmt(s['stop'])}"
@@ -65,7 +70,8 @@ def detail(coin):
         print(f"[{tf}] nến đóng {fr['time']} close {fmt(fr['close'])} | xu hướng {fr['trend']} | EMA20 {fmt(fr['ema20'])} EMA200 {fmt(fr['ema200'])} "
               f"| RSI {fr['rsi']:.0f} | ATR {fr['atr_pct']:.2f}% | KL {fr['vol_ratio'] or 0:.1f}x")
         print(f"      đỉnh swing gần: {fr['swing_highs']} | đáy swing gần: {fr['swing_lows']}")
-        print("      setup: " + ("; ".join(fr["setups"]) if fr["setups"] else "không"))
+        if tf == "4h":
+            print("      setup 4h: " + ("; ".join(fr["setups"]) if fr["setups"] else "không → đứng ngoài"))
 
 
 def scan():
@@ -76,7 +82,7 @@ def scan():
         except Exception as e:  # noqa: BLE001 - keep scanning the other coins
             print(f"{coin:5s} lỗi {e}")
             continue
-        hits = [s for s in fr["setups"] if "BOS" in s or "Hai đỉnh" in s]
+        hits = fr["setups"]
         print(f"{coin:5s} {fmt(fr['close']):>10s} {fr['trend']:13s} RSI {fr['rsi']:3.0f} | " + ("; ".join(hits) if hits else "-"))
 
 
