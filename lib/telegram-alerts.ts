@@ -53,12 +53,23 @@ declare global {
 const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
 const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
 
+const dailyTrendCache: Record<string, { trend: 1 | -1 | 0; ts: number }> = {};
+
 async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
-  const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
-  if (d.length < 60) return 0;
-  let ema = d[0].c;
-  for (const c of d) ema += (2 / 51) * (c.c - ema);
-  return d.at(-1)!.c > ema ? 1 : -1;
+  const cached = dailyTrendCache[coin];
+  if (cached && Date.now() - cached.ts < 30 * 60_000) return cached.trend;
+  try {
+    const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
+    if (d.length < 60) return 0;
+    let ema = d[0].c;
+    for (const c of d) ema += (2 / 51) * (c.c - ema);
+    const tr = d.at(-1)!.c > ema ? 1 : -1;
+    dailyTrendCache[coin] = { trend: tr, ts: Date.now() };
+    return tr;
+  } catch (e) {
+    if (cached) return cached.trend;
+    return 0;
+  }
 }
 
 const f = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
@@ -94,6 +105,7 @@ export async function scanAndAlert(): Promise<string[]> {
 
   for (const coin of COINS) {
     try {
+      await new Promise((r) => setTimeout(r, 60));
       const [a4, own] = await Promise.all([
         analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300)),
         coin === "BTC" ? btc : dailyTrend(coin)
@@ -195,6 +207,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
 
   for (const coin of COINS) {
     try {
+      await new Promise((r) => setTimeout(r, 60));
       const own = coin === "BTC" ? btc : await dailyTrend(coin);
 
       // 1. Quét 4h nếu đang ở slot 4h (khoảng cách <= 1.2%)
