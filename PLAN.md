@@ -15,7 +15,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 - Nhận xét lệnh đang chạy: nêu mức giá làm hỏng lý do vào lệnh; **không liệt kê rủi ro ngắn hạn kiểu "giá có thể hồi"** (lần trước làm chủ dự án thoát sớm một lệnh short đúng hướng).
 - Không hứa dự đoán; luôn kèm số liệu kiểm chứng.
 
-**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web` + `Postgres`; deploy bằng `railway up --service web --ci --detach`). Trang tự tải lại mỗi 60 giây. **Scanner live** (WebSocket OKX, mỗi giây): báo VÀO NGAY / CHỜ / BỎ QUA cho 21 coin, **chỉ setup 4h**, kèm vào/SL/TP và thông báo trình duyệt. Có: phân tích nhiều khung, bảng "Coin đáng chú ý · 4h" (BOS / hai đỉnh-hai đáy, giá vào, dừng lỗ, chốt lời, đòn bẩy theo số tiền chấp nhận mất), nhật ký vị thế, nút AI (cần `ANTHROPIC_API_KEY`, hiện **không dùng**). GitHub `PacificPep26/Trading` (public; `data/` không lên git).
+**Web**: https://helpvictor.up.railway.app (Railway project `nurturing-presence`, service `web`; deploy `railway up --service web --ci --detach`). Một trang: **Scanner live** 21 coin (WebSocket OKX), chỉ luật 4h, có ô Vốn $, cỡ lệnh rủi ro 2,5%, TP 0,5R/1,5R, thông báo trình duyệt; khối "Luật & kiến thức". **Bot Telegram** chạy trong server (`instrumentation.ts` → `lib/telegram-alerts.ts`), quét 5 phút/lần, chỉ gửi tín hiệu mới hợp lệ (vào, SL, TP 0,5R/1,5R, cỡ lệnh). GitHub `PacificPep26/Trading` (public).
 
 ## Kết luận hiện tại: đánh thế nào (LUẬT DUY NHẤT, thống nhất 2026-10-09)
 
@@ -48,10 +48,10 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 1. **Không tách LONG/SHORT** trong mọi nghiên cứu trước 9/10 → phát hiện muộn BOS 4h chỉ có lợi thế ở chiều LONG. Mọi kết quả cũ cần xem lại theo chiều.
 2. **Thử quá nhiều biến thể, chưa hiệu chỉnh đa giả thuyết** → t≈2 có thể do may. **Đã kiểm tra trên 18 coin mới (2026-10-09): ≈ 0 → lợi thế chưa được xác nhận ngoài 21 coin gốc.** Cần forward test (ghi mọi tín hiệu từ nay) trước khi tăng rủi ro.
 3. **Dữ liệu 2023–2026 thiên về thị trường tăng**; 21 coin chọn theo danh sách hiện tại (bỏ sót coin đã chết) → có thể đẹp hơn thực tế.
-4. **Chưa tính funding** khi giữ lệnh 0,5–2 ngày; **phí OKX** (sàn chủ dự án thực sự dùng) chưa chạy lại cho luật mới; trượt giá coin nhỏ chưa đo.
+4. ~~Chưa tính funding/phí OKX~~ → đã tính (rule_study, 2026-10-09). Trượt giá coin nhỏ chưa đo thực tế.
 5. **SL/TP cùng nến** giả định SL trước (bảo thủ), chưa có dữ liệu 1m để phân xử.
-6. **Chưa có test đối chiếu** bản Python (backtest) với bản TypeScript (scanner) trên cùng dữ liệu.
-7. **Chưa mô phỏng tài khoản** (40$ theo luật 4h: sụt vốn tối đa, chuỗi thua).
+6. ~~Test đối chiếu Python ↔ scanner~~ → xong, khớp 21 coin (`tests/test_parity.py`).
+7. ~~Mô phỏng tài khoản~~ → xong (rủi ro 2,5%: sụt tối đa ~55%, chuỗi thua 13).
 8. **Lời khuyên trong chat từng đi trước kiểm chứng** (vùng hồi 1h cho APT/ETH/SOL) → quy tắc: không đề xuất kiểu chưa backtest.
 9. **Mục tiêu gốc chưa làm**: trích kỹ thuật từ video Nukida (32/191 transcript) và sách để kiểm chứng.
 
@@ -86,5 +86,5 @@ Overfitting / data snooping (nhiều giả thuyết → hiệu chỉnh), năm ki
 
 ## Đang mở (cập nhật mỗi ngày)
 
-- **SOL (2026-10-08)**: 4h & 1h giảm, đi ngang 115,14–117,17. Kế hoạch A: limit short 117,0, SL 117,4, TP 116,4 / 115,15 (chưa đặt lúc 10h16). Kế hoạch B: nến 1h đóng dưới 115,14 → hủy A, short khi hồi 115,3–115,5, SL 116,0, mục tiêu 112,5–113. Không đuổi giá giữa vùng.
-- LINK SHORT đã đóng 8/10 22h36 ở 12,411: **+19,97$**.
+- **2026-10-09**: không có lệnh hợp lệ (BTC ngày TĂNG → chỉ BOS LONG / hai đáy LONG). OP BOS SHORT bị luật loại. Chờ nến 4h đóng; bot Telegram tự báo.
+- **Forward test**: từ 2026-10-09 ghi mọi tín hiệu bot gửi vào docs/nhat-ky-giao-dich.md để so với backtest.
