@@ -74,7 +74,7 @@ export default function LiveScanner() {
   const [watch, setWatch] = useState<WatchData | null>(null);
   const [levels, setLevels] = useState<LevelsData | null>(null);
   const [capital, setCapital] = useState(20); // margin per trade ($)
-  const [profitUsd, setProfitUsd] = useState(5); // target $ at TP; loss = profit / TP-in-R, leverage derived
+  const [equity, setEquity] = useState(57); // account size; risk 10% per trade, ★ trades only, TP 1R (owner's choice)
   useEffect(() => {
     const t = setTimeout(() => { try { const v = Number(localStorage.getItem("scanner-margin")); if (v > 0) setCapital(v); } catch { /* ignore */ } }, 0);
     return () => clearTimeout(t);
@@ -165,7 +165,7 @@ export default function LiveScanner() {
     for (const coin of COINS) {
       const tape = tapes[coin] ?? emptyTape();
       const w = watch?.coins.find((c) => c.coin === coin);
-      for (const s of w?.setups ?? []) out.push(fourHourPlan(coin, s, tape, w!.lastBarTime, now));
+      for (const s of w?.setups ?? []) out.push(fourHourPlan(coin, w?.daily === s.side || s.blocked ? s : { ...s, blocked: "Lệnh thường (coin ngược xu hướng ngày): chỉ đánh lệnh ★" }, tape, w!.lastBarTime, now));
     }
     // within the same verdict: tested 4h setups first, then fee-free coins on MEXC, then the closest plan
     const FREE = new Set(["XRP", "DOGE", "LINK", "ADA", "AVAX", "ARB", "PEPE", "INJ", "LTC", "DOT", "APT", "OP", "TIA", "NEAR"]);
@@ -194,13 +194,12 @@ export default function LiveScanner() {
   const shown = plans.filter((p) => p.text !== "KHÔNG ĐÁNH");
   const blocked = plans.filter((p) => p.text === "KHÔNG ĐÁNH");
   const idle = COINS.filter((c) => !plans.some((p) => p.coin === c));
-  const star = (p: Plan) => watch?.coins.find((c) => c.coin === p.coin)?.daily === p.side;
   const trendOf = (coin: string) => levels?.rows.find((r) => r.coin === coin);
 
   return <section className="card live-scanner">
     <header className="card-head">
       <h2>Scanner live · 21 coin</h2>
-      <div className="live-head"><label className="capital">Lời ở 0,5R $<input inputMode="decimal" value={profitUsd} onChange={(e) => setProfitUsd(Number(e.target.value.replace(",", ".")) || 0)} /></label><label className="capital">Ký quỹ $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ } }} /></label>
+      <div className="live-head"><label className="capital">Vốn $<input inputMode="decimal" value={equity} onChange={(e) => setEquity(Number(e.target.value.replace(",", ".")) || 0)} /></label><label className="capital">Ký quỹ $<input inputMode="decimal" value={capital} onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setCapital(v); try { localStorage.setItem("scanner-margin", String(v)); } catch { /* ignore */ } }} /></label>
         <button className="primary" disabled={notify} onClick={async () => { if (typeof Notification !== "undefined" && (await Notification.requestPermission()) === "granted") { setNotify(true); beep(); try { localStorage.setItem("scanner-notify", "1"); } catch { /* ignore */ } } }}>
           {notify ? "Đã bật thông báo" : "Bật thông báo"}
         </button>
@@ -214,7 +213,7 @@ export default function LiveScanner() {
     {error && <p className="verdict bad">{error}</p>}
     {shown.length === 0 && <p className="verdict neutral"><b>Chưa có lệnh nào vào được.</b> Lần kiểm tra tới: {next4h(now)}. Khi có tín hiệu, trang này kêu và bot gửi Telegram.</p>}
     {shown.length > 0 && <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP (★ 1R · thường 0,5R)</th><th>Đòn bẩy · lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP</th><th>Đòn bẩy · lỗ/lời</th><th>Dòng lệnh</th></tr></thead>
       <tbody>{shown.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
@@ -226,9 +225,9 @@ export default function LiveScanner() {
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
           <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small>{p.exitLevel ? <small>thoát sớm: nến 4h đóng {p.side > 0 ? "<" : ">"} {fmt(p.exitLevel)}</small> : null}</td>
-          <td className="pos">{!l ? "—" : star(p) ? <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R (lệnh ★)</small></> : <><b>{fmt(l.tp1)}</b><small>0,5R (lệnh thường)</small></>}</td>
+          <td className="pos">{!l ? "—" : <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R</small></>}</td>
           <td>{!l ? "—" : (() => {
-            const tpR = star(p) ? 1 : 0.5, lossUsd = profitUsd / 0.5, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * tpR * riskPct;
+            const lossUsd = equity * 0.1, lev = Math.min(20, lossUsd / (capital * riskPct)), notional = capital * lev, win = notional * riskPct;
             return <><b>x{lev.toFixed(lev < 10 ? 1 : 0)}</b> · {capital}$ ký quỹ ({notional.toFixed(0)}$)<small>−{(notional * riskPct).toFixed(1)}$ ở SL / +{win.toFixed(1)}$ ở TP</small></>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
