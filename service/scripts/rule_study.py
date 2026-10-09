@@ -78,7 +78,7 @@ def signals(hours=4, tp=1.5, only=None, exclude=None):
                     continue
                 gross, risk, _, year, k = r
                 hold_h = (k - i) * hours
-                out.append({"sym": sym, "style": key, "side": side, "gross": gross, "risk": risk, "year": year,
+                out.append({"sym": sym, "style": key, "side": side, "star": trend_at(own, t) == side, "gross": gross, "risk": risk, "year": year,
                             "t_in": cs[i + 1].t, "t_out": cs[k].t + bar_ms, "hold_h": hold_h})
                 busy = k
                 break
