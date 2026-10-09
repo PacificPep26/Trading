@@ -46,7 +46,7 @@ Mỗi lần có kết luận mới: sửa phần tương ứng ở file này + t
 ## Tự rà soát: chỗ còn thiếu / sai sót (2026-10-09)
 
 1. **Không tách LONG/SHORT** trong mọi nghiên cứu trước 9/10 → phát hiện muộn BOS 4h chỉ có lợi thế ở chiều LONG. Mọi kết quả cũ cần xem lại theo chiều.
-2. **Thử quá nhiều biến thể, chưa hiệu chỉnh đa giả thuyết** → t≈2 có thể do may. Cần năm kiểm tra sạch hoặc forward test.
+2. **Thử quá nhiều biến thể, chưa hiệu chỉnh đa giả thuyết** → t≈2 có thể do may. **Đã kiểm tra trên 18 coin mới (2026-10-09): ≈ 0 → lợi thế chưa được xác nhận ngoài 21 coin gốc.** Cần forward test (ghi mọi tín hiệu từ nay) trước khi tăng rủi ro.
 3. **Dữ liệu 2023–2026 thiên về thị trường tăng**; 21 coin chọn theo danh sách hiện tại (bỏ sót coin đã chết) → có thể đẹp hơn thực tế.
 4. **Chưa tính funding** khi giữ lệnh 0,5–2 ngày; **phí OKX** (sàn chủ dự án thực sự dùng) chưa chạy lại cho luật mới; trượt giá coin nhỏ chưa đo.
 5. **SL/TP cùng nến** giả định SL trước (bảo thủ), chưa có dữ liệu 1m để phân xử.
