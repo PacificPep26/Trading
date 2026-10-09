@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: TP theo chất lượng (21 coin, phí 0): ★ (coin cùng xu hướng ngày) TP 0,5/1/1,5R = +0,016/+0,045/+0,081R; không ★ = +0,025/+0,004/+0,028R. Kết hợp ★ 1R + thường 0,5R: +0,042R, thắng 55%, t=2,0 (chủ dự án chọn); ★ 1,5R + thường 0,5R: +0,061R; chốt hết 0,5R: +0,021R. Chưa kiểm trên 18 coin mới.
+
 - **2026-10-09**: `service/scripts/expand_study.py` (phí 0, trượt + funding). **Khung**: 4h tốt nhất (0,5R +0,019R; 1,5R +0,061R t=2,3); 2h âm (-0,028R / -0,022R, 17 lệnh/tuần); 6h ≈ 0. **18 coin MỚI phí 0% MEXC (AAVE, ATOM, ALGO, APE, ENA, FET, HBAR, ICP, JUP, LDO, ONDO, ORDI, RENDER, SEI, TAO, WLD, XLM, ZEC), chưa từng dùng để chọn luật**: 0,5R -0,008R, 1,5R +0,002R → **luật không có lợi thế trên coin mới**; lợi thế trên 21 coin cũ có thể một phần do chọn luật trên chính dữ liệu đó. Không thêm coin mới vào scanner. Bot Telegram chạy trong server (instrumentation.ts, 5 phút/lần, chỉ tín hiệu mới), endpoint cần CRON_SECRET.
 
 - **2026-10-09**: `service/scripts/short_exit_study.py`: short 4h theo TP và xu hướng ngày. BOS SHORT: ngày giảm -0,03 đến +0,01R ở mọi TP (TP nhanh 0,5R thắng 62% nhưng +0,012R); ngày không giảm -0,03 đến -0,06R (2026 -0,17 đến -0,27R). **Hai đỉnh SHORT khi BTC & coin ngày giảm: +0,056 đến +0,067R (TP 1–2R; 2026 +0,08 đến +0,18R)**; ngày không giảm âm. → short chỉ qua hai đỉnh khi xu hướng ngày giảm; chốt sớm không cứu BOS SHORT.

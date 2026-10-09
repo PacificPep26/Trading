@@ -192,6 +192,7 @@ export default function LiveScanner() {
   const shown = plans.filter((p) => p.text !== "KHÔNG ĐÁNH");
   const blocked = plans.filter((p) => p.text === "KHÔNG ĐÁNH");
   const idle = COINS.filter((c) => !plans.some((p) => p.coin === c));
+  const star = (p: Plan) => watch?.coins.find((c) => c.coin === p.coin)?.daily === p.side;
   const trendOf = (coin: string) => levels?.rows.find((r) => r.coin === coin);
 
   return <section className="card live-scanner">
@@ -211,7 +212,7 @@ export default function LiveScanner() {
     {error && <p className="verdict bad">{error}</p>}
     {shown.length === 0 && <p className="verdict neutral"><b>Chưa có lệnh nào vào được.</b> Lần kiểm tra tới: {next4h(now)}. Khi có tín hiệu, trang này kêu và bot gửi Telegram.</p>}
     {shown.length > 0 && <div className="table-wrap"><table className="stats-table live-table">
-      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP 0,5R · 1,5R</th><th>Cỡ lệnh (rủi ro 2,5% vốn)</th><th>Dòng lệnh</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Kế hoạch</th><th>Kết luận</th><th>Giá live</th><th>Vùng / vào</th><th>Dừng lỗ</th><th>TP (★ 1R · thường 0,5R)</th><th>Cỡ lệnh (rủi ro 2,5% vốn)</th><th>Dòng lệnh</th></tr></thead>
       <tbody>{shown.map((p) => {
         const tape = tapes[p.coin] ?? emptyTape(), l = p.levels;
         const riskPct = l ? Math.abs(l.entry - l.stop) / l.entry : 0;
@@ -223,10 +224,10 @@ export default function LiveScanner() {
           <td>{tape.price ? fmt(tape.price) : "—"}<small>{clock(tape.ts)}</small></td>
           <td>{!l ? "—" : p.key === "enter" ? <b>{fmt(l.entry)}</b> : <>{p.side > 0 ? "nến 4h đóng >" : "nến 4h đóng <"} <b>{fmt(l.entry)}</b><small>{next4h(now)}</small></>}</td>
           <td className="neg">{l ? fmt(l.stop) : "—"}<small>{l ? pct(riskPct) : ""}</small></td>
-          <td className="pos">{l ? `${fmt(l.tp1)} · ${fmt(l.tp2)}` : "—"}</td>
+          <td className="pos">{!l ? "—" : star(p) ? <><b>{fmt(l.entry + p.side * Math.abs(l.entry - l.stop))}</b><small>1R (lệnh ★)</small></> : <><b>{fmt(l.tp1)}</b><small>0,5R (lệnh thường)</small></>}</td>
           <td>{!l ? "—" : (() => {
             const risk = capital * 0.025, notional = risk / (riskPct + 0.001), lev = notional / capital;
-            return <>vị thế {notional.toFixed(0)}$ · {lev < 1 ? "<1x" : `${lev.toFixed(1)}x`}<small>−{risk.toFixed(1)}$ ở SL / +{(notional * (0.5 * riskPct - 0.001)).toFixed(1)}$ ở 0,5R</small></>;
+            return <>vị thế {notional.toFixed(0)}$ · {lev < 1 ? "<1x" : `${lev.toFixed(1)}x`}<small>−{risk.toFixed(1)}$ ở SL / +{(notional * (star(p) ? 1 : 0.5) * riskPct).toFixed(1)}$ ở TP</small></>;
           })()}</td>
           <td>{tape.tradeVolume ? <span className={flowWith >= 0.55 ? "pos" : flowWith <= 0.45 ? "neg" : ""}>{(flowWith * 100).toFixed(0)}% cùng hướng</span> : "—"}<small>sổ lệnh mua {(tape.bookBuy * 100).toFixed(0)}%</small></td>
         </tr>;

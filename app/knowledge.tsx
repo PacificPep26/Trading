@@ -24,7 +24,7 @@ export default function Knowledge() {
           <li><b>Chỉ vào khi nến 4h vừa ĐÓNG xác nhận tín hiệu</b> và giá chưa chạy quá 0,5R. Không có tín hiệu = đứng ngoài.</li>
           <li><b>BOS 4h: chỉ LONG.</b> BOS SHORT không có lợi thế.</li>
           <li><b>Hai đỉnh / hai đáy 4h: chỉ cùng xu hướng ngày</b> của BTC và của coin (EMA50 ngày): trên → chỉ hai đáy LONG; dưới → chỉ hai đỉnh SHORT.</li>
-          <li><b>SL</b> ở cấu trúc 4h (thường cách 4–8%). <b>TP: chốt cả ở 0,5R</b> (long và short, thắng ~62%). Lời mỏng nên <b>chỉ đánh coin phí 0% trên MEXC</b>, ưu tiên lệnh limit.</li>
+          <li><b>SL</b> ở cấu trúc 4h (thường cách 4–8%). <b>TP theo chất lượng</b>: lệnh ★ (coin cùng xu hướng ngày) chốt 1R; lệnh thường chốt 0,5R (+0,042R/lệnh, thắng 55%).</li>
           <li><b>Giữ</b> nửa ngày – 2 ngày. Không đóng tay vì giá đi ngang buổi trưa; phiên Mỹ (sau 20h30) thường chạy mạnh.</li>
           <li><b>Ưu tiên coin phí 0%</b> trên MEXC (LINK, APT, ARB, ADA, OP, DOT, XRP, DOGE…).</li>
           <li><b>Thua 2 lệnh liên tiếp → nghỉ hết ngày.</b></li>
