@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-09**: Tách theo chiều (4h, phí MEXC, chốt 1,5R, 21 coin): **BOS LONG +0,073R (t=+2,3, 848 lệnh, 2026 +0,091R)**; BOS SHORT -0,015R (2026 -0,056R). Hai đỉnh/hai đáy: LONG +0,033R, SHORT +0,034R. Bật hỗ trợ/kháng cự: SHORT +0,021R (2026 -0,088R), LONG -0,117R. Fibonacci+xác nhận: cả hai chiều âm. → lợi thế BOS 4h chủ yếu ở chiều LONG (giai đoạn 2023–2026 crypto tăng nhiều; có thể là thiên lệch thị trường).
+
 - **2026-10-09**: `service/scripts/zone_volume_study.py`: lệnh vùng hồi 1h (luật scanner, 10x, 21 coin, 5471 lệnh) **-0,110R/lệnh, thắng 39%, 2026 -0,177R**. Lọc theo khối lượng không cứu được: nến từ chối KL thấp/TB/cao: -0,10 / -0,11 / -0,15 đến -0,20R; nhịp hồi KL thấp (hồi yếu) -0,126R, cao -0,103R. → vùng hồi 1h là kiểu **không có lợi thế**, chỉ BOS 4h còn gần lãi.
 
 - **2026-10-09**: Kiểm ý tưởng chủ dự án "gãy nền rồi về nền cũ thì bật mạnh, chốt ngay trên nền cũ" (`service/scripts/support_target_study.py`, 1408 BOS 4h, 21 coin): giá chạm nền cũ (đáy 4h cũ gần nhất, ≤3R) 72%; sau khi chạm, bật ≥1,5% trong 12h **45%**, xuyên ≥1,5% 43% — **giống hệt một mức giả ở giữa đường (45/42%)** → nền cũ không phải điểm bật đặc biệt. Chốt ngay trên nền cũ: thắng 75% nhưng TB -0,019R; chốt 1,5R: thắng 47%, +0,034R.
