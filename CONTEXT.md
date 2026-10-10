@@ -22,7 +22,7 @@
 Quy định tập trung tại hàm `isLiveEligible` trong `lib/trading-policy.ts`:
 1. **Daily Trend Following (1D Donchian Breakout 20D):**
    - Vào lệnh khi nến ngày đóng phá đỉnh 20 ngày và BTC Ngày Uptrend.
-   - **Cơ chế thoát lệnh chuẩn backtest:** KHÔNG đặt TP1/TP2 cố định. Gồng lãi theo xu hướng, SL ban đầu 2×ATR20. Trailing Stop nâng SL theo đáy 10 ngày (10D Low).
+   - **Cơ chế thoát lệnh chuẩn backtest:** KHÔNG đặt TP1/TP2 cố định. Gồng lãi theo xu hướng, SL ban đầu 2×ATR20. Khi nến ngày đóng cửa thủng đáy 10 ngày (10D Low) -> đóng Market thoát lệnh ngay lập tức (dù đang lãi hay lỗ). Nếu chưa thủng thì Trailing SL theo đáy 10D.
    - *Lưu ý nghiên cứu:* Nhật ký 10/10 ghi rõ lợi thế thị trường chủ yếu ở 2023–2024, giai đoạn 2025–2026 thị trường đi ngang nên lợi thế suy giảm. Cần quản lý vốn chặt chẽ.
 2. **4H Đảo chiều (Hai đỉnh / Hai đáy - Double Top/Bottom):**
    - Phá đường viền cổ (Neckline) đồng thuận tuyệt đối với xu hướng Ngày của BTC và Coin ($t = 1.04$).
