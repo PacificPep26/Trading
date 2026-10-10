@@ -154,6 +154,30 @@ export async function getMexcAccountAsset(defaultEquity = 100): Promise<MexcAsse
 }
 
 /**
+ * Lấy danh sách các vị thế đang mở trên MEXC
+ */
+export async function getMexcOpenPositions(): Promise<any[]> {
+  const { apiKey, secretKey, isConfigured, isDryRun } = getMexcCredentials();
+  if (isDryRun || !isConfigured) return [];
+  try {
+    const timestamp = Date.now().toString();
+    const signature = signMexcRequest(secretKey, apiKey, timestamp);
+    const res = await fetch(`${MEXC_BASE_URL}/api/v1/private/position/open_positions`, {
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": timestamp,
+        Signature: signature,
+        "Content-Type": "application/json",
+      },
+    });
+    const data = await res.json();
+    return Array.isArray(data.data) ? data.data : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
  * Đặt lệnh mở vị thế Futures x10 Isolated trên MEXC
  */
 export async function submitMexcOrder(params: {

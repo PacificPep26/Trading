@@ -11,7 +11,7 @@ import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, submitMexcOrder, submitMexcTpSl } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -150,7 +150,18 @@ export async function scanAndAlert(): Promise<string[]> {
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
+  // Lấy danh sách vị thế đang mở thực tế trên MEXC
+  const livePositions = await getMexcOpenPositions();
+  const openSymbols = new Set(livePositions.filter((p: any) => Number(p.holdVol) > 0).map((p: any) => p.symbol.replace("_USDT", "")));
+
+  // Nếu số vị thế đang mở đã đạt tối đa của Tier (ví dụ Tier 1 tối đa 2 lệnh): Dừng mở thêm lệnh mới!
+  if (openSymbols.size >= currentTier.maxOpenTrades) {
+    return [];
+  }
+
   for (const coin of COINS) {
+    // Không bao giờ nhồi thêm lệnh vào coin đang có vị thế mở
+    if (openSymbols.has(coin)) continue;
     try {
       await new Promise((r) => setTimeout(r, 60));
       const [bars4h, own] = await Promise.all([
