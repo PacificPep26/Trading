@@ -107,7 +107,7 @@ export function isAutoTradeTimeWindow(date: Date = new Date()): boolean {
  *    - Cả LONG ("bật nền") và SHORT ("rớt nền" / thủng đáy).
  *    - Volume bùng nổ: volumeRatio >= 2.0x (lọc sạch 95% bẫy thanh khoản).
  *    - Thuận xu hướng lớn: Long khi BTC & Coin Uptrend, Short khi BTC & Coin Downtrend.
- *    - Các chiến lược đạt chuẩn: BOS phá cản/nền hoặc Hai đỉnh/đáy đảo chiều.
+ *    - Chỉ Hai đỉnh/đáy đảo chiều. BOS chỉ chạy Paper/Cảnh báo.
  */
 export function isLiveEligible(
   style: string,
@@ -132,8 +132,8 @@ export function isLiveEligible(
     // Chuẩn Kim Cương: Volume phải bùng nổ >= 2.0x SMA20
     if (volumeRatio < 2.0) return false;
 
-    // Chấp nhận cả phá nền (BOS Long/Short) và mô hình đảo chiều (Double Top/Bottom)
-    return style === "bos" || style === "double_top_bottom";
+    // BOS bị loại: backtest 2025–26 vol>=2x vẫn −0.12R/lệnh sau phí; hai đỉnh/đáy vol>=2x +0.19R (n=53)
+    return style === "double_top_bottom";
   }
 
   return false;

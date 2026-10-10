@@ -27,7 +27,7 @@ Quy định tập trung tại hàm `isLiveEligible` và `isAutoTradeTimeWindow` 
    - Kích hoạt cơ chế tự động mở lệnh MEXC cho cả **LONG ("bật nền")** và **SHORT ("rớt nền" / thủng đáy)** theo Chuẩn Kim Cương (Diamond Standard):
      - `volumeRatio >= 2.0x` (loại bỏ 95% bẫy quét râu giả và thanh khoản cạn kiệt).
      - Thuận xu hướng lớn: Long khi Coin & BTC Ngày Uptrend; Short khi Coin & BTC Ngày Downtrend.
-     - Mô hình áp dụng: BOS (Break of Structure phá cản/thủng nền) và Double Top/Bottom.
+     - Mô hình áp dụng: CHỈ Double Top/Bottom. BOS 4H chỉ Paper/Cảnh báo (backtest 2025–26 với vol ≥ 2x vẫn −0.12R/lệnh sau phí, 116 lệnh).
      - Thẻ thông báo Telegram: `🤖 [MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H)]`.
 3. **Khung Giờ Ban Ngày (08:00 Sáng - 16:00 Chiều VN):**
    - Chuyển sang chế độ Paper / Cảnh Báo Telegram để người dùng tự xem xét và bấm tay nếu muốn:

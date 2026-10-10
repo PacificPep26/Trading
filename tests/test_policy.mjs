@@ -73,16 +73,13 @@ assert.equal(isAutoTradeTimeWindow(daytime), false, "10:00 VN is outside auto-tr
 const lateAfternoon = new Date("2026-10-10T08:00:00Z");
 assert.equal(isAutoTradeTimeWindow(lateAfternoon), false, "15:00 VN is outside auto-trade window");
 
-// 7. Live Eligibility (Chuẩn Kim Cương: Volume >= 2.0x, Long bật nền & Short rớt nền)
-// Long BOS with vol 2.5x during evening -> ELIGIBLE
-assert.equal(isLiveEligible("bos", 1, "4H", 1, 1, 2.5, eveningTime), true, "4H BOS Long with vol 2.5x in window is eligible");
-// Short BOS with vol 2.5x during evening -> ELIGIBLE
-assert.equal(isLiveEligible("bos", -1, "4H", -1, -1, 2.5, eveningTime), true, "4H BOS Short with vol 2.5x in window is eligible");
-// Double Top Short with vol 2.0x during night -> ELIGIBLE
-assert.equal(isLiveEligible("double_top_bottom", -1, "4H", -1, -1, 2.0, nightTime), true, "4H Double Top Short with vol 2.0x in window is eligible");
-// Low volume (1.5x) during evening -> BLOCKED (rejected from live, keeps paper/alert)
-assert.equal(isLiveEligible("bos", 1, "4H", 1, 1, 1.5, eveningTime), false, "4H BOS Long with vol 1.5x blocked from live");
-// Daytime (10:00 VN) even with vol 3.0x -> BLOCKED from auto-trade
-assert.equal(isLiveEligible("bos", 1, "4H", 1, 1, 3.0, daytime), false, "4H BOS Long during daytime blocked from live auto-trade");
+// 7. Live Eligibility (Chuẩn Kim Cương: chỉ hai đỉnh/đáy, Volume >= 2.0x, thuận coin + BTC, 16h-8h)
+assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 2.5, eveningTime), true, "4H Double Bottom Long vol 2.5x in window is eligible");
+assert.equal(isLiveEligible("double_top_bottom", -1, "4H", -1, -1, 2.0, nightTime), true, "4H Double Top Short vol 2.0x in window is eligible");
+// BOS: backtest 2025–26 −0.12R/lệnh sau phí -> chỉ paper
+assert.equal(isLiveEligible("bos", 1, "4H", 1, 1, 2.5, eveningTime), false, "4H BOS blocked from live");
+assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 1.5, eveningTime), false, "vol 1.5x blocked from live");
+assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, -1, 3.0, eveningTime), false, "BTC against side blocked from live");
+assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 3.0, daytime), false, "daytime blocked from live auto-trade");
 
 console.log("All trading policy v2.3.1 tests passed!");
