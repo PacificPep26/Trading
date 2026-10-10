@@ -2,7 +2,12 @@ import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Lộ số dư và vị thế thật → bắt buộc ?secret=CRON_SECRET, không có secret thì đóng hẳn
+  const secret = process.env.CRON_SECRET;
+  if (!secret || new URL(request.url).searchParams.get("secret") !== secret) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
   let asset;
   let positions: MexcPosition[] = [];
   let error: string | undefined;
