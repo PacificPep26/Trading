@@ -44,5 +44,25 @@ Quy định tập trung tại hàm `isLiveEligible` trong `lib/trading-policy.ts
    - Truyền `dryRunOverride: mexcOrder.isDryRun` đồng bộ ở mọi flow.
 4. **Chuẩn hóa Contract Size tĩnh (`lib/mexc-contracts-data.ts`):**
    - Nhúng cứng bảng tra cứu Contract Size cho 39 coin giao dịch MEXC Futures (DOGE = 100, WIF = 10, TAO = 0.01,...).
-5. **Weekend Guard (Nghỉ cuối tuần T7/CN):**
-   - Từ 00:00 T7 đến 23:59 CN (UTC): Tự động chuyển các tín hiệu sang chế độ Paper/Alert để tránh bẫy rút chân thanh khoản mỏng.
+5. **Giao dịch Cuối tuần (T7/CN) (Đã mở khóa theo yêu cầu User ngày 10/10):**
+   - Đã gỡ bỏ ép buộc dryRun cuối tuần. Bot quét và vào lệnh thật 24/7 cả T7 & CN nếu thỏa mãn điều kiện chiến lược.
+
+---
+
+### 4. Hệ thống thông báo Telegram (Vị trí xem & Cơ chế bắn tin)
+Dành cho Agent và User tra cứu khi cần kiểm tra thông báo:
+1. **Kênh nhận tin:**
+   - Cấu hình qua 2 biến môi trường trên Railway:
+     - `TELEGRAM_BOT_TOKEN`: Token bot Telegram gửi tin.
+     - `TELEGRAM_CHAT_ID`: ID người dùng / Nhóm nhận tin thông báo.
+   - Hàm phụ trách gửi tin: [`send(text)`](file:///d:/victor/Trading/lib/telegram-alerts.ts#L89-L110).
+2. **Tần suất quét và gửi tin:**
+   - Khởi chạy nền qua [`instrumentation.ts`](file:///d:/victor/Trading/instrumentation.ts#L1-L12) (Node.js runtime trên Railway):
+     - Lần đầu: 30 giây sau khi server khởi động.
+     - Định kỳ: Mỗi **5 phút** gọi `scanAndAlert()` một lần.
+   - Endpoint thủ công / Cron ngoài: `GET /api/cron/telegram`.
+3. **Các loại thông báo bắn về Telegram:**
+   - 🤖 **Lệnh Live thật:** `🤖 [MEXC ĐÃ VÀO LỆNH THẬT - {vol} HĐ]` (Khung 1D Donchian hoặc 4H Đảo chiều hợp lệ).
+   - 🚀 **Lệnh Paper / Cảnh báo:** `🚀 [VÀO LỆNH (PAPER)]` (Các kèo BOS 4H, 1H breakout nén biên độ để user tham khảo đánh tay).
+   - 🔒 **Dời SL về hòa vốn:** `🔒 [MEXC] {symbol}: TP1 đã khớp → dời SL về giá vào (hòa vốn)`.
+   - 🛑 **Cảnh báo khẩn:** Báo động nếu mở vị thế nhưng không đặt được Stop Loss hoặc dính lỗi API sàn.
