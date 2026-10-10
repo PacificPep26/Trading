@@ -3,7 +3,7 @@ import { candles, ticker } from "@/lib/okx";
 import { analyse, swings } from "@/lib/patterns";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { paperSummary } from "@/lib/paper-ledger";
-import { isStarSetup, calculatePartialPnL } from "@/lib/trading-policy";
+import { isStarSetup, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier } from "@/lib/capital-tier";
 import { getMexcAccountAsset } from "@/lib/mexc-client";
 
@@ -67,18 +67,6 @@ async function analyzeCoin(coin: string): Promise<string> {
     const a4 = analyse(c4);
     const a1 = analyse(c1);
 
-    const trend4h = a4.trend > 0 ? "TĂNG ↗" : a4.trend < 0 ? "GIẢM ↘" : "ĐI NGANG →";
-    const trend1h = a1.trend > 0 ? "TĂNG ↗" : a1.trend < 0 ? "GIẢM ↘" : "ĐI NGANG →";
-    const trendDay = ownDaily > 0 ? "TĂNG ↗" : ownDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
-    const btcText = btcDaily > 0 ? "TĂNG ↗" : btcDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
-
-    let text = `📊 *SOI KÈO ${coin} / USDT*\n\n`;
-    text += `💰 *Giá live:* \`${f(livePrice)}\`\n`;
-    text += `• *Xu hướng 4H:* ${trend4h}\n`;
-    text += `• *Xu hướng 1H:* ${trend1h}\n`;
-    text += `• *Xu hướng Ngày (${coin}):* ${trendDay}\n`;
-    text += `• *Bối cảnh BTC Ngày:* ${btcText}\n\n`;
-
     // 1. Check 4H setups
     const paper = paperSummary(CAPITAL);
     const accepted4h = a4.setups
@@ -120,21 +108,24 @@ async function analyzeCoin(coin: string): Promise<string> {
       const riskPct = Math.abs(s.entry - s.stop) / s.entry;
       const sizing = decisionPlan.sizing;
       const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-      const isStar = isStarSetup(s.side, ownDaily, btcDaily);
       const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-      const styleStr = getStyleName(s.style, s.side, "4H");
+      const reason = formatEntryReason({
+        style: s.style,
+        side: s.side,
+        timeframe: "4H",
+        btcDaily,
+        ownDaily,
+        volumeRatio: s.volumeRatio,
+      });
 
-      text += `🎯 *TÍN HIỆU 4H (ĂN SÓNG LỚN):* *${sideStr} (${styleStr})* ${isStar ? "⭐ [KÈO ĐẸP ★★★]" : ""}\n`;
-      text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 4H ĐÓNG"}\n`;
-      text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
-      text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
-      text += `• *TP 1 (1.0R):* \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
-      text += `• *TP 2 (2.0R):* \`${f(decisionPlan.tp2)}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
-      text += `⚡ *THÔNG SỐ VÀO APP MEXC (VỐN ${CAPITAL}$):*\n`;
-      text += `• Đòn bẩy: *x${sizing.leverage} Isolated*\n`;
-      text += `• Ký quỹ: *${sizing.margin}$*\n`;
-      text += `• Vị thế: *${sizing.notional}$*\n`;
-      text += `• Rủi ro chạm SL: *-${sizing.actualRiskUsd}$*\n`;
+      return (
+        `🎯 *[TÍN HIỆU 4H]* ${sideStr} *${coin}*\n` +
+        `• *Điểm vào:* \`${f(s.entry)}\`\n` +
+        `• *Cắt lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n` +
+        `• *Chốt lời (TP):* TP1 \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$) | TP2 \`${f(decisionPlan.tp2)}\` (+${pnl.totalWin.toFixed(2)}$)\n` +
+        `• *Sao vô:* ${reason}\n` +
+        `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
+      );
     } else if (accepted1h?.decision.plan) {
       const s = accepted1h.setup;
       const decisionPlan = accepted1h.decision.plan;
@@ -142,32 +133,32 @@ async function analyzeCoin(coin: string): Promise<string> {
       const sizing = decisionPlan.sizing;
       const pnl = calculatePartialPnL(sizing.actualRiskUsd);
       const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-      const styleStr = getStyleName(s.style, s.side, "1H");
+      const reason1h = formatEntryReason({
+        style: s.style,
+        side: s.side,
+        timeframe: "1H",
+        btcDaily,
+        ownDaily,
+        volumeRatio: s.volumeRatio,
+      });
 
-      text += `⚡ *TÍN HIỆU 1H (LƯỚT SÓNG SỚM):* *${sideStr} (${styleStr})*\n`;
-      text += `• *Trạng thái:* ${s.state === "triggered" ? "✅ VÀO NGAY" : "⏳ CHỜ NẾN 1H ĐÓNG"}\n`;
-      text += `• *Điểm vào:* \`${f(s.entry)}\`\n`;
-      text += `• *Dừng lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n`;
-      text += `• *TP 1 (1.0R):* \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n`;
-      text += `• *TP 2 (2.0R):* \`${f(decisionPlan.tp2)}\` (Tổng +${pnl.totalWin.toFixed(2)}$)\n\n`;
-      text += `⚡ *THÔNG SỐ VÀO APP MEXC (VỐN ${CAPITAL}$):*\n`;
-      text += `• Đòn bẩy: *x${sizing.leverage} Isolated*\n`;
-      text += `• Ký quỹ: *${sizing.margin}$*\n`;
-      text += `• Vị thế: *${sizing.notional}$*\n`;
-      text += `• Rủi ro chạm SL: *-${sizing.actualRiskUsd}$*\n`;
+      return (
+        `⚡ *[LƯỚT SÓNG 1H]* ${sideStr} *${coin}*\n` +
+        `• *Điểm vào:* \`${f(s.entry)}\`\n` +
+        `• *Cắt lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n` +
+        `• *Chốt lời (TP):* TP1 \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$) | TP2 \`${f(decisionPlan.tp2)}\` (+${pnl.totalWin.toFixed(2)}$)\n` +
+        `• *Sao vô:* ${reason1h}\n` +
+        `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
+      );
     } else {
-      text += `🎯 *Kết luận:* *ĐỨNG NGOÀI (CHƯA CÓ ĐIỂM VÀO)*\n`;
-      text += `Hiện tại ${coin} chưa xuất hiện mô hình nến hợp lệ đạt chuẩn quản lý rủi ro.\n`;
-      const rawSetup = a4.setups[0] ?? a1.setups[0];
-      if (rawSetup) {
-        const rawRisk = Math.abs(rawSetup.entry - rawSetup.stop) / rawSetup.entry;
-        if (rawRisk > 0.06) text += `⚠️ *Cảnh báo SL rộng:* Khoảng cách SL ${(rawRisk * 100).toFixed(1)}% vượt trần an toàn 6%.\n`;
-        if (rawRisk < 0.015) text += `⚠️ *Cảnh báo SL hẹp:* Khoảng cách SL ${(rawRisk * 100).toFixed(2)}% nhỏ hơn 1.5% (dễ bị quét râu & phí sàn nuốt lãi).\n`;
-      }
-      text += `\n💡 Nhắn \`canh\` để xem các coin đang áp sát đỉnh/đáy chuẩn bị kích hoạt.\n`;
+      const btcTrendStr = btcDaily > 0 ? "TĂNG ↗" : btcDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
+      const ownTrendStr = ownDaily > 0 ? "TĂNG ↗" : ownDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
+      return (
+        `⚪ *[${coin}] Chưa có điểm vào* (Giá live: \`${f(livePrice)}\`)\n` +
+        `• *Xu hướng:* Ngày ${ownTrendStr} · BTC Ngày ${btcTrendStr}\n` +
+        `• *Trạng thái:* Chưa có cấu trúc nến hợp lệ đạt chuẩn an toàn. Đứng ngoài bảo toàn vốn.`
+      );
     }
-
-    return text;
   } catch (e) {
     console.error("analyzeCoin error", e);
     return `❌ Không thể lấy dữ liệu phân tích ${coin} lúc này. Vui lòng thử lại sau giây lát!`;
@@ -190,26 +181,25 @@ async function scanWatchlist(): Promise<string> {
       const a4 = analyse(c4);
       for (const s of a4.setups) {
         const decision = evaluateSetup(s, { coin: c, timeframe: "4H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime });
-        if (!decision.accepted && decision.code !== "PENDING_CONFIRMATION") continue;
+        if (!decision.accepted) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const styleStr = getStyleName(s.style, s.side, "4H");
-        cand4h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
+        cand4h.push(`• *${c}* ${side} (${s.style.toUpperCase()}) ~${f(s.entry)}`);
       }
 
       const a1 = analyse(c1);
       for (const s of a1.setups) {
         const decision = evaluateSetup(s, { coin: c, timeframe: "1H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a1.lastBarTime });
-        if (!decision.accepted && decision.code !== "PENDING_CONFIRMATION") continue;
+        if (!decision.accepted) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const styleStr = getStyleName(s.style, s.side, "1H");
-        cand1h.push(`• *${c}* ${side} (${styleStr}) - ${s.state === "triggered" ? "VÀO NGAY" : "Sát mức kích hoạt"}`);
+        cand1h.push(`• *${c}* ${side} (${s.style.toUpperCase()}) ~${f(s.entry)}`);
       }
     } catch {}
   }
 
-  let text = `📡 *QUÉT THỊ TRƯỜNG 21 CẶP COIN*\n\n`;
-  text += `• *BTC Ngày:* ${btcDaily > 0 ? "TĂNG ↗ (ưu tiên LONG)" : "GIẢM ↘ (ưu tiên SHORT)"}\n`;
-  text += `• *Đóng nến 4H kế tiếp:* ${next4hTime()}\n\n`;
+  const btcText = btcDaily > 0 ? "TĂNG ↗ (ưu tiên LONG)" : btcDaily < 0 ? "GIẢM ↘ (ưu tiên SHORT)" : "CHƯA RÕ";
+  let text = `📡 *QUÉT THỊ TRƯỜNG 21 COIN*\n`;
+  text += `• *Bối cảnh BTC Ngày:* ${btcText}\n`;
+  text += `• *Đóng nến 4H kế:* ${next4hTime()}\n\n`;
 
   if (cand4h.length > 0) {
     text += `📌 *Sóng lớn 4H:*\n${cand4h.join("\n")}\n\n`;
@@ -218,10 +208,7 @@ async function scanWatchlist(): Promise<string> {
     text += `⚡ *Lướt sóng 1H:*\n${cand1h.join("\n")}\n\n`;
   }
   if (cand4h.length === 0 && cand1h.length === 0) {
-    text += `🟢 *Hiện tại:* Chưa có coin nào xuất hiện mô hình nến đạt chuẩn an toàn.\n`;
-    text += `💡 Hệ thống vẫn tự động quét liên tục mỗi 5 phút. Khi có nến đóng đạt chuẩn, bot sẽ chủ động nổ chuông báo ngay!`;
-  } else {
-    text += `Nhắn tên coin (ví dụ: \`DOGE\`, \`PEPE\`, \`TIA\`) để xem chi tiết điểm vào, SL, TP!`;
+    text += `⚪ *Hiện tại:* Chưa có coin nào xuất hiện điểm vào đạt chuẩn. Đứng ngoài an toàn.`;
   }
 
   return text;
@@ -243,38 +230,32 @@ async function scanKeyLevels(): Promise<string> {
       const distHighPct = (lastHigh - lastPrice) / lastPrice;
       const distLowPct = (lastPrice - lastLow) / lastPrice;
 
-      // Sắp chạm đỉnh cũ (còn cách <= 2.0% hoặc vừa nhú qua <= 0.5%)
       if (distHighPct >= -0.005 && distHighPct <= 0.02) {
         const pct = (Math.abs(distHighPct) * 100).toFixed(2);
-        nearHigh.push(`• *${c}* (Giá: \`${f(lastPrice)}\` ➔ Đỉnh: \`${f(lastHigh)}\`, cách *${pct}%*)`);
+        nearHigh.push(`• *${c}* (\`${f(lastPrice)}\` ➔ Đỉnh \`${f(lastHigh)}\`, cách *${pct}%*)`);
       }
 
-      // Sắp chạm đáy cũ (còn cách <= 2.0% hoặc vừa nhúng qua <= 0.5%)
       if (distLowPct >= -0.005 && distLowPct <= 0.02) {
         const pct = (Math.abs(distLowPct) * 100).toFixed(2);
-        nearLow.push(`• *${c}* (Giá: \`${f(lastPrice)}\` ➔ Đáy: \`${f(lastLow)}\`, cách *${pct}%*)`);
+        nearLow.push(`• *${c}* (\`${f(lastPrice)}\` ➔ Đáy \`${f(lastLow)}\`, cách *${pct}%*)`);
       }
     } catch {}
   }
 
-  let text = `🧭 *RADAR CANH ĐỈNH CŨ & ĐÁY CŨ (4H)*\n\n`;
-  text += `Dành cho bác mở chart canh bắt đảo chiều hoặc đánh breakout:\n\n`;
+  let text = `🧭 *RADAR CANH ĐỈNH / ĐÁY (4H)*\n\n`;
 
   if (nearHigh.length > 0) {
-    text += `🏔️ *SẮP CHẠM ĐỈNH CŨ (Cản mạnh):*\n${nearHigh.join("\n")}\n`;
-    text += `Đây chỉ là vùng quan sát; không phải tín hiệu paper.\n\n`;
+    text += `🏔️ *GẦN ĐỈNH CŨ:*\n${nearHigh.join("\n")}\n\n`;
   } else {
-    text += `🏔️ *Đỉnh cũ:* Hiện chưa có coin nào áp sát đỉnh cũ trong phạm vi 2%.\n\n`;
+    text += `🏔️ *Đỉnh cũ:* Không có coin nào cách <= 2%.\n\n`;
   }
 
   if (nearLow.length > 0) {
-    text += `🏖️ *SẮP CHẠM ĐÁY CŨ (Hỗ trợ mạnh):*\n${nearLow.join("\n")}\n`;
-    text += `Đây chỉ là vùng quan sát; không phải tín hiệu paper.\n\n`;
+    text += `🏖️ *GẦN ĐÁY CŨ:*\n${nearLow.join("\n")}\n`;
   } else {
-    text += `🏖️ *Đáy cũ:* Hiện chưa có coin nào áp sát đáy cũ trong phạm vi 2%.\n\n`;
+    text += `🏖️ *Đáy cũ:* Không có coin nào cách <= 2%.\n`;
   }
 
-  text += `💡 Nhắn tên coin (ví dụ: \`SOL\` hoặc \`BTC\`) để xem chi tiết điểm vào, SL, TP!`;
   return text;
 }
 
@@ -386,16 +367,12 @@ export async function POST(req: NextRequest) {
     ) {
       const asset = await getMexcAccountAsset(CAPITAL);
       const tier = getCapitalTier(asset.equity);
-      let rule = `🏦 *QUẢN LÝ VỐN BẬC THANG & SỐ DƯ*\n\n`;
-      rule += `• *Số dư tài khoản:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Mô phỏng / Paper)_" : "_(MEXC Live)_"}\n`;
-      rule += `• *Cấp bậc hiện tại:* *${tier.name}*\n`;
+      let rule = `🏦 *TÀI KHOẢN & VỐN BẬC THANG*\n\n`;
+      rule += `• *Số dư ví:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
+      rule += `• *Cấp bậc:* *${tier.name}*\n`;
       rule += `• *Rủi ro mỗi lệnh (1R):* \`${tier.riskPerTradeUsd} USDT\`\n`;
       rule += `• *Số lệnh mở tối đa:* \`${tier.maxOpenTrades} lệnh đồng thời\`\n`;
-      rule += `• *Mốc khóa bảo vệ lãi (Ratchet):* \`${tier.ratchetFloorUsd} USDT\`\n\n`;
-      rule += `📋 *Nguyên tắc thực chiến:*\n`;
-      rule += `1. *Isolated x10:* Ký quỹ tự động căn theo SL (${tier.riskPerTradeUsd}$ / khoảng cách SL).\n`;
-      rule += `2. *Chốt lời 2 bước:* TP1 (1.0R) chốt 50% và dời SL hòa vốn; TP2 (2.0R) gồng hết sóng.\n`;
-      rule += `3. *Thăng hạng tự động:* Khi số dư vượt mốc tầng kế tiếp, bot tự động nâng volume cho các lệnh sau!`;
+      rule += `• *Mốc bảo vệ lãi (Ratchet):* \`${tier.ratchetFloorUsd} USDT\``;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
     }
@@ -413,11 +390,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. General AI fallback / conversation
-    let reply = `🤖 *Trợ lý Trading:* Tôi đã nhận được tin nhắn của bạn: "${rawText}"\n\n`;
-    reply += `• Nếu bạn muốn soi kèo coin cụ thể: Hãy nhắn tên coin (ví dụ: \`SOL\`, \`BTC\`, \`ETH\`, \`LINK\`...)\n`;
-    reply += `• Nếu muốn kiểm tra toàn bộ thị trường: Hãy nhắn \`kèo\` hoặc \`quét\`\n`;
-    reply += `• Nếu cần xem quy tắc vốn 40$: Nhắn \`vốn\`\n\n`;
-    reply += `⏰ *Nhắc nhở:* Nến 4H kế đóng lúc ${next4hTime()}. Hãy kiên nhẫn chờ xác nhận, không vào lệnh vội!`;
+    let reply = `🤖 *Nhận được:* "${rawText}"\n\n`;
+    reply += `• Soi coin: Nhắn tên coin (ví dụ: \`SOL\`, \`WIF\`, \`DOGE\`...)\n`;
+    reply += `• Xem kèo: Nhắn \`kèo\` hoặc bấm nút [ 🔍 Kèo ]\n`;
+    reply += `• Xem vốn: Nhắn \`vốn\` hoặc bấm nút [ 🏦 Xem Vốn & Tier ]`;
 
     await sendTelegramReply(token, chatId, reply);
     return NextResponse.json({ ok: true });

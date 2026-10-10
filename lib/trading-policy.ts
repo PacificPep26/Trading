@@ -145,3 +145,40 @@ export function isDrawdownLocked(equity: number, peakEquity: number): boolean {
   if (!Number.isFinite(equity) || !Number.isFinite(peakEquity) || equity <= 0 || peakEquity <= 0) return true;
   return 1 - equity / peakEquity >= MAX_DRAWDOWN;
 }
+
+/** Tạo chuỗi giải thích lý do vào lệnh (Sao vô) súc tích, thực chiến */
+export function formatEntryReason(params: {
+  style: string;
+  side: 1 | -1;
+  timeframe: string;
+  btcDaily?: number;
+  ownDaily?: number;
+  volumeRatio?: number;
+}): string {
+  const parts: string[] = [];
+
+  if (params.style === "bos") {
+    parts.push(params.side > 0 ? `BOS ${params.timeframe} phá cản` : `BOS ${params.timeframe} thủng hỗ trợ`);
+    parts.push("Nến thân đặc xác nhận");
+  } else if (params.style === "double_top_bottom") {
+    parts.push(params.side > 0 ? `Hai đáy ${params.timeframe} xác nhận` : `Hai đỉnh ${params.timeframe} xác nhận`);
+  } else if (params.style === "pinbar_reversal") {
+    parts.push(params.side > 0 ? `Pinbar ${params.timeframe} rút chân hỗ trợ` : `Pinbar ${params.timeframe} rút râu cản`);
+  } else {
+    parts.push(`Mô hình ${params.timeframe} đạt chuẩn`);
+  }
+
+  if (params.volumeRatio && params.volumeRatio >= 1.0) {
+    parts.push(`Volume nến x${params.volumeRatio.toFixed(1)} TB20`);
+  }
+
+  if (params.btcDaily !== undefined) {
+    if (params.btcDaily > 0 && params.side > 0) {
+      parts.push("Thuận BTC Ngày Tăng ↗");
+    } else if (params.btcDaily < 0 && params.side < 0) {
+      parts.push("Thuận BTC Ngày Giảm ↘");
+    }
+  }
+
+  return parts.join(" + ");
+}

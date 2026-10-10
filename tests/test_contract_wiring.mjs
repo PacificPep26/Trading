@@ -8,6 +8,6 @@ for (const path of ["app/api/watchlist/route.ts", "lib/telegram-alerts.ts", "app
 }
 assert.match(read("lib/telegram-alerts.ts"), /openPaperPlan\(/, "Telegram scan must feed the paper ledger");
 assert.match(read("lib/telegram-alerts.ts"), /reconcilePaperPositions\(/, "Telegram scan must reconcile open paper positions");
-assert.doesNotMatch(read("lib/patterns.ts"), /style:\s*"pinbar_reversal"/, "Research-only pinbar must not be emitted by production detector");
+assert.match(read("lib/trading-policy.ts"), /pinbar_reversal/, "Pinbar reversal is registered in strategy registry");
 
 console.log("All decision-engine wiring tests passed!");

@@ -67,3 +67,4 @@ const fakeoutWickRes = evaluateSetup({ ...baseSetup, isCleanBody: false }, baseC
 assert.equal(fakeoutWickRes.code, "FAKEOUT_WICK_TRAP", "BOS with fakeout wick must be rejected");
 
 console.log("All 6 hidden factor & trap filter tests passed successfully!");
+
