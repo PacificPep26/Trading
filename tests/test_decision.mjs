@@ -7,10 +7,10 @@ const context = { coin: "SOL", timeframe: "4H", btcDaily: 1, ownDaily: 1, equity
 
 const accepted = evaluateSetup(setup, context);
 assert.equal(accepted.code, "ACCEPTED");
-assert.equal(accepted.plan.sizing.notional, 125);
-assert.equal(accepted.plan.sizing.actualRiskUsd, 2.5);
-assert.equal(accepted.plan.tp1, 102); // 1.0R = 100 + 2
-assert.equal(accepted.plan.tp2, 104); // 2.0R = 100 + 4
+assert.equal(accepted.plan.sizing.notional, 200);
+assert.equal(accepted.plan.sizing.actualRiskUsd, 4.0);
+assert.equal(accepted.plan.tp1, 101.8); // 0.90R front-run buffer = 100 + 1.8
+assert.equal(accepted.plan.tp2, 103.7); // 1.85R front-run buffer = 100 + 3.7
 
 // Runaway price check (drift > 0.25%)
 assert.equal(evaluateSetup(setup, { ...context, livePrice: 100.5 }).code, "RUNAWAY_PRICE");

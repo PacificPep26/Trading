@@ -23,7 +23,7 @@ export const CAPITAL_TIERS: CapitalTier[] = [
     minEquity: 30,
     maxEquity: 79.99,
     baseCapital: 50,
-    riskPerTradeUsd: 2.5,
+    riskPerTradeUsd: 4.0,
     maxOpenTrades: 2,
     ratchetFloorUsd: 30,
   },

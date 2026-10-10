@@ -8,7 +8,7 @@ import {
 // 1. Kiểm tra xác định tầng vốn theo số dư
 const tier52 = getCapitalTier(52.13);
 assert.equal(tier52.tier, 1, "Equity 52.13$ must be Tier 1 Starter");
-assert.equal(tier52.riskPerTradeUsd, 2.5, "Tier 1 risk must be $2.5");
+assert.equal(tier52.riskPerTradeUsd, 4.0, "Tier 1 risk must be $4.0");
 
 const tier100 = getCapitalTier(100);
 assert.equal(tier100.tier, 2, "Equity 100$ must be Tier 2");
@@ -43,9 +43,9 @@ assert.equal(staySame.changed, false, "50$ -> 60$ is same Tier 1");
 // 3. Kiểm tra tính toán vị thế theo bậc thang (Margin & Notional)
 // Ở Tier 1 ($52, risk $2.5):
 const szTier1 = calculateTierSizing(52, 0.02); // SL 2.0%
-assert.equal(szTier1.notional, 125, "Tier 1: 2.5$ / 2% = 125$ notional");
-assert.equal(szTier1.margin, 12.5, "Tier 1: 125$ / 10 = 12.5$ margin");
-assert.equal(szTier1.actualRiskUsd, 2.5, "Tier 1: Risk at SL must be 2.5$");
+assert.equal(szTier1.notional, 200, "Tier 1: 4.0$ / 2% = 200$ notional");
+assert.equal(szTier1.margin, 20, "Tier 1: 200$ / 10 = 20$ margin");
+assert.equal(szTier1.actualRiskUsd, 4.0, "Tier 1: Risk at SL must be 4.0$");
 
 // Ở Tier 2 ($100, risk $4.0):
 const szTier2 = calculateTierSizing(100, 0.02); // SL 2.0%

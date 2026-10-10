@@ -156,14 +156,14 @@ export function calculateSizing(equity: number, stopDistancePct: number): TradeS
 }
 
 /**
- * Tính toán lợi nhuận 2 bước:
- * - TP1 ở 1.0R (50% vị thế) = +0.50R
- * - TP2 ở 2.0R (50% vị thế) = +1.00R
- * Tổng lãi khi ăn cả 2 TP = +1.50R ($6 - $10)
+ * Tính toán lợi nhuận 2 bước với cơ chế Front-Running TP Buffer:
+ * - TP1 ở 0.90R (chốt 50% vị thế) = +0.45R (khớp sớm, bảo toàn vốn)
+ * - TP2 ở 1.85R (chốt 50% vị thế) = +0.925R (khớp trước đáy/đỉnh cản)
+ * Tổng lãi khi ăn cả 2 TP = +1.375R ($5.50 trên risk $4.0)
  */
 export function calculatePartialPnL(riskUsd: number) {
-  const winTp1 = Math.round(riskUsd * 0.50 * 100) / 100;
-  const winTp2 = Math.round(riskUsd * 1.00 * 100) / 100;
+  const winTp1 = Math.round(riskUsd * 0.45 * 100) / 100;
+  const winTp2 = Math.round(riskUsd * 0.925 * 100) / 100;
   return { winTp1, winTp2, totalWin: Math.round((winTp1 + winTp2) * 100) / 100 };
 }
 

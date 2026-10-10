@@ -45,10 +45,10 @@ assert.equal(s2.notional, 80);
 assert.equal(s2.margin, 8);
 assert.equal(s2.actualRiskUsd, 4);
 
-// 5. Partial PnL test v2.0.0 (TP1 1.0R = 50%, TP2 2.0R = 50%, Total = 1.5R)
+// 5. Partial PnL test with Front-Running Buffer (TP1 0.90R = 50%, TP2 1.85R = 50%, Total = 1.375R)
 const pnl = calculatePartialPnL(4);
-assert.equal(pnl.winTp1, 2.00, "50% at 1.0R is 0.50R = $2.00");
-assert.equal(pnl.winTp2, 4.00, "50% at 2.0R is 1.00R = $4.00");
-assert.equal(pnl.totalWin, 6.00, "Total partial win is 1.50R = $6.00");
+assert.equal(pnl.winTp1, 1.80, "50% at 0.90R is 0.45R = $1.80");
+assert.equal(pnl.winTp2, 3.70, "50% at 1.85R is 0.925R = $3.70");
+assert.equal(pnl.totalWin, 5.50, "Total partial win with front-run buffer is $5.50");
 
 console.log("All trading policy v2.3.1 tests passed!");

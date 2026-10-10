@@ -51,7 +51,8 @@ const decision = evaluateSetup(s, {
 });
 
 assert.equal(decision.accepted, true, "Decision engine must accept 1D Donchian Breakout");
-assert.equal(decision.plan?.sizing.actualRiskUsd, 2.5, "Risk must be exactly $2.5 for Tier 1 Starter");
+assert.equal(decision.plan?.sizing.actualRiskUsd, 4.0, "Risk must be exactly $4.0 for Tier 1 Starter");
 assert.equal(decision.plan?.sizing.leverage, 10, "Leverage must be x10 Isolated");
 
 console.log("All Daily Donchian Trend Following tests passed successfully!");
+

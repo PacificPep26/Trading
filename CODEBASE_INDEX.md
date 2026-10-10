@@ -2,7 +2,7 @@
 
 > **Mục đích**: File này tóm tắt toàn bộ kiến trúc, exports, API và biến môi trường của dự án. AI trợ lý hãy đọc file này trước tiên để hiểu trọn vẹn dự án mà không cần đọc mò mẫm hàng nghìn dòng code.
 
-- **Cập nhật lúc:** `2026-10-10T07:29:54.551Z`
+- **Cập nhật lúc:** `2026-10-10T08:05:00.338Z`
 - **Tổng số files mã nguồn:** `97` files
 
 ### 🔑 Biến môi trường cốt lõi (`process.env`)
