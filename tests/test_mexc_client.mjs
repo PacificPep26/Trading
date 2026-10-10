@@ -122,6 +122,20 @@ assert.equal(liveProtection.success, true);
 assert.deepEqual(tpBodies.map((body) => body.vol), [9, 9]);
 assert.deepEqual(tpBodies.map((body) => body.positionId), ["pos-1", "pos-1"]);
 
+// 8b. 1D Donchian has no fixed TP (price 0): keep the SL, send no TP order.
+tpBodies.length = 0;
+const noTp = await submitMexcTpSl({
+  symbol: "SOL_USDT",
+  side: 1,
+  vol: 18,
+  stopLossPrice: 98,
+  takeProfit1Price: 0,
+  takeProfit2Price: 0,
+});
+assert.equal(noTp.success, true);
+assert.equal(noTp.slConfirmed, true);
+assert.equal(tpBodies.length, 0);
+
 // 9. Position lookup fails closed; an API error must never look like an empty account.
 globalThis.fetch = async () => Response.json({ success: false, code: 500, message: "temporary failure" }, { status: 503 });
 await assert.rejects(() => getMexcOpenPositions(), /MEXC_POSITIONS_UNAVAILABLE/);

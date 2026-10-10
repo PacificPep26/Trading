@@ -415,7 +415,8 @@ export async function submitMexcTpSl(params: {
     slConfirmed = true;
 
     const placeTakeProfit = async (vol: number, takeProfitPrice: number) => {
-      if (vol <= 0) return undefined;
+      // TP = 0 nghĩa là không chốt cố định (1D Donchian gồng lãi theo đáy 10D)
+      if (vol <= 0 || !(takeProfitPrice > 0)) return undefined;
       return placeProtectionOrder({
         positionId,
         vol,
