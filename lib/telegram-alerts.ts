@@ -196,7 +196,7 @@ export async function scanAndAlert(): Promise<string[]> {
     // Không bao giờ nhồi thêm lệnh vào coin đang có vị thế mở
     if (openSymbols.has(coin)) continue;
     try {
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 120));
       const [bars4h, own] = await Promise.all([
         candles(`${coin}-USDT-SWAP`, "4H", 300),
         coin === "BTC" ? btc : dailyTrend(coin)

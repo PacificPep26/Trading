@@ -3,12 +3,24 @@ const BASE = "https://www.okx.com/api/v5";
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; closed: boolean };
 
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`OKX ${res.status} ${path}`);
-  const body = (await res.json()) as { code: string; msg: string; data: T };
-  if (body.code !== "0") throw new Error(`OKX ${body.code} ${body.msg}`);
-  return body.data;
+async function get<T>(path: string, retries = 2): Promise<T> {
+  try {
+    const res = await fetch(`${BASE}${path}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (res.status === 429 && retries > 0) {
+      await new Promise((r) => setTimeout(r, 600));
+      return get<T>(path, retries - 1);
+    }
+    if (!res.ok) throw new Error(`OKX ${res.status} ${path}`);
+    const body = (await res.json()) as { code: string; msg: string; data: T };
+    if (body.code !== "0") throw new Error(`OKX ${body.code} ${body.msg}`);
+    return body.data;
+  } catch (err) {
+    if (retries > 0 && String(err).includes("429")) {
+      await new Promise((r) => setTimeout(r, 800));
+      return get<T>(path, retries - 1);
+    }
+    throw err;
+  }
 }
 
 export async function publicGet<T>(path: string): Promise<T> {
