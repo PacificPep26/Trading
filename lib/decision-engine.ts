@@ -145,12 +145,13 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
     }
   }
 
-  // 9. Tính toán kế hoạch lệnh chuẩn với cơ chế Đệm Chốt Lời (Front-Running TP Buffer):
-  // - TP1 đặt ở 0.90R (thay vì 1.0R): khớp sớm hơn để nhanh chóng dời SL về hòa vốn, bảo toàn vốn
-  // - TP2 đặt ở 1.85R (thay vì 2.0R): khớp trước khi chạm cản/đáy cũ, tránh bị kẹt thanh khoản rút chân
+  // 9. Tính toán kế hoạch lệnh chuẩn:
+  // - Đối với 1D Donchian Trend Following: KHÔNG CÓ TP CỐ ĐỊNH (gồng lãi theo xu hướng, thoát lệnh theo đáy 10D hoặc gãy trend BTC)
+  // - Đối với 4H: Cơ chế Đệm Chốt Lời (TP1 ở 0.90R khóa hòa vốn, TP2 ở 1.85R đón đầu cản)
   const r = Math.abs(setup.entry - setup.stop);
-  const tp1 = setup.entry + setup.side * 0.90 * r;
-  const tp2 = setup.entry + setup.side * 1.85 * r;
+  const isDailyDonchian = ctx.timeframe === "1D" && setup.style === "daily_trend_donchian";
+  const tp1 = isDailyDonchian ? 0 : setup.entry + setup.side * 0.90 * r;
+  const tp2 = isDailyDonchian ? 0 : setup.entry + setup.side * 1.85 * r;
 
   return {
     accepted: true,

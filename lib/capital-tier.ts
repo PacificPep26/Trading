@@ -24,7 +24,7 @@ export const CAPITAL_TIERS: CapitalTier[] = [
     maxEquity: 79.99,
     baseCapital: 50,
     riskPerTradeUsd: 4.0,
-    maxOpenTrades: 4,
+    maxOpenTrades: 2,
     ratchetFloorUsd: 30,
   },
   {
@@ -123,25 +123,28 @@ export interface TierSizing {
 /**
  * Tính toán số tiền ký quỹ (Margin) và vị thế theo nấc thang vốn
  */
-export function calculateTierSizing(equity: number, stopDistancePct: number): TierSizing {
+export function calculateTierSizing(equity: number, stopDistancePct: number, maxLev = MAX_LEVERAGE): TierSizing {
   const tier = getCapitalTier(equity);
   const riskBudget = tier.riskPerTradeUsd;
-  const maxNotional = equity * MAX_LEVERAGE;
+  // BẢO VỆ THANH LÝ: Nếu Stop Loss xa (> 6%), tự động hạ đòn bẩy xuống x5 Isolated
+  // để mức thanh lý cách xa >= 18%, đảm bảo SL luôn cắn trước khi bị thanh lý
+  const effectiveLeverage = stopDistancePct > 0.06 ? Math.min(5, maxLev) : maxLev;
+  const maxNotional = equity * effectiveLeverage;
 
   if (!Number.isFinite(stopDistancePct) || stopDistancePct <= 0) {
-    return { tier, notional: 0, margin: 0, leverage: MAX_LEVERAGE, actualRiskUsd: 0, isCapped: false };
+    return { tier, notional: 0, margin: 0, leverage: effectiveLeverage, actualRiskUsd: 0, isCapped: false };
   }
 
   const riskSizedNotional = riskBudget / stopDistancePct;
   const notional = Math.min(maxNotional, riskSizedNotional);
-  const margin = notional / MAX_LEVERAGE;
+  const margin = notional / effectiveLeverage;
   const actualRiskUsd = notional * stopDistancePct;
 
   return {
     tier,
     notional: Math.round(notional * 10) / 10,
     margin: Math.round(margin * 10) / 10,
-    leverage: MAX_LEVERAGE,
+    leverage: effectiveLeverage,
     actualRiskUsd: Math.round(actualRiskUsd * 100) / 100,
     isCapped: riskSizedNotional > maxNotional,
   };

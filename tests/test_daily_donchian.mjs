@@ -52,8 +52,10 @@ const decision = evaluateSetup(s, {
 });
 
 assert.equal(decision.accepted, true, "Decision engine must accept 1D Donchian Breakout");
+assert.equal(decision.plan?.tp1, 0, "1D Donchian must not set static TP1");
+assert.equal(decision.plan?.tp2, 0, "1D Donchian must not set static TP2");
 assert.equal(decision.plan?.sizing.actualRiskUsd, 4.0, "Risk must be exactly $4.0 for Tier 1 Starter");
-assert.equal(decision.plan?.sizing.leverage, 10, "Leverage must be x10 Isolated");
+assert.equal(decision.plan?.sizing.leverage, 5, "Adaptive leverage must be x5 Isolated for wide SL (> 6%) to prevent premature liquidation");
 
 console.log("All Daily Donchian Trend Following tests passed successfully!");
 

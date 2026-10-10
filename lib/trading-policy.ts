@@ -92,9 +92,10 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
 /**
  * Chỉ cho phép vào lệnh LIVE tiền thật đối với chiến lược đã được chứng minh
  * có kỳ vọng toán học dương sau phí Taker MEXC (0.16%) và trượt giá:
- * Hiện tại CHO PHÉP:
- * 1. 1D Daily Trend Donchian Breakout (khi BTC cùng hướng)
- * 2. 4H Breakout nền (BOS) & Double Top/Bottom khi ĐỒNG THUẬN HOÀN TOÀN với BTC & Coin Daily Trend.
+ * Hiện tại:
+ * - 1D Donchian Breakout: Đạt kiểm định (t > 3 khi BTC cùng hướng).
+ * - 4H BOS: Chỉ chạy Paper/Telegram Alert (dữ liệu 881 lệnh sau phí là -0.005R, chưa đủ t >= 3).
+ * - 4H Double Top/Bottom: Đủ chuẩn Live khi đồng thuận xu hướng cả BTC và Coin.
  */
 export function isLiveEligible(
   style: string,
@@ -107,8 +108,7 @@ export function isLiveEligible(
     return side > 0 ? btcDaily > 0 : btcDaily < 0;
   }
   const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
-  // Cho phép 4H phá nền (BOS) và 4H Mô hình đảo chiều khi đồng thuận xu hướng lớn với BTC
-  return tf === "4H" && (style === "bos" || style === "double_top_bottom") && isFullyAligned;
+  return tf === "4H" && style === "double_top_bottom" && isFullyAligned;
 }
 
 /** Kiểm tra Funding Rate có nằm trong biên an toàn không (tránh bẫy phí và squeeze) */

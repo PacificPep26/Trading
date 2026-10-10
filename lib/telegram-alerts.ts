@@ -6,7 +6,7 @@
 import fs from "fs";
 import path from "path";
 import { analyse, swings, analyseDaily } from "@/lib/patterns";
-import { candles, ticker, type Candle } from "@/lib/okx";
+import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
@@ -190,7 +190,7 @@ export async function scanAndAlert(): Promise<string[]> {
 
   // Lấy danh sách vị thế đang mở thực tế trên MEXC
   const livePositions = await getMexcOpenPositions();
-  const openSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
+  const liveOpenSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
 
   // Trailing Stop & Thoát lệnh bảo toàn lãi cho các vị thế đang nắm giữ (đặc biệt là 1D Trend)
   for (const pos of livePositions) {
@@ -211,15 +211,15 @@ export async function scanAndAlert(): Promise<string[]> {
     }
   }
 
-  // Cho phép tối đa 3 lệnh nếu là kèo đẹp (Star Setup), bình thường giữ tối đa 2 lệnh
-  const starTradeLimit = currentTier.tier === 1 ? 3 : currentTier.maxOpenTrades;
-  if (openSymbols.size >= starTradeLimit) {
+  // Giới hạn số lệnh đồng thời: Kèo thường theo maxOpenTrades (2 lệnh), Kèo Đẹp ★★★ cho phép tối đa 3 lệnh
+  const maxLiveLimit = Math.max(currentTier.maxOpenTrades, 3);
+  if (liveOpenSymbols.size >= maxLiveLimit) {
     return [];
   }
 
   for (const coin of COINS) {
-    // Không bao giờ nhồi thêm lệnh vào coin đang có vị thế mở
-    if (openSymbols.has(coin)) continue;
+    // Không bao giờ nhồi thêm lệnh vào coin đang có vị thế mở trên MEXC
+    if (liveOpenSymbols.has(coin)) continue;
     try {
       await new Promise((r) => setTimeout(r, 120));
       const [bars4h, dailyInfo] = await Promise.all([
@@ -231,14 +231,20 @@ export async function scanAndAlert(): Promise<string[]> {
       reconcilePaperPositions(coin, bars4h, currentEquity);
       const a4 = analyse(bars4h);
 
-      const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+      const [tLive, fLive] = await Promise.all([
+        ticker(`${coin}-USDT-SWAP`).catch(() => null),
+        funding(`${coin}-USDT-SWAP`).catch(() => null),
+      ]);
+      // Không có giá live → không kiểm được trôi giá → không vào lệnh
+      if (!tLive || !Number.isFinite(tLive.last)) continue;
+      const fundingRate = fLive?.rate;
 
       // 0. Quét Daily Trend Following Donchian (Chiến lược t = +3.35, ExpR = +0.60R)
       if (bars1d.length >= 25 && btc > 0) {
         const aDaily = analyseDaily(bars1d);
         for (const s of aDaily.setups) {
           if (s.state !== "triggered") continue;
-          if (openSymbols.has(coin) || openSymbols.size >= starTradeLimit) continue;
+          if (liveOpenSymbols.has(coin) || liveOpenSymbols.size >= maxLiveLimit) continue;
           const decision = evaluateSetup(s, {
             coin,
             timeframe: "1D",
@@ -248,6 +254,7 @@ export async function scanAndAlert(): Promise<string[]> {
             peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
             lastBarTime: aDaily.lastBarTime,
             livePrice: tLive?.last,
+            fundingRate,
           });
 
           if (!decision.accepted || !decision.plan) continue;
@@ -288,8 +295,10 @@ export async function scanAndAlert(): Promise<string[]> {
               continue;
             }
 
-            openSymbols.add(coin);
-            remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+            if (!mexcOrder.isDryRun) {
+              liveOpenSymbols.add(coin);
+              remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+            }
 
             const riskPct = Math.abs(s.entry - s.stop) / s.entry;
             const autoTag = mexcOrder.isDryRun
@@ -317,8 +326,8 @@ export async function scanAndAlert(): Promise<string[]> {
       for (const s of a4.setups) {
         if (s.state !== "triggered") continue;
         const isStar = isStarSetup(s.side, own, btc);
-        const tradeLimit = isStar ? starTradeLimit : currentTier.maxOpenTrades;
-        if (openSymbols.has(coin) || openSymbols.size >= tradeLimit) continue;
+        const tradeLimit = isStar ? maxLiveLimit : currentTier.maxOpenTrades;
+        if (liveOpenSymbols.has(coin) || liveOpenSymbols.size >= tradeLimit) continue;
         const decision = evaluateSetup(s, {
           coin,
           timeframe: "4H",
@@ -329,6 +338,7 @@ export async function scanAndAlert(): Promise<string[]> {
           lastBarTime: a4.lastBarTime,
           livePrice: tLive?.last,
           btc1hBars: btc1h,
+          fundingRate,
         });
         if (!decision.accepted || !decision.plan) continue;
         const plan = decision.plan;
@@ -383,11 +393,13 @@ export async function scanAndAlert(): Promise<string[]> {
             dryRunOverride: effectiveDryRun,
         });
         if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection))) {
-          openSymbols.add(coin);
+          if (!mexcOrder.isDryRun) liveOpenSymbols.add(coin);
           continue;
         }
-        openSymbols.add(coin);
-        remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+        if (!mexcOrder.isDryRun) {
+          liveOpenSymbols.add(coin);
+          remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+        }
 
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const reason = formatEntryReason({
@@ -418,14 +430,14 @@ export async function scanAndAlert(): Promise<string[]> {
       }
 
       // 2. Quét 1H (Lướt sóng sớm)
-      if (openSymbols.has(coin)) continue;
+      if (liveOpenSymbols.has(coin)) continue;
       const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 120);
       const a1 = analyse(bars1h);
       for (const s of a1.setups) {
         if (s.state !== "triggered") continue;
         const isStar = isStarSetup(s.side, own, btc);
-        const tradeLimit = isStar ? starTradeLimit : currentTier.maxOpenTrades;
-        if (openSymbols.has(coin) || openSymbols.size >= tradeLimit) continue;
+        const tradeLimit = isStar ? maxLiveLimit : currentTier.maxOpenTrades;
+        if (liveOpenSymbols.has(coin) || liveOpenSymbols.size >= tradeLimit) continue;
         const decision1h = evaluateSetup(s, {
           coin,
           timeframe: "1H",
@@ -436,6 +448,7 @@ export async function scanAndAlert(): Promise<string[]> {
           lastBarTime: a1.lastBarTime,
           livePrice: tLive?.last,
           btc1hBars: btc1h,
+          fundingRate,
         });
         if (!decision1h.accepted || !decision1h.plan) continue;
         const plan1h = decision1h.plan;
@@ -444,10 +457,6 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key1h)) continue;
 
         const sizing1h = plan1h.sizing;
-        if (sizing1h.margin > remainingMargin) {
-          console.error(`[MEXC] Bỏ qua ${coin}: cần ${sizing1h.margin} USDT margin, chỉ còn ${remainingMargin} USDT`);
-          continue;
-        }
         const pnl1h = calculatePartialPnL(sizing1h.actualRiskUsd);
 
         // QUY TẮC AN TOÀN TUYỆT ĐỐI: 1H chỉ chạy Paper & gửi Alert Telegram tham khảo, KHÔNG BAO GIỜ đặt lệnh thật
@@ -476,11 +485,8 @@ export async function scanAndAlert(): Promise<string[]> {
             dryRunOverride: mexcOrder1h.isDryRun,
         });
         if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder1h.vol, protection1h))) {
-          openSymbols.add(coin);
           continue;
         }
-        openSymbols.add(coin);
-        remainingMargin = Math.max(0, remainingMargin - sizing1h.margin);
 
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const reason1h = formatEntryReason({
