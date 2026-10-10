@@ -11,13 +11,19 @@ import {
 assert.equal(isAllowedSetup("bos", 1, "4H", 1, 1), true, "4H BOS LONG allowed");
 assert.equal(isAllowedSetup("bos", -1, "4H", -1, -1), true, "4H BOS SHORT allowed with downtrend");
 assert.equal(isAllowedSetup("bos", -1, "4H", 1, 1), false, "4H BOS SHORT blocked when strong uptrend");
-assert.equal(isAllowedSetup("double_top_bottom", -1, "4H"), true, "4H Double top SHORT allowed");
-assert.equal(isAllowedSetup("pinbar_reversal", -1, "4H"), true, "4H Pinbar SHORT allowed");
+assert.equal(isAllowedSetup("double_top_bottom", -1, "4H"), true, "4H Double top SHORT allowed with neutral btc");
+assert.equal(isAllowedSetup("pinbar_reversal", -1, "4H"), true, "4H Pinbar SHORT allowed with neutral btc");
+
+// Macro BTC filter: Tuyệt đối cấm SHORT khi BTC Ngày Uptrend
+assert.equal(isAllowedSetup("pinbar_reversal", -1, "4H", 1, 1), false, "4H Pinbar SHORT MUST be blocked when BTC Daily is Uptrend");
+assert.equal(isAllowedSetup("double_top_bottom", -1, "4H", 1, 1), false, "4H Double top SHORT MUST be blocked when BTC Daily is Uptrend");
+assert.equal(isAllowedSetup("pinbar_reversal", 1, "4H", -1, -1), false, "4H Pinbar LONG MUST be blocked when BTC Daily is Downtrend");
 
 // 1H tests
 assert.equal(isAllowedSetup("double_top_bottom", -1, "1H"), true, "1H Double top allowed");
 assert.equal(isAllowedSetup("pinbar_reversal", -1, "1H"), true, "1H Pinbar allowed");
 assert.equal(isAllowedSetup("bos", 1, "1H"), true, "1H BOS allowed");
+assert.equal(isAllowedSetup("bos", -1, "1H", 1, 1), false, "1H BOS SHORT blocked when BTC Daily is Uptrend");
 assert.equal(isWatchSetup("double_top_bottom", -1, "1H"), true, "1H is watch and scalping alert");
 
 // 2. Star test

@@ -24,10 +24,13 @@ assert.equal(evaluateSetup({ ...setup, stop: 90 }, context).code, "INVALID_STOP"
 // Bot locked check (drawdown >= 20%)
 assert.equal(evaluateSetup(setup, { ...context, equity: 31, peakEquity: 40 }).code, "BOT_LOCKED");
 
-// Double top SHORT accepted
-assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, context).code, "ACCEPTED");
+// Double top SHORT blocked when BTC Daily is Uptrend (btcDaily = 1)
+assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, context).code, "TREND_MISMATCH");
 
-// 1H Pinbar SHORT accepted
-assert.equal(evaluateSetup({ ...setup, style: "pinbar_reversal", side: -1, stop: 102 }, { ...context, timeframe: "1H" }).code, "ACCEPTED");
+// Double top SHORT accepted when BTC Daily is Downtrend (btcDaily = -1)
+assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, { ...context, btcDaily: -1, ownDaily: -1 }).code, "ACCEPTED");
+
+// 1H Pinbar SHORT accepted when BTC Daily is Downtrend (btcDaily = -1)
+assert.equal(evaluateSetup({ ...setup, style: "pinbar_reversal", side: -1, stop: 102 }, { ...context, timeframe: "1H", btcDaily: -1, ownDaily: -1 }).code, "ACCEPTED");
 
 console.log("All decision engine contract tests passed!");

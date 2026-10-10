@@ -39,10 +39,16 @@ export interface TradeSizing {
 
 /** Kiểm tra điều kiện cấu trúc & xu hướng */
 export function isAllowedSetup(style: string, side: 1 | -1, tf: Timeframe, btcDaily = 0, ownDaily = 0): boolean {
+  // QUY TẮC BẢO VỆ CHỐNG BÃO (MACRO BTC FILTER):
+  // 1. Tuyệt đối KHÔNG SHORT khi BTC Ngày đang là Uptrend (+1)
+  if (side < 0 && btcDaily > 0) return false;
+  // 2. Tuyệt đối KHÔNG LONG khi BTC Ngày đang là Downtrend (-1)
+  if (side > 0 && btcDaily < 0) return false;
+
   if (tf === "4H") {
     if (style === "bos") {
-      if (side > 0) return !(btcDaily < 0 && ownDaily < 0);
-      if (side < 0) return !(btcDaily > 0 && ownDaily > 0);
+      if (side > 0) return !(ownDaily < 0);
+      if (side < 0) return !(ownDaily > 0);
     }
     if (style === "double_top_bottom" || style === "pinbar_reversal") {
       return true;

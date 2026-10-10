@@ -64,3 +64,4 @@ assert.equal(tpslRes.success, true, "Dry run TP/SL must succeed");
 assert.equal(tpslRes.isDryRun, true, "Must flag isDryRun");
 
 console.log("All MEXC client & OpenAPI signature tests passed!");
+

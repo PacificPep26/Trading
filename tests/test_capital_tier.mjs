@@ -57,3 +57,4 @@ assert.equal(szTier3.margin, 20, "Tier 3: 200$ / 10 = 20$ margin");
 assert.equal(szTier3.actualRiskUsd, 6, "Tier 3: Risk at SL must be 6$");
 
 console.log("All capital tier & compounding ladder tests passed!");
+
