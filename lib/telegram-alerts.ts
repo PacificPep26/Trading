@@ -665,8 +665,8 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
     return null;
   }
 
-  const msg = `⏰ Nến 4h đóng lúc ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
-    `📌 Setup PAPER sắp xác nhận:\n${lines4h.join("\n")}\n\n💡 Chỉ theo dõi; decision engine sẽ đánh giá lại sau khi nến đóng.`;
+  const msg = `⏰ *[SẮP ĐÓNG NẾN 4H]* ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
+    `📌 *Setup áp sát điểm kích hoạt:*\n${lines4h.join("\n")}\n\n💡 _Bot sẽ tự động đánh giá khối lượng và vào lệnh nếu đạt Chuẩn Kim Cương trong khung 16h-8h._`;
 
   const ok = await send(msg);
   if (ok) {
