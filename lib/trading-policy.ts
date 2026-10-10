@@ -18,7 +18,11 @@ export type DecisionCode =
   | "INVALID_STOP"
   | "INVALID_DATA"
   | "STALE_SIGNAL"
-  | "BOT_LOCKED";
+  | "BOT_LOCKED"
+  | "LOW_VOLUME"
+  | "BTC_MOMENTUM_BLOCKED"
+  | "EXTREME_FUNDING"
+  | "FAKEOUT_WICK_TRAP";
 
 export const STRATEGY_REGISTRY = {
   bos: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
@@ -76,6 +80,30 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
   } else {
     return ownDaily < 0 || btcDaily < 0;
   }
+}
+
+/** Kiểm tra Funding Rate có nằm trong biên an toàn không (tránh bẫy phí và squeeze) */
+export function isFundingSafe(rate?: number): boolean {
+  if (rate === undefined || !Number.isFinite(rate)) return true;
+  // Giới hạn an toàn: |Funding| <= 0.03% (0.0003)
+  return Math.abs(rate) <= 0.0003;
+}
+
+/** Kiểm tra quán tính ngắn hạn của BTC (Intraday Momentum Spillover) */
+export function isBtcMomentumBlocked(
+  side: 1 | -1,
+  btc1hBars?: { o: number; c: number; h: number; l: number }[]
+): boolean {
+  if (!btc1hBars || btc1hBars.length === 0) return false;
+  const recent = btc1hBars.slice(-2);
+  for (const bar of recent) {
+    const movePct = (bar.c - bar.o) / bar.o;
+    // Nếu BTC đang có cây nến 1H tăng dựng đứng (+0.7%) -> CẤM SHORT
+    if (side < 0 && movePct >= 0.007) return true;
+    // Nếu BTC đang có cây nến 1H cắm đầu mạnh (-0.7%) -> CẤM LONG
+    if (side > 0 && movePct <= -0.007) return true;
+  }
+  return false;
 }
 
 /**

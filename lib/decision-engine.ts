@@ -3,6 +3,8 @@ import {
   calculateSizing,
   isAllowedSetup,
   isDrawdownLocked,
+  isFundingSafe,
+  isBtcMomentumBlocked,
   MAX_STOP_DISTANCE,
   MIN_STOP_DISTANCE,
   MAX_PRICE_DRIFT,
@@ -16,14 +18,16 @@ import {
 export interface DecisionContext {
   coin: string;
   timeframe: Timeframe;
-  btcDaily: -1 | 0 | 1;
-  ownDaily: -1 | 0 | 1;
+  btcDaily: -1 | 0 | 1 | number;
+  ownDaily: -1 | 0 | 1 | number;
   equity: number;
   peakEquity: number;
   lastBarTime: number;
   livePrice?: number;
   now?: number;
   dataValid?: boolean;
+  btc1hBars?: { o: number; c: number; h: number; l: number }[];
+  fundingRate?: number;
 }
 
 export interface OrderPlan {
@@ -87,6 +91,26 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   // 4. Kiểm tra xu hướng & bối cảnh
   if (!isAllowedSetup(setup.style, setup.side, ctx.timeframe, ctx.btcDaily, ctx.ownDaily)) {
     return reject("TREND_MISMATCH");
+  }
+
+  // 4b. Kiểm tra Quán tính động lượng ngắn hạn của BTC (BTC Intraday Momentum)
+  if (isBtcMomentumBlocked(setup.side, ctx.btc1hBars)) {
+    return reject("BTC_MOMENTUM_BLOCKED");
+  }
+
+  // 4c. Kiểm tra Lệ phí Funding Rate bất thường
+  if (!isFundingSafe(ctx.fundingRate)) {
+    return reject("EXTREME_FUNDING");
+  }
+
+  // 4d. Kiểm tra Khối lượng kiệt quệ (Volume Ratio < 0.75x)
+  if (setup.volumeRatio !== undefined && setup.volumeRatio < 0.75) {
+    return reject("LOW_VOLUME");
+  }
+
+  // 4e. Kiểm tra Bẫy phá vỡ giả thân nến (Fakeout Wick Trap cho BOS)
+  if (setup.style === "bos" && setup.isCleanBody === false) {
+    return reject("FAKEOUT_WICK_TRAP");
   }
 
   // 5. Kiểm tra trạng thái nến kích hoạt

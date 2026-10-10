@@ -98,7 +98,10 @@ export async function send(text: string): Promise<boolean> {
 
 /** Scan the verified 4H setups. */
 export async function scanAndAlert(): Promise<string[]> {
-  const btc = await dailyTrend("BTC");
+  const [btc, btc1h] = await Promise.all([
+    dailyTrend("BTC"),
+    candles("BTC-USDT-SWAP", "1H", 10).catch(() => []),
+  ]);
   const mexcAsset = await getMexcAccountAsset(CAPITAL);
   const currentEquity = mexcAsset.equity;
   const currentTier = getCapitalTier(currentEquity);
@@ -153,6 +156,7 @@ export async function scanAndAlert(): Promise<string[]> {
           peakEquity: paper.peakEquity,
           lastBarTime: a4.lastBarTime,
           livePrice: tLive?.last,
+          btc1hBars: btc1h,
         });
         if (!decision.accepted || !decision.plan) continue;
         const plan = decision.plan;
@@ -221,6 +225,7 @@ export async function scanAndAlert(): Promise<string[]> {
           peakEquity: paper.peakEquity,
           lastBarTime: a1.lastBarTime,
           livePrice: tLive?.last,
+          btc1hBars: btc1h,
         });
         if (!decision1h.accepted || !decision1h.plan) continue;
         const plan1h = decision1h.plan;

@@ -15,6 +15,8 @@ export type Setup = {
   target?: number; // structural target (double top/bottom measured move)
   level: number; // broken level (swing / neckline): a 4h close back through it = failed setup, exit early
   distancePct: number; // pending: how far price must move to trigger (signed toward the trade)
+  volumeRatio?: number; // Volume nến / SMA(20) Volume
+  isCleanBody?: boolean; // Thân nến dứt khoát chống râu quét giả
 };
 
 function atrSeries(cs: Candle[]) {
@@ -65,17 +67,33 @@ export function analyse(all: Candle[]) {
   const c = cs[i], prev = cs[i - 1];
   const setups: Setup[] = [];
 
+  // Tính Volume SMA20 & tỷ lệ khối lượng
+  const recentVols = cs.slice(-20).map((x) => x.v || 0);
+  const avgVol = recentVols.length > 0 ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0;
+  const volumeRatio = avgVol > 0 && (c.v || 0) > 0 ? Math.round(((c.v || 0) / avgVol) * 100) / 100 : 1.0;
+  // Khối lượng được xác nhận: nếu có data volume thì phải >= 0.75x trung bình (chặn nến kiệt volume)
+  const isVolumeSupported = avgVol === 0 || (c.v || 0) === 0 || volumeRatio >= 0.75;
+
   // BOS: close beyond the last swing in the trend direction; stop beyond the opposite swing
   if (trend !== 0 && highs.length && lows.length) {
     const lastHigh = cs[highs.at(-1)!].h, lastLow = cs[lows.at(-1)!].l;
+    const candleRange = c.h - c.l;
     if (trend > 0) {
       const stop = lastLow - 0.1 * atr;
-      if (c.c > lastHigh && lastHigh >= prev.c) setups.push({ style: "bos", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), level: lastHigh, distancePct: 0 });
-      else if (c.c <= lastHigh) setups.push({ style: "bos", state: "pending", side: 1, entry: lastHigh, stop, ...levels(1, lastHigh, stop), level: lastHigh, distancePct: lastHigh / c.c - 1 });
+      const isCleanBody = c.c > c.o && (candleRange === 0 || (c.c - c.o) >= 0.25 * candleRange);
+      if (c.c > lastHigh && lastHigh >= prev.c && isCleanBody && isVolumeSupported) {
+        setups.push({ style: "bos", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), level: lastHigh, distancePct: 0, volumeRatio, isCleanBody: true });
+      } else if (c.c <= lastHigh) {
+        setups.push({ style: "bos", state: "pending", side: 1, entry: lastHigh, stop, ...levels(1, lastHigh, stop), level: lastHigh, distancePct: lastHigh / c.c - 1, volumeRatio });
+      }
     } else {
       const stop = lastHigh + 0.1 * atr;
-      if (c.c < lastLow && lastLow <= prev.c) setups.push({ style: "bos", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), level: lastLow, distancePct: 0 });
-      else if (c.c >= lastLow) setups.push({ style: "bos", state: "pending", side: -1, entry: lastLow, stop, ...levels(-1, lastLow, stop), level: lastLow, distancePct: c.c / lastLow - 1 });
+      const isCleanBody = c.c < c.o && (candleRange === 0 || (c.o - c.c) >= 0.25 * candleRange);
+      if (c.c < lastLow && lastLow <= prev.c && isCleanBody && isVolumeSupported) {
+        setups.push({ style: "bos", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), level: lastLow, distancePct: 0, volumeRatio, isCleanBody: true });
+      } else if (c.c >= lastLow) {
+        setups.push({ style: "bos", state: "pending", side: -1, entry: lastLow, stop, ...levels(-1, lastLow, stop), level: lastLow, distancePct: c.c / lastLow - 1, volumeRatio });
+      }
     }
   }
 
@@ -85,8 +103,11 @@ export function analyse(all: Candle[]) {
     if (Math.abs(cs[a].h - cs[b].h) <= 0.3 * atr && b - a >= 5) {
       const neck = Math.min(...cs.slice(a, b + 1).map((x) => x.l));
       const top = Math.max(cs[a].h, cs[b].h), stop = top + 0.1 * atr, target = neck - (top - neck);
-      if (c.c < neck && neck <= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), target, level: neck, distancePct: 0 });
-      else if (c.c >= neck && c.c < stop) setups.push({ style: "double_top_bottom", state: "pending", side: -1, entry: neck, stop, ...levels(-1, neck, stop), target, level: neck, distancePct: c.c / neck - 1 });
+      if (c.c < neck && neck <= prev.c && isVolumeSupported) {
+        setups.push({ style: "double_top_bottom", state: "triggered", side: -1, entry: c.c, stop, ...levels(-1, c.c, stop), target, level: neck, distancePct: 0, volumeRatio });
+      } else if (c.c >= neck && c.c < stop) {
+        setups.push({ style: "double_top_bottom", state: "pending", side: -1, entry: neck, stop, ...levels(-1, neck, stop), target, level: neck, distancePct: c.c / neck - 1, volumeRatio });
+      }
     }
   }
   if (lows.length >= 2) {
@@ -94,13 +115,16 @@ export function analyse(all: Candle[]) {
     if (Math.abs(cs[a].l - cs[b].l) <= 0.3 * atr && b - a >= 5) {
       const neck = Math.max(...cs.slice(a, b + 1).map((x) => x.h));
       const bot = Math.min(cs[a].l, cs[b].l), stop = bot - 0.1 * atr, target = neck + (neck - bot);
-      if (c.c > neck && neck >= prev.c) setups.push({ style: "double_top_bottom", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), target, level: neck, distancePct: 0 });
-      else if (c.c <= neck && c.c > stop) setups.push({ style: "double_top_bottom", state: "pending", side: 1, entry: neck, stop, ...levels(1, neck, stop), target, level: neck, distancePct: neck / c.c - 1 });
+      if (c.c > neck && neck >= prev.c && isVolumeSupported) {
+        setups.push({ style: "double_top_bottom", state: "triggered", side: 1, entry: c.c, stop, ...levels(1, c.c, stop), target, level: neck, distancePct: 0, volumeRatio });
+      } else if (c.c <= neck && c.c > stop) {
+        setups.push({ style: "double_top_bottom", state: "pending", side: 1, entry: neck, stop, ...levels(1, neck, stop), target, level: neck, distancePct: neck / c.c - 1, volumeRatio });
+      }
     }
   }
 
   // Pinbar / Râu nến đảo chiều tại vùng cản Swing (Liquidity Sweep)
-  if (highs.length && lows.length) {
+  if (highs.length && lows.length && isVolumeSupported) {
     const lastHigh = cs[highs.at(-1)!].h;
     const lastLow = cs[lows.at(-1)!].l;
     const range = c.h - c.l;
@@ -119,6 +143,7 @@ export function analyse(all: Candle[]) {
           ...levels(-1, c.c, stop),
           level: c.h,
           distancePct: 0,
+          volumeRatio,
         });
       }
 
@@ -135,6 +160,7 @@ export function analyse(all: Candle[]) {
           ...levels(1, c.c, stop),
           level: c.l,
           distancePct: 0,
+          volumeRatio,
         });
       }
     }
