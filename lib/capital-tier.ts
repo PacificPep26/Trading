@@ -19,16 +19,26 @@ export interface CapitalTier {
 export const CAPITAL_TIERS: CapitalTier[] = [
   {
     tier: 1,
-    name: "Tầng 1 (Khởi điểm $100)",
+    name: "Tầng Khởi Động ($40 - $79)",
+    minEquity: 30,
+    maxEquity: 79.99,
+    baseCapital: 50,
+    riskPerTradeUsd: 2.5,
+    maxOpenTrades: 2,
+    ratchetFloorUsd: 30,
+  },
+  {
+    tier: 2,
+    name: "Tầng 1 (Tiêu chuẩn $100)",
     minEquity: 80,
     maxEquity: 119.99,
     baseCapital: 100,
     riskPerTradeUsd: 4.0,
     maxOpenTrades: 3,
-    ratchetFloorUsd: 80,
+    ratchetFloorUsd: 70,
   },
   {
-    tier: 2,
+    tier: 3,
     name: "Tầng 2 (Bứt phá $120)",
     minEquity: 120,
     maxEquity: 149.99,
@@ -38,7 +48,7 @@ export const CAPITAL_TIERS: CapitalTier[] = [
     ratchetFloorUsd: 110,
   },
   {
-    tier: 3,
+    tier: 4,
     name: "Tầng 3 (Tăng tốc $150)",
     minEquity: 150,
     maxEquity: 199.99,
@@ -48,7 +58,7 @@ export const CAPITAL_TIERS: CapitalTier[] = [
     ratchetFloorUsd: 135,
   },
   {
-    tier: 4,
+    tier: 5,
     name: "Tầng 4 (Vững vàng $200+)",
     minEquity: 200,
     maxEquity: Infinity,
