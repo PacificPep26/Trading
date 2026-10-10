@@ -9,10 +9,9 @@ import { analyse, swings, analyseDaily } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
-import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
+import { isStarSetup, isLiveEligible, isAutoTradeTimeWindow, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
-import { registerSniperTarget, evaluate15mSniper, sniperRadar, getTradingSessionInfo, detectVolumeAbsorption } from "@/lib/sniper-engine";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -438,9 +437,11 @@ export async function scanAndAlert(): Promise<string[]> {
           volumeRatio: s.volumeRatio,
         });
 
-        const autoTag = mexcOrder.isDryRun
-          ? `🎯 *[CẢNH BÁO BAN NGÀY - TỰ BẤM TAY]*`
-          : `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H) - ${mexcOrder.vol} HĐ]*`;
+        const autoTag = !mexcOrder.isDryRun
+          ? `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H) - ${mexcOrder.vol} HĐ]*`
+          : isAutoTradeTimeWindow()
+            ? `📋 *[PAPER - KHÔNG ĐỦ CHUẨN LIVE]*`
+            : `🎯 *[CẢNH BÁO BAN NGÀY - TỰ BẤM TAY]*`;
 
         itemsToSend.push({
           key,
@@ -530,18 +531,6 @@ export async function scanAndAlert(): Promise<string[]> {
           ? `⚡ *[LƯỚT SÓNG 1H]*`
           : `🤖 *[MEXC ĐÃ VÀO LỆNH - ${mexcOrder1h.vol} HĐ]*`;
 
-        // ĐƯA VÀO RADAR BẮN TỈA 15M: Khi 1H phá vỡ, đăng ký theo dõi nhịp hồi 15m để tỉa điểm vào tối ưu
-        registerSniperTarget({
-          coin,
-          side: s.side,
-          breakoutTime: a1.lastBarTime + 3_600_000,
-          breakoutPrice: s.entry,
-          brokenLevel: s.level,
-          waveHigh: Math.max(...bars1h.slice(-12).map((b) => b.h)),
-          waveLow: Math.min(...bars1h.slice(-12).map((b) => b.l)),
-          atr1h: Math.abs(s.entry - s.stop),
-        });
-
         itemsToSend.push({
           key: key1h,
           msg:
@@ -550,8 +539,7 @@ export async function scanAndAlert(): Promise<string[]> {
             `• *Cắt lỗ (SL):* ${f(s.stop)} (-${(plan1h.riskPct * 100).toFixed(2)}%)\n` +
             `• *Chốt lời (TP):* TP1 ${f(plan1h.tp1)} (+${pnl1h.winTp1.toFixed(2)}$) | TP2 ${f(plan1h.tp2)} (+${pnl1h.totalWin.toFixed(2)}$)\n` +
             `• *Sao vô:* ${reason1h}\n` +
-            `• *Ký quỹ:* ~${sizing1h.margin}$ (x${sizing1h.leverage} Isolated) · *Rủi ro 1R:* ${sizing1h.actualRiskUsd}$\n` +
-            `🎯 *[RADAR 15M]*: Theo dõi nhịp hồi 15m về cản ${f(s.level)} trong 90 phút, có tín hiệu sẽ báo (chỉ báo tin, không tự vào lệnh)`
+            `• *Ký quỹ:* ~${sizing1h.margin}$ (x${sizing1h.leverage} Isolated) · *Rủi ro 1R:* ${sizing1h.actualRiskUsd}$`
         });
         openPaperPlan(key1h, decision1h, bars1h, currentEquity);
         break;
@@ -559,45 +547,6 @@ export async function scanAndAlert(): Promise<string[]> {
 
     } catch (e) {
       console.error(`telegram scan ${coin}`, e);
-    }
-  }
-
-  // 3. Quét kiểm tra các mục tiêu đang nằm trong RADAR BẮN TỈA 15M
-  for (const coin of Array.from(sniperRadar.keys())) {
-    try {
-      const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 30).catch(() => []);
-      const sniperSignal = evaluate15mSniper(coin, bars15m);
-      if (sniperSignal && sniperSignal.triggered) {
-        const sniperKey = `SNIPER:15M:${coin}:${sniperSignal.side}:${bars15m.at(-1)?.t ?? Date.now()}`;
-        if (!sent.has(sniperKey)) {
-          const sideStr = sniperSignal.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-          const rDist = Math.abs(sniperSignal.entry - sniperSignal.stop);
-          const tp1R = ((sniperSignal.tp1 - sniperSignal.entry) * sniperSignal.side) / rDist;
-          const tp2R = ((sniperSignal.tp2 - sniperSignal.entry) * sniperSignal.side) / rDist;
-
-          const sessionInfo = getTradingSessionInfo();
-          const absorption = detectVolumeAbsorption(bars15m.filter((b) => b.closed));
-
-          let extraInsights = `• *Khung giờ:* ${sessionInfo.multiplierText}\n`;
-          if (absorption.isAbsorption) {
-            extraInsights += `• *Dòng tiền:* 🐋 Phát hiện Cá Mập Hấp Thụ (Volume x${absorption.ratio.toFixed(1)} nổ to đỡ giá!)\n`;
-          }
-
-          itemsToSend.push({
-            key: sniperKey,
-            msg:
-              `🎯 *[BẮN TỈA 15M - THAM KHẢO, KHÔNG VÀO LỆNH]* ${sideStr} *${coin}*\n\n` +
-              `• *Tín hiệu:* ${sniperSignal.reason}\n` +
-              `• *Giá vào lệnh tối ưu (Entry):* ~${f(sniperSignal.entry)}\n` +
-              `• *Cắt lỗ siêu ngắn (SL):* ${f(sniperSignal.stop)} (-${(sniperSignal.riskPct * 100).toFixed(2)}%)\n` +
-              `• *Chốt lời:* TP1 ~${f(sniperSignal.tp1)} (+${tp1R.toFixed(1)}R) | TP2 ~${f(sniperSignal.tp2)} (+${tp2R.toFixed(1)}R)\n` +
-              extraInsights +
-              `• *Lưu ý:* Backtest 2023–2026 sau phí −0.31R/lệnh (win 38%), chưa có lợi thế`
-          });
-        }
-      }
-    } catch (sniperErr) {
-      console.error(`[SNIPER 15M] Lỗi quét ${coin}:`, sniperErr);
     }
   }
 
