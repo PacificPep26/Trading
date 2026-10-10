@@ -60,23 +60,41 @@ margin = notional / 10
 - Vòng đời: `candidate → confirmed → planned → simulated_open → partially_closed/closed → reviewed`.
 - Mỗi event lưu version (`paper-v2.0.0`), decision code, plan, fill, phí, slippage, equity và peak equity.
 
-## 6. Quản lý vốn Nấc thang (Compounding Step Ladder) & Auto-Trade MEXC (`v2.1.0`)
+## 6. Quản lý vốn Nấc thang (Compounding Step Ladder) & Auto-Trade MEXC (`v2.3.0`)
 
 - Bảng nấc thang vốn (Tiers):
-  - **Tầng 1 ($80 - $119.99):** Vốn cơ sở $100 · Rủi ro 1R = **$4.0/lệnh** · Tối đa 3 lệnh đồng thời · Ratchet floor: $80.
+  - **Tầng Khởi Động ($30 - $79.99):** Vốn cơ sở $50 · Rủi ro 1R = **$2.5/lệnh** · Giữ tối đa 2 lệnh (linh hoạt 3 lệnh nếu là Kèo Đẹp ★★★) · Ratchet floor: $30.
+  - **Tầng 1 ($80 - $119.99):** Vốn cơ sở $100 · Rủi ro 1R = **$4.0/lệnh** · Tối đa 3 lệnh đồng thời · Ratchet floor: $70.
   - **Tầng 2 ($120 - $149.99):** Vốn cơ sở $120 · Rủi ro 1R = **$4.8/lệnh** · Tối đa 3 lệnh đồng thời · Ratchet floor: $110.
   - **Tầng 3 ($150 - $199.99):** Vốn cơ sở $150 · Rủi ro 1R = **$6.0/lệnh** · Tối đa 4 lệnh đồng thời · Ratchet floor: $135.
   - **Tầng 4 ($\ge $200):** Vốn cơ sở $200 · Rủi ro 1R = **$8.0/lệnh** · Tối đa 4 lệnh đồng thời · Ratchet floor: $180.
 - Van khóa bảo vệ lợi nhuận (Ratchet): Khi tài khoản vượt mốc và sau đó gặp đợt điều chỉnh, bot tự động hạ nấc sizing để bảo vệ phần lãi đã chốt.
-- Tự động đặt lệnh MEXC Futures: Khi có `MEXC_API_KEY` & `MEXC_SECRET_KEY`, bot gửi lệnh Market x10 Isolated và tự động đặt sẵn lệnh điều kiện TP/SL. Nếu chưa có key, bot chạy chế độ Dry-Run an toàn.
+- Tự động đặt lệnh MEXC Futures: Khi có `MEXC_API_KEY` & `MEXC_SECRET_KEY`, bot gửi lệnh Market x10 Isolated và tự động đặt sẵn lệnh điều kiện TP/SL.
+- Chốt chặn bảo vệ số lượng lệnh: Đọc danh sách vị thế mở trực tiếp từ MEXC API. Không mở thêm khi đã chạm trần vị thế và tuyệt đối không nhồi lệnh vào coin đang giữ vị thế.
+- Bộ lọc bão vĩ mô & Bẫy giá:
+  - BTC Ngày Uptrend ➔ Tuyệt đối CHẶN TOÀN BỘ lệnh SHORT.
+  - Chặn lệnh nếu Funding Rate $\ge 0.03\%$ hoặc BTC 1H tăng vọt $\ge 0.7\%$.
+  - Yêu cầu thân nến BOS chiếm $\ge 25\%$ thân nến và Volume $\ge 0.75 \times \text{SMA20}$.
 
-## 7. Vận hành và Giám sát
+## 7. Định dạng Tin nhắn Telegram Tinh Gọn Thực Chiến (`v2.3.0`)
 
+- Thẻ Lệnh Hành Động (Actionable Trade Card):
+  - Bỏ toàn bộ văn mẫu giáo điều, cảnh báo lặp lại.
+  - Chuẩn hóa đúng 5 thông số cốt lõi:
+    1. Cặp coin & Chiều lệnh (`🟢 LONG` / `🔴 SHORT`)
+    2. Điểm vào (`• Điểm vào: ~...`)
+    3. Cắt lỗ (`• Cắt lỗ (SL): ... (-...%)`)
+    4. Chốt lời (`• Chốt lời (TP): TP1 ... (+...$) | TP2 ... (+...$)`)
+    5. Lý do vào lệnh (`• Sao vô: BOS 4H phá cản + Thân nến đặc + Volume TB20 + Thuận BTC`)
+    6. Ký quỹ & Rủi ro (`• Ký quỹ: ~...$ (x10 Isolated) · Rủi ro 1R: ...$`)
+- Im lặng ngầm 100%: Gỡ bỏ toàn bộ cảnh báo `preAlert` (báo trước 5 phút nến đóng) và `radar` tiệm cận đỉnh đáy khỏi vòng lặp ngầm 5 phút. Chỉ gửi tin nhắn khi có lệnh khớp thực sự hoặc người dùng chủ động bấm nút.
+- Nhắc hạn API MEXC 90 ngày: Cảnh báo tự động duy nhất 1 lần khi hạn dùng còn $\le 1 \text{ ngày}$ (24 giờ).
+
+## 8. Vận hành và Giám sát
+
+- `/api/mexc-check`: Kiểm tra số dư ví USDT và danh sách vị thế (Positions) đang mở trên MEXC.
 - `/api/watchlist`: Trả về danh sách setup, decision code và kế hoạch lệnh.
 - `/api/paper`: 200 event gần nhất và trạng thái ledger.
 - Webhook Telegram (`@VictorHuynh_trading_bot`):
-  - Nhắn `canh` / `/canh`: Bật Radar quét coin sát Đỉnh cũ / Đáy cũ trong vòng 2%.
-  - Nhắn `keo` / `quét`: Quét toàn diện tín hiệu 4H và 1H đạt chuẩn.
-  - Nhắn `vốn` / `sodu`: Tra cứu số dư tài khoản, cấp bậc Tầng hiện tại, rủi ro 1R và mốc ratchet floor.
-  - Nhắn tên coin (`BTC`, `SOL`, `LINK`, `TIA`): Soi chi tiết thông số vào lệnh MEXC chuẩn xác.
+  - Bàn phím nút bấm nhanh: `[ 🔍 Kèo ]`, `[ 🧭 Canh Đỉnh/Đáy ]`, `[ 🏦 Xem Vốn & Tier ]`, `[ SOL ]`, `[ WIF ]`, `[ DOGE ]`.
 - Kiểm tra toàn hệ thống: `node tests/test_policy.mjs`, `node tests/test_decision.mjs`, `node tests/test_capital_tier.mjs`, `node tests/test_mexc_client.mjs`, `npm run build`.

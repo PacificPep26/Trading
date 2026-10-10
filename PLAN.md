@@ -1,33 +1,24 @@
 # Kế hoạch và trạng thái
 
-Cập nhật 2026-10-09 — strategy `paper-v1.0.0`. Chi tiết hành vi ở [docs/bot-spec.md](docs/bot-spec.md).
+Cập nhật 2026-10-10 — Strategy `v2.3.0`. Chi tiết hành vi ở [docs/bot-spec.md](docs/bot-spec.md).
 
 ## Trạng thái hiện tại
 
-- Đã có decision engine dùng chung, strategy registry, sizing theo risk và circuit breaker drawdown.
-- Đã loại pinbar khỏi detector production để khớp Python; setup 1H không còn actionable.
-- Scanner, watchlist và Telegram dùng policy/decision code chung; không có API đặt lệnh thật.
-- Paper ledger append-only mô phỏng fill nến kế tiếp, phí/slippage, TP/SL bảo thủ, equity và drawdown; xem qua `/api/paper`.
-- Backtest core chống look-ahead, SL thắng khi cùng nến chạm hai phía, hỗ trợ phí/slippage/funding, max drawdown, chuỗi thua và bootstrap CI.
+- **Auto-Trade Live MEXC**: Đã kết nối API key/secret, tự động đặt lệnh Market x10 Isolated và cài sẵn TP/SL trên sàn MEXC.
+- **Quản lý vốn Nấc thang**: 5 tầng vốn (Tầng Khởi Động $30 - $79, rủi ro $2.5/lệnh).
+- **Chốt chặn số lượng vị thế**: Đọc vị thế thực tế qua `/api/v1/private/position/open_positions`, giữ tối đa 2 lệnh (mở rộng tối đa 3 lệnh khi có Kèo Đẹp ★★★), không nhồi trùng symbol.
+- **Telegram bot tinh gọn**: Thẻ lệnh 5 dòng (Entry, SL, TP1/TP2, Sao vô, Ký quỹ/Rủi ro), tắt 100% tin canh nến chạy ngầm.
+- **Bộ lọc bão & Bẫy giá**: Chặn SHORT khi BTC Ngày Uptrend, lọc Funding $\ge 0.03\%$, nến bật $\ge 0.7\%$, bẫy râu và nến volume thấp.
 
-## Luật đang paper
+## Luật vận hành chính
 
-1. BOS 4H chỉ LONG.
-2. Hai đỉnh/đáy 4H chỉ khi BTC và coin cùng phía EMA50 ngày với hướng lệnh.
-3. SL 0,4–8%; TP 50% ở 0,5R và 50% ở 1R.
-4. Isolated tối đa x10; rủi ro tối đa 10% equity tại SL.
-5. Drawdown 20% khóa entry mới.
+1. BOS 4H, Hai đỉnh/Hai đáy 4H & 1H, Pinbar quét râu đảo chiều.
+2. SL từ 1.5% đến 6.0%.
+3. TP1 ở 1.0R (chốt 50%, dời hòa), TP2 ở 2.0R.
+4. Isolated x10, rủi ro $2.5/lệnh (Tầng Khởi Động).
+5. Drawdown 20% kích hoạt cầu dao dừng mở lệnh mới (`BOT_LOCKED`).
 
-Pinbar, BOS SHORT và mọi setup 1H không được vào paper. Các số liệu lịch sử chỉ là exploratory vì 2026 không còn holdout sạch.
+## Việc tiếp theo
 
-## Cổng tiếp theo
-
-- Chạy cùng một version ít nhất 3 tháng và đóng ít nhất 200 lệnh.
-- Expectancy ròng dương, profit factor >1, drawdown <20%, không lỗi parity/dữ liệu/policy.
-- Không phụ thuộc một coin hoặc một chiều. Đạt cổng chỉ tạo báo cáo; không tự bật tiền thật.
-
-## Việc còn mở
-
-- Thu thập funding OKX theo từng vị thế thay vì mặc định 0 khi nguồn lịch sử thiếu.
-- Bổ sung báo cáo paper theo coin, side, regime và kiểm tra điều kiện promotion.
-- Tiếp tục kho kiến thức video/sách ở nhánh research, không đưa thẳng vào bot.
+- Giám sát 2 vị thế đang chạy trên sàn (`ARB`, `LINK`).
+- Tiếp tục ghi nhận log khớp lệnh và PnL tự động.
