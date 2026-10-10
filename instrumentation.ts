@@ -6,7 +6,6 @@ export async function register() {
   const tick = async () => {
     await scanAndAlert().catch((e) => console.error("telegram alerts", e));
     await preAlert().catch((e) => console.error("telegram pre-alert", e));
-    await proximityRadarAlert().catch((e) => console.error("telegram radar", e));
   };
   setTimeout(tick, 30_000);
   setInterval(tick, 5 * 60_000);
