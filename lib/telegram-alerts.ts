@@ -154,8 +154,9 @@ export async function scanAndAlert(): Promise<string[]> {
   const livePositions = await getMexcOpenPositions();
   const openSymbols = new Set(livePositions.filter((p: any) => Number(p.holdVol) > 0).map((p: any) => p.symbol.replace("_USDT", "")));
 
-  // Nếu số vị thế đang mở đã đạt tối đa của Tier (ví dụ Tier 1 tối đa 2 lệnh): Dừng mở thêm lệnh mới!
-  if (openSymbols.size >= currentTier.maxOpenTrades) {
+  // Cho phép tối đa 3 lệnh nếu là kèo đẹp (Star Setup), bình thường giữ tối đa 2 lệnh
+  const maxAllowedTrades = Math.min(3, currentTier.maxOpenTrades + 1);
+  if (openSymbols.size >= maxAllowedTrades) {
     return [];
   }
 
