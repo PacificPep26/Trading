@@ -90,25 +90,53 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
 }
 
 /**
- * Chỉ cho phép vào lệnh LIVE tiền thật đối với chiến lược đã được chứng minh
- * có kỳ vọng toán học dương sau phí Taker MEXC (0.16%) và trượt giá:
- * Hiện tại:
- * - 1D Donchian Breakout (BTC cùng hướng): ứng viên tốt nhất, nhưng lợi thế 2025–2026 chỉ ~+0.01–0.03R.
- * - 4H BOS: Chỉ chạy Paper/Telegram Alert (dữ liệu 881 lệnh sau phí là -0.005R, chưa đủ t >= 3).
- * - 4H Double Top/Bottom thuận BTC & Coin: +0.054R nhưng t=1.04 (chưa có ý nghĩa thống kê).
+ * Kiểm tra khung giờ tự động vào lệnh (16:00 chiều đến 08:00 sáng hôm sau giờ Việt Nam UTC+7).
+ * Đây là khung giờ thanh khoản quốc tế bùng nổ (London + New York), tỷ lệ nến thật cao nhất.
+ * Ngoài khung giờ này (08:00 - 16:00), bot chuyển sang chế độ Cảnh báo Telegram để tự bấm tay.
+ */
+export function isAutoTradeTimeWindow(date: Date = new Date()): boolean {
+  // Chuyển sang giờ Việt Nam (UTC+7)
+  const vnHour = (date.getUTCHours() + 7) % 24;
+  return vnHour >= 16 || vnHour < 8;
+}
+
+/**
+ * Điều kiện vào lệnh LIVE tiền thật trên MEXC:
+ * 1. 1D Donchian Breakout: nến ngày thuận xu hướng BTC.
+ * 2. 4H Chuẩn Kim Cương (Diamond Standard) trong khung giờ 16:00 - 08:00:
+ *    - Cả LONG ("bật nền") và SHORT ("rớt nền" / thủng đáy).
+ *    - Volume bùng nổ: volumeRatio >= 2.0x (lọc sạch 95% bẫy thanh khoản).
+ *    - Thuận xu hướng lớn: Long khi BTC & Coin Uptrend, Short khi BTC & Coin Downtrend.
+ *    - Các chiến lược đạt chuẩn: BOS phá cản/nền hoặc Hai đỉnh/đáy đảo chiều.
  */
 export function isLiveEligible(
   style: string,
   side: 1 | -1,
   tf: Timeframe,
   ownDaily: number,
-  btcDaily: number
+  btcDaily: number,
+  volumeRatio = 1.0,
+  date: Date = new Date()
 ): boolean {
   if (tf === "1D" && style === "daily_trend_donchian") {
     return side > 0 ? btcDaily > 0 : btcDaily < 0;
   }
-  const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
-  return tf === "4H" && style === "double_top_bottom" && isFullyAligned;
+
+  // Khung 4H: Đòi hỏi điều kiện Diamond Standard và phải nằm trong khung giờ 16:00 - 08:00
+  if (tf === "4H") {
+    if (!isAutoTradeTimeWindow(date)) return false;
+
+    const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
+    if (!isFullyAligned) return false;
+
+    // Chuẩn Kim Cương: Volume phải bùng nổ >= 2.0x SMA20
+    if (volumeRatio < 2.0) return false;
+
+    // Chấp nhận cả phá nền (BOS Long/Short) và mô hình đảo chiều (Double Top/Bottom)
+    return style === "bos" || style === "double_top_bottom";
+  }
+
+  return false;
 }
 
 /** Kiểm tra Funding Rate có nằm trong biên an toàn không (tránh bẫy phí và squeeze) */

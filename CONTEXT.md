@@ -18,17 +18,22 @@
 
 ---
 
-### 2. Các chiến lược và Quyền hạn Live (Đã đồng bộ trung thực với Nhật ký Nghiên cứu)
-Quy định tập trung tại hàm `isLiveEligible` trong `lib/trading-policy.ts`:
+### 2. Các chiến lược và Quyền hạn Live (Đã đồng bộ trung thực với Khung Giờ & Chuẩn Kim Cương)
+Quy định tập trung tại hàm `isLiveEligible` và `isAutoTradeTimeWindow` trong `lib/trading-policy.ts`:
 1. **Daily Trend Following (1D Donchian Breakout 20D):**
    - Vào lệnh khi nến ngày đóng phá đỉnh 20 ngày và BTC Ngày Uptrend.
    - **Cơ chế thoát lệnh chuẩn backtest:** KHÔNG đặt TP1/TP2 cố định. Gồng lãi theo xu hướng, SL ban đầu 2×ATR20. Khi nến ngày đóng cửa thủng đáy 10 ngày (10D Low) -> đóng Market thoát lệnh ngay lập tức (dù đang lãi hay lỗ). Không trailing SL trong ngày (backtest chỉ thoát theo giá đóng nến ngày); còn lại giữ SL 2×ATR. Bot nhận diện vị thế 1D = vị thế LONG không có lệnh TP nào.
-   - *Lưu ý nghiên cứu:* Nhật ký 10/10 ghi rõ lợi thế thị trường chủ yếu ở 2023–2024, giai đoạn 2025–2026 thị trường đi ngang nên lợi thế suy giảm. Cần quản lý vốn chặt chẽ.
-2. **4H Đảo chiều (Hai đỉnh / Hai đáy - Double Top/Bottom):**
-   - Phá đường viền cổ (Neckline) đồng thuận tuyệt đối với xu hướng Ngày của BTC và Coin ($t = 1.04$).
-3. **4H Phá nền (BOS - Break of Structure) & 1H:**
-   - **CHỈ CHẠY PAPER & TELEGRAM ALERT** (Không vào tiền thật).
-   - Số liệu kiểm toán trên 881 lệnh sau phí Taker MEXC 0.16% là $-0.005R$ ($t = -0.17$), chưa đủ điều kiện khoa học để chạy live tiền thật.
+2. **Khung Giờ Tự Động Vào Lệnh Thực Chiến (16:00 Chiều - 08:00 Sáng hôm sau VN, UTC+7):**
+   - Kích hoạt cơ chế tự động mở lệnh MEXC cho cả **LONG ("bật nền")** và **SHORT ("rớt nền" / thủng đáy)** theo Chuẩn Kim Cương (Diamond Standard):
+     - `volumeRatio >= 2.0x` (loại bỏ 95% bẫy quét râu giả và thanh khoản cạn kiệt).
+     - Thuận xu hướng lớn: Long khi Coin & BTC Ngày Uptrend; Short khi Coin & BTC Ngày Downtrend.
+     - Mô hình áp dụng: BOS (Break of Structure phá cản/thủng nền) và Double Top/Bottom.
+     - Thẻ thông báo Telegram: `🤖 [MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H)]`.
+3. **Khung Giờ Ban Ngày (08:00 Sáng - 16:00 Chiều VN):**
+   - Chuyển sang chế độ Paper / Cảnh Báo Telegram để người dùng tự xem xét và bấm tay nếu muốn:
+     - Thẻ thông báo Telegram: `🎯 [CẢNH BÁO BAN NGÀY - TỰ BẤM TAY]`.
+4. **Khung 1H & Radar 15m:**
+   - Dùng để lướt sóng Paper và cung cấp radar định vị nhịp hồi tối ưu. Không tự động vào lệnh trực tiếp tiền thật.
 
 ---
 

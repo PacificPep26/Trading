@@ -381,7 +381,7 @@ export async function scanAndAlert(): Promise<string[]> {
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
         const isLiveConfigured = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
-        const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc);
+        const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc, s.volumeRatio ?? 1.0, new Date());
 
         // Chỉ kiểm tra margin thật nếu setup này thực sự được phép đánh Live tiền thật
         if (isLiveConfigured && eligibleForLive && sizing.margin > remainingMargin) {
@@ -392,7 +392,7 @@ export async function scanAndAlert(): Promise<string[]> {
         // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live -> Ép về mock.
         const effectiveDryRun = isLiveConfigured && !eligibleForLive;
         if (effectiveDryRun) {
-          console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí). Chỉ chạy Paper/Cảnh báo.`);
+          console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí hoặc ngoài khung 16h-8h). Chỉ chạy Paper/Cảnh báo.`);
         }
 
         const mexcOrder = await submitMexcOrder({
@@ -439,8 +439,8 @@ export async function scanAndAlert(): Promise<string[]> {
         });
 
         const autoTag = mexcOrder.isDryRun
-          ? `🚀 *[VÀO LỆNH]*`
-          : `🤖 *[MEXC ĐÃ VÀO LỆNH - ${mexcOrder.vol} HĐ]*`;
+          ? `🎯 *[CẢNH BÁO BAN NGÀY - TỰ BẤM TAY]*`
+          : `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H) - ${mexcOrder.vol} HĐ]*`;
 
         itemsToSend.push({
           key,
