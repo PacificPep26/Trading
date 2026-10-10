@@ -60,12 +60,23 @@ margin = notional / 10
 - Vòng đời: `candidate → confirmed → planned → simulated_open → partially_closed/closed → reviewed`.
 - Mỗi event lưu version (`paper-v2.0.0`), decision code, plan, fill, phí, slippage, equity và peak equity.
 
-## 6. Vận hành và Giám sát
+## 6. Quản lý vốn Nấc thang (Compounding Step Ladder) & Auto-Trade MEXC (`v2.1.0`)
+
+- Bảng nấc thang vốn (Tiers):
+  - **Tầng 1 ($80 - $119.99):** Vốn cơ sở $100 · Rủi ro 1R = **$4.0/lệnh** · Tối đa 3 lệnh đồng thời · Ratchet floor: $80.
+  - **Tầng 2 ($120 - $149.99):** Vốn cơ sở $120 · Rủi ro 1R = **$4.8/lệnh** · Tối đa 3 lệnh đồng thời · Ratchet floor: $110.
+  - **Tầng 3 ($150 - $199.99):** Vốn cơ sở $150 · Rủi ro 1R = **$6.0/lệnh** · Tối đa 4 lệnh đồng thời · Ratchet floor: $135.
+  - **Tầng 4 ($\ge $200):** Vốn cơ sở $200 · Rủi ro 1R = **$8.0/lệnh** · Tối đa 4 lệnh đồng thời · Ratchet floor: $180.
+- Van khóa bảo vệ lợi nhuận (Ratchet): Khi tài khoản vượt mốc và sau đó gặp đợt điều chỉnh, bot tự động hạ nấc sizing để bảo vệ phần lãi đã chốt.
+- Tự động đặt lệnh MEXC Futures: Khi có `MEXC_API_KEY` & `MEXC_SECRET_KEY`, bot gửi lệnh Market x10 Isolated và tự động đặt sẵn lệnh điều kiện TP/SL. Nếu chưa có key, bot chạy chế độ Dry-Run an toàn.
+
+## 7. Vận hành và Giám sát
 
 - `/api/watchlist`: Trả về danh sách setup, decision code và kế hoạch lệnh.
 - `/api/paper`: 200 event gần nhất và trạng thái ledger.
 - Webhook Telegram (`@VictorHuynh_trading_bot`):
   - Nhắn `canh` / `/canh`: Bật Radar quét coin sát Đỉnh cũ / Đáy cũ trong vòng 2%.
   - Nhắn `keo` / `quét`: Quét toàn diện tín hiệu 4H và 1H đạt chuẩn.
+  - Nhắn `vốn` / `sodu`: Tra cứu số dư tài khoản, cấp bậc Tầng hiện tại, rủi ro 1R và mốc ratchet floor.
   - Nhắn tên coin (`BTC`, `SOL`, `LINK`, `TIA`): Soi chi tiết thông số vào lệnh MEXC chuẩn xác.
-- Kiểm tra toàn hệ thống: `node tests/test_policy.mjs`, `node tests/test_decision.mjs`, `npm run build`.
+- Kiểm tra toàn hệ thống: `node tests/test_policy.mjs`, `node tests/test_decision.mjs`, `node tests/test_capital_tier.mjs`, `node tests/test_mexc_client.mjs`, `npm run build`.

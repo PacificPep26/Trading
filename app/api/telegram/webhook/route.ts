@@ -4,6 +4,8 @@ import { analyse, swings } from "@/lib/patterns";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { paperSummary } from "@/lib/paper-ledger";
 import { isStarSetup, calculatePartialPnL } from "@/lib/trading-policy";
+import { getCapitalTier } from "@/lib/capital-tier";
+import { getMexcAccountAsset } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -362,13 +364,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 3. Capital & Discipline rule
-    if (lower.includes("vốn") || lower.includes("von") || lower.includes("luật") || lower.includes("luat") || lower.includes("kỷ luật")) {
-      let rule = `🛡️ *POLICY PAPER OKX (40$)*\n\n`;
-      rule += `1. *Isolated tối đa x10:* vị thế tự giảm theo khoảng SL để lỗ tối đa 10% equity.\n`;
-      rule += `2. *Dừng lỗ (SL):* Bắt buộc đặt theo cấu trúc nến 4H (dưới đáy với Long, trên đỉnh với Short). Không gồng lỗ.\n`;
-      rule += `3. *Chốt lời:* Chia 2 bước (50% ở TP1 0.5R để dời SL về hòa vốn; 50% còn lại giữ đến TP2 1.0R).\n`;
-      rule += `4. *Circuit breaker:* drawdown từ đỉnh đạt 20% thì khóa lệnh mới để audit.\n`;
+    // 3. Capital & Discipline rule & Capital Tiers
+    if (
+      lower.includes("vốn") ||
+      lower.includes("von") ||
+      lower.includes("tier") ||
+      lower.includes("sodu") ||
+      lower.includes("số dư") ||
+      lower.includes("luật") ||
+      lower.includes("luat") ||
+      lower.includes("kỷ luật")
+    ) {
+      const asset = await getMexcAccountAsset(CAPITAL);
+      const tier = getCapitalTier(asset.equity);
+      let rule = `🏦 *QUẢN LÝ VỐN BẬC THANG & SỐ DƯ*\n\n`;
+      rule += `• *Số dư tài khoản:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Mô phỏng / Paper)_" : "_(MEXC Live)_"}\n`;
+      rule += `• *Cấp bậc hiện tại:* *${tier.name}*\n`;
+      rule += `• *Rủi ro mỗi lệnh (1R):* \`${tier.riskPerTradeUsd} USDT\`\n`;
+      rule += `• *Số lệnh mở tối đa:* \`${tier.maxOpenTrades} lệnh đồng thời\`\n`;
+      rule += `• *Mốc khóa bảo vệ lãi (Ratchet):* \`${tier.ratchetFloorUsd} USDT\`\n\n`;
+      rule += `📋 *Nguyên tắc thực chiến:*\n`;
+      rule += `1. *Isolated x10:* Ký quỹ tự động căn theo SL (${tier.riskPerTradeUsd}$ / khoảng cách SL).\n`;
+      rule += `2. *Chốt lời 2 bước:* TP1 (1.0R) chốt 50% và dời SL hòa vốn; TP2 (2.0R) gồng hết sóng.\n`;
+      rule += `3. *Thăng hạng tự động:* Khi số dư vượt mốc tầng kế tiếp, bot tự động nâng volume cho các lệnh sau!`;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
     }

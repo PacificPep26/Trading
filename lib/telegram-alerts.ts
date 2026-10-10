@@ -10,6 +10,8 @@ import { candles, ticker } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, calculatePartialPnL } from "@/lib/trading-policy";
+import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
+import { getMexcAccountAsset, submitMexcOrder, submitMexcTpSl } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -45,6 +47,7 @@ const initialDedup = loadDedup();
 declare global {
   var telegramSent: Set<string> | undefined;
   var telegramPreSent: Set<string> | undefined;
+  var lastReportedTierEquity: number | undefined;
 }
 const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
 const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
@@ -96,7 +99,33 @@ export async function send(text: string): Promise<boolean> {
 /** Scan the verified 4H setups. */
 export async function scanAndAlert(): Promise<string[]> {
   const btc = await dailyTrend("BTC");
-  const paper = paperSummary(CAPITAL);
+  const mexcAsset = await getMexcAccountAsset(CAPITAL);
+  const currentEquity = mexcAsset.equity;
+  const currentTier = getCapitalTier(currentEquity);
+
+  if (globalThis.lastReportedTierEquity !== undefined && globalThis.lastReportedTierEquity !== currentEquity) {
+    const tierCheck = checkTierChange(globalThis.lastReportedTierEquity, currentEquity);
+    if (tierCheck.changed) {
+      if (tierCheck.direction === "up") {
+        await send(
+          `🚀 *[THĂNG HẠNG VỐN THÀNH CÔNG]*\n\n` +
+          `• *Số dư tài khoản:* \`${currentEquity.toFixed(2)}$\` ➔ *LÊN ${tierCheck.newTier.name}*\n` +
+          `• *Rủi ro mỗi lệnh mới:* \`${tierCheck.newTier.riskPerTradeUsd}$\` / lệnh\n` +
+          `• *Số lệnh tối đa đồng thời:* \`${tierCheck.newTier.maxOpenTrades}\` lệnh\n` +
+          `• *Mốc khóa bảo vệ lợi nhuận (Ratchet):* \`${tierCheck.newTier.ratchetFloorUsd}$\``
+        );
+      } else if (tierCheck.direction === "down") {
+        await send(
+          `🛡️ *[KÍCH HOẠT PHÒNG VỆ VỐN]*\n\n` +
+          `• *Số dư tài khoản:* \`${currentEquity.toFixed(2)}$\` ➔ *HẠ VỀ ${tierCheck.newTier.name}*\n` +
+          `• Tự động hạ rủi ro về \`${tierCheck.newTier.riskPerTradeUsd}$\` / lệnh để bảo toàn vốn đã tích lũy.`
+        );
+      }
+    }
+  }
+  globalThis.lastReportedTierEquity = currentEquity;
+
+  const paper = paperSummary(currentEquity);
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
@@ -107,7 +136,7 @@ export async function scanAndAlert(): Promise<string[]> {
         candles(`${coin}-USDT-SWAP`, "4H", 300),
         coin === "BTC" ? btc : dailyTrend(coin)
       ]);
-      reconcilePaperPositions(coin, bars4h, CAPITAL);
+      reconcilePaperPositions(coin, bars4h, currentEquity);
       const a4 = analyse(bars4h);
 
       const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
@@ -120,7 +149,7 @@ export async function scanAndAlert(): Promise<string[]> {
           timeframe: "4H",
           btcDaily: btc,
           ownDaily: own,
-          equity: paper.equity,
+          equity: currentEquity,
           peakEquity: paper.peakEquity,
           lastBarTime: a4.lastBarTime,
           livePrice: tLive?.last,
@@ -135,6 +164,26 @@ export async function scanAndAlert(): Promise<string[]> {
         const sizing = plan.sizing;
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
+        // Đặt lệnh MEXC (thực tế hoặc dry-run)
+        const mexcOrder = await submitMexcOrder({
+          symbol: coin,
+          side: s.side,
+          notional: sizing.notional,
+          price: s.entry,
+          leverage: sizing.leverage,
+        });
+
+        if (mexcOrder.success) {
+          await submitMexcTpSl({
+            symbol: coin,
+            side: s.side,
+            vol: mexcOrder.vol,
+            stopLossPrice: s.stop,
+            takeProfit1Price: plan.tp1,
+            takeProfit2Price: plan.tp2,
+          });
+        }
+
         const isStar = isStarSetup(s.side, own, btc);
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = s.style === "bos" ? "BOS 4H" : s.style === "pinbar_reversal" ? "Pinbar 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
@@ -142,18 +191,20 @@ export async function scanAndAlert(): Promise<string[]> {
           ? `🌟 [KÈO ĐẸP ★★★ - ĂN SÓNG LỚN] 4H ${coin} ${sideStr} (${styleStr})\n🔥 THUẬN XU HƯỚNG NGÀY`
           : `🚨 [4H SÓNG LỚN] ${coin} ${sideStr} (${styleStr})`;
 
+        const autoNotice = mexcOrder.isDryRun ? "" : `🤖 *[MEXC AUTO-ORDER KHỚP - ${mexcOrder.vol} HĐ]*\n`;
+
         itemsToSend.push({
           key,
           msg:
-            `${header}\n` +
+            `${autoNotice}${header}\n` +
             `• Vào ngay: ~${f(s.entry)} (nến 4h vừa đóng; bỏ nếu đã chạy > 0.25%)\n` +
             `• Dừng lỗ (SL): ${f(s.stop)} (-${(risk * 100).toFixed(2)}%)\n` +
             `• ⚠️ THOÁT SỚM: Đóng lệnh ngay nếu nến 4h sau đóng ${s.side > 0 ? "dưới" : "trên"} ${f(s.level)}\n` +
             `• TP 1 (1.0R): ${f(plan.tp1)} (+${pnl.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
             `• TP 2 (2.0R): ${f(plan.tp2)} (Tổng +${pnl.totalWin.toFixed(2)}$)${isStar ? " · Có thể gồng theo trend" : ""}\n` +
-            `• MEXC (${plan.strategyVersion}): Ký quỹ ~${sizing.margin}$ · Vị thế ${sizing.notional}$ · x${sizing.leverage} Isolated · Rủi ro SL: -${sizing.actualRiskUsd}$`
+            `• MEXC (${currentTier.name}): Ký quỹ ~${sizing.margin}$ · Vị thế ${sizing.notional}$ (${mexcOrder.vol} HĐ) · x${sizing.leverage} Isolated · Rủi ro SL: -${sizing.actualRiskUsd}$`
         });
-        openPaperPlan(key, decision, bars4h, CAPITAL);
+        openPaperPlan(key, decision, bars4h, currentEquity);
       }
 
       // 2. Quét 1H (Lướt sóng sớm)
@@ -166,7 +217,7 @@ export async function scanAndAlert(): Promise<string[]> {
           timeframe: "1H",
           btcDaily: btc,
           ownDaily: own,
-          equity: paper.equity,
+          equity: currentEquity,
           peakEquity: paper.peakEquity,
           lastBarTime: a1.lastBarTime,
           livePrice: tLive?.last,
@@ -179,20 +230,42 @@ export async function scanAndAlert(): Promise<string[]> {
 
         const sizing1h = plan1h.sizing;
         const pnl1h = calculatePartialPnL(sizing1h.actualRiskUsd);
+
+        // Đặt lệnh MEXC (thực tế hoặc dry-run)
+        const mexcOrder1h = await submitMexcOrder({
+          symbol: coin,
+          side: s.side,
+          notional: sizing1h.notional,
+          price: s.entry,
+          leverage: sizing1h.leverage,
+        });
+
+        if (mexcOrder1h.success) {
+          await submitMexcTpSl({
+            symbol: coin,
+            side: s.side,
+            vol: mexcOrder1h.vol,
+            stopLossPrice: s.stop,
+            takeProfit1Price: plan1h.tp1,
+            takeProfit2Price: plan1h.tp2,
+          });
+        }
+
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const styleStr = s.style === "bos" ? "BOS 1H" : s.style === "pinbar_reversal" ? "Pinbar 1H" : (s.side > 0 ? "Hai đáy 1H" : "Hai đỉnh 1H");
+        const autoNotice1h = mexcOrder1h.isDryRun ? "" : `🤖 *[MEXC AUTO-ORDER KHỚP - ${mexcOrder1h.vol} HĐ]*\n`;
 
         itemsToSend.push({
           key: key1h,
           msg:
-            `⚡ [LƯỚT SÓNG 1H] ${coin} ${sideStr} (${styleStr})\n` +
+            `${autoNotice1h}⚡ [LƯỚT SÓNG 1H] ${coin} ${sideStr} (${styleStr})\n` +
             `• Vào ngay: ~${f(s.entry)} (nến 1h vừa đóng)\n` +
             `• Dừng lỗ (SL): ${f(s.stop)} (-${(plan1h.riskPct * 100).toFixed(2)}%)\n` +
             `• TP 1 (1.0R): ${f(plan1h.tp1)} (+${pnl1h.winTp1.toFixed(2)}$ chốt 50%, dời hòa)\n` +
             `• TP 2 (2.0R): ${f(plan1h.tp2)} (Tổng +${pnl1h.totalWin.toFixed(2)}$)\n` +
-            `• MEXC (${plan1h.strategyVersion}): Ký quỹ ~${sizing1h.margin}$ · Vị thế ${sizing1h.notional}$ · x${sizing1h.leverage} Isolated · Rủi ro SL: -${sizing1h.actualRiskUsd}$`
+            `• MEXC (${currentTier.name}): Ký quỹ ~${sizing1h.margin}$ · Vị thế ${sizing1h.notional}$ (${mexcOrder1h.vol} HĐ) · x${sizing1h.leverage} Isolated · Rủi ro SL: -${sizing1h.actualRiskUsd}$`
         });
-        openPaperPlan(key1h, decision1h, bars4h, CAPITAL);
+        openPaperPlan(key1h, decision1h, bars4h, currentEquity);
       }
 
     } catch (e) {
