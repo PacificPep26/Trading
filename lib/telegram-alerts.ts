@@ -11,7 +11,7 @@ import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, updateMexcStopLossPrice } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, updateMexcStopLossPrice } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -199,11 +199,14 @@ export async function scanAndAlert(): Promise<string[]> {
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
-  // Lấy danh sách vị thế đang mở thực tế trên MEXC
-  const livePositions = await getMexcOpenPositions();
+  // Lấy danh sách vị thế đang mở thực tế trên MEXC và các lệnh Stop/TP đi kèm
+  const [livePositions, openStopOrders] = await Promise.all([
+    getMexcOpenPositions(),
+    getMexcOpenStopOrders(),
+  ]);
   const liveOpenSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
 
-  // Trailing Stop & Thoát lệnh bảo toàn lãi cho các vị thế đang nắm giữ (đặc biệt là 1D Trend)
+  // Trailing Stop & Thoát lệnh chuẩn Backtest cho các vị thế đang nắm giữ (đặc biệt là 1D Donchian Trend)
   for (const pos of livePositions) {
     if (pos.holdVol <= 0) continue;
     try {
@@ -213,9 +216,32 @@ export async function scanAndAlert(): Promise<string[]> {
       const aDaily = analyseDaily(dailyInfo.cs);
       const lastDailyClose = dailyInfo.cs.at(-1)?.c ?? 0;
 
-      // Trailing nâng SL: Nếu đáy 10D đã cao hơn giá vào lệnh -> dời SL lên đáy 10D để lock lãi (chỉ áp dụng cho vị thế Long)
-      if (pos.positionType === 1 && (pos.openAvgPrice ?? 0) > 0 && aDaily.pastLow10d > (pos.openAvgPrice ?? 0)) {
-        await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
+      // Nhận diện vị thế 1D Donchian: Vị thế không có bất kỳ lệnh Take Profit nào đang chờ
+      const posStopOrders = openStopOrders.filter(
+        (o) => String(o.symbol ?? "") === pos.symbol && Number(o.isFinished ?? 0) === 0
+      );
+      const hasTpOrder = posStopOrders.some((o) => Number(o.takeProfitPrice ?? 0) > 0);
+      const is1dDonchianPosition = !hasTpOrder && pos.positionType === 1;
+
+      if (is1dDonchianPosition) {
+        // THOÁT LỆNH CHUẨN BACKTEST: Nếu nến ngày đóng cửa thủng đáy 10 ngày -> Đóng Market ngay lập tức!
+        // (Bất kể đang lãi hay đang lỗ, cắt ngay để bảo toàn vốn như backtest)
+        if (lastDailyClose < aDaily.pastLow10d) {
+          console.warn(`[MEXC 1D EXIT] ${pos.symbol} đóng nến ngày (${lastDailyClose}) dưới đáy 10D (${aDaily.pastLow10d}) -> Đóng Market thoát theo trend!`);
+          await closeMexcPosition({ symbol: pos.symbol, side: 1, vol: pos.holdVol });
+          await send(
+            `🚪 *[MEXC THOÁT LỆNH 1D - TREND EXIT]* 🔴 Đóng *${posCoin}*\n` +
+            `• *Lý do:* Nến ngày đóng cửa (${f(lastDailyClose)}) thủng đáy 10 ngày (${f(aDaily.pastLow10d)})\n` +
+            `• *Thoát lệnh chuẩn Backtest* để bảo vệ vốn tối đa!`
+          );
+          liveOpenSymbols.delete(posCoin);
+          continue;
+        }
+
+        // Nếu chưa thủng đáy 10D, tiếp tục Trailing nâng SL lên đáy 10D (nếu đáy 10D cao hơn SL hiện tại)
+        if (aDaily.pastLow10d > 0) {
+          await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
+        }
       }
     } catch (trailErr) {
       console.error(`[MEXC TRAIL] Lỗi xử lý vị thế ${pos.symbol}:`, trailErr);
@@ -355,14 +381,16 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key)) continue;
 
         const sizing = plan.sizing;
-        if (sizing.margin > remainingMargin) {
-          console.error(`[MEXC] Bỏ qua ${coin}: cần ${sizing.margin} USDT margin, chỉ còn ${remainingMargin} USDT`);
-          continue;
-        }
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
         const isLiveConfigured = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
         const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc);
+
+        // Chỉ kiểm tra margin thật nếu setup này thực sự được phép đánh Live tiền thật
+        if (isLiveConfigured && eligibleForLive && sizing.margin > remainingMargin) {
+          console.error(`[MEXC] Bỏ qua ${coin}: cần ${sizing.margin} USDT margin, chỉ còn ${remainingMargin} USDT`);
+          continue;
+        }
 
         // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live -> Ép về mock.
         const effectiveDryRun = isLiveConfigured && !eligibleForLive;
@@ -434,6 +462,7 @@ export async function scanAndAlert(): Promise<string[]> {
       // 2. Quét 1H (Lướt sóng sớm)
       if (liveOpenSymbols.has(coin)) continue;
       const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 120);
+      reconcilePaperPositions(coin, bars1h, currentEquity);
       const a1 = analyse(bars1h);
       for (const s of a1.setups) {
         if (s.state !== "triggered") continue;

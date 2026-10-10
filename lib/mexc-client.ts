@@ -553,3 +553,16 @@ export async function updateMexcStopLossPrice(symbol: string, newStopPrice: numb
   }
 }
 
+/**
+ * Lấy danh sách lệnh điều kiện (TP / SL) đang chờ kích hoạt
+ */
+export async function getMexcOpenStopOrders(): Promise<Array<Record<string, unknown>>> {
+  const { isConfigured, isDryRun } = getMexcCredentials();
+  if (isDryRun || !isConfigured) return [];
+  try {
+    return await mexcPrivate<Array<Record<string, unknown>>>("/api/v1/private/stoporder/open_orders");
+  } catch (err) {
+    console.error("[MEXC API] Không đọc được danh sách stoporder:", err);
+    return [];
+  }
+}
