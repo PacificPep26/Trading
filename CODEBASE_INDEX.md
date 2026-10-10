@@ -105,6 +105,16 @@
   - `analyse(all: Candle[]): void`
   - `analyseDaily(all: Candle[]): void`
 
+#### 📁 `lib/sniper-engine.ts`
+  - `type PendingSniperTarget`
+  - `type SniperSignal`
+  - `const sniperRadar: Map<string, PendingSniperTarget>`
+  - `registerSniperTarget(target: Omit<PendingSniperTarget, "expiresAt">): void`
+  - `evaluate15mSniper(coin: string, bars15m: Candle[], now?: number): SniperSignal | null`
+  - `getTradingSessionInfo(date?: Date): { session: string; isHighVolumeWindow: boolean; multiplierText: string }`
+  - `detectVolumeAbsorption(candles: Candle[]): { isAbsorption: boolean; type?: string; ratio: number }`
+  - `detectFundingSqueeze(fundingRate?: number): { isSqueezeSetup: boolean; direction?: 1 | -1; desc: string }`
+
 #### 📁 `lib/telegram-alerts.ts`
   - `send(text: string): Promise<boolean>`
   - `scanAndAlert(): Promise<string[]>`
