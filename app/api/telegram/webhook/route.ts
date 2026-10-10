@@ -288,6 +288,15 @@ async function sendTelegramReply(token: string, chatId: number | string, text: s
         text,
         parse_mode: "Markdown",
         disable_web_page_preview: true,
+        reply_markup: {
+          keyboard: [
+            [{ text: "🔍 Kèo" }, { text: "🧭 Canh Đỉnh/Đáy" }],
+            [{ text: "🏦 Xem Vốn & Tier" }],
+            [{ text: "SOL" }, { text: "WIF" }, { text: "DOGE" }]
+          ],
+          resize_keyboard: true,
+          is_persistent: true,
+        },
       }),
     });
   } catch (e) {
