@@ -260,6 +260,14 @@ export async function scanAndAlert(): Promise<string[]> {
           const key = `1D:${coin}:${s.style}:${s.side}:${aDaily.lastBarTime}`;
           if (sent.has(key)) continue;
 
+          const nowUtc = new Date();
+          // 0 = Sunday, 6 = Saturday (UTC)
+          const isWeekend = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
+          if (isWeekend) {
+            console.log(`[MEXC WEEKEND GUARD] Hôm nay là cuối tuần (T7/CN UTC). Bỏ qua mở lệnh live ${coin} để tránh bẫy thanh khoản thấp.`);
+            continue;
+          }
+
           const sizing = plan.sizing;
           if (sizing.margin > remainingMargin) continue;
 
@@ -342,9 +350,14 @@ export async function scanAndAlert(): Promise<string[]> {
         const isLiveConfigured = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
         const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc);
 
-        // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live (ví dụ BOS kỳ vọng âm), ép về mock.
-        const effectiveDryRun = isLiveConfigured && !eligibleForLive;
-        if (effectiveDryRun) {
+        const nowUtc = new Date();
+        const isWeekend = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
+
+        // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live hoặc rơi vào T7-CN -> Ép về mock.
+        const effectiveDryRun = isLiveConfigured && (!eligibleForLive || isWeekend);
+        if (isWeekend && isLiveConfigured && eligibleForLive) {
+          console.warn(`[MEXC WEEKEND GUARD] ${coin} ${s.style} đạt chuẩn nhưng hôm nay là T7/CN. Ép về Paper để bảo vệ vốn khỏi râu quét cuối tuần.`);
+        } else if (effectiveDryRun && !isWeekend) {
           console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí). Chỉ chạy Paper/Cảnh báo.`);
         }
 
