@@ -1,6 +1,6 @@
 # Northstar Crypto Lab
 
-Phòng nghiên cứu và paper trade crypto perpetual bằng dữ liệu OKX. Hệ thống không đặt lệnh tiền thật.
+Phòng nghiên cứu, paper trade và bot MEXC Futures. Giao dịch thật mặc định bị khóa; chỉ bật khi cấu hình đồng thời `MEXC_LIVE_TRADING=true` và `MEXC_DRY_RUN=false`.
 
 Nguồn chân lý: [đặc tả bot](docs/bot-spec.md). Trạng thái hiện tại: [PLAN.md](PLAN.md). Ngữ cảnh cho trợ lý: [CONTEXT.md](CONTEXT.md).
 
@@ -24,8 +24,8 @@ npm run build
 
 ## Policy tóm tắt
 
-- Version `paper-v1.0.0`; chỉ BOS LONG 4H và hai đỉnh/đáy 4H thuận xu hướng ngày được paper trade.
-- Setup 1H và pinbar là research-only. BOS SHORT bị loại.
-- Isolated tối đa x10; sizing giảm theo SL để rủi ro không quá 10% equity.
-- Drawdown 20% khóa lệnh mới. Không có đường dẫn đặt lệnh thật.
+- Version `paper-v2.3.1`; setup phải qua decision engine và các bộ lọc xu hướng, volume, funding, momentum.
+- Isolated tối đa x10; sizing dùng ngân sách rủi ro cố định theo capital tier.
+- Drawdown 20% khóa lệnh mới. Đường đặt lệnh thật có tồn tại nhưng mặc định bị khóa bằng hai cờ môi trường.
+- Backtest hiện chưa có setup nào đạt chuẩn `tradeable`; tiếp tục vận hành dry-run/paper để thu thập cohort mới.
 - Ledger cục bộ: `data/paper-ledger.ndjson`.

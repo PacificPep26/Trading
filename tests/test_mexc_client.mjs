@@ -4,9 +4,22 @@ import {
   calculateContractVol,
   signMexcRequest,
   getMexcAccountAsset,
+  getMexcOpenPositions,
   submitMexcOrder,
   submitMexcTpSl,
 } from "../lib/mexc-client.ts";
+
+const originalFetch = globalThis.fetch;
+const originalEnv = {
+  key: process.env.MEXC_API_KEY,
+  secret: process.env.MEXC_SECRET_KEY,
+  live: process.env.MEXC_LIVE_TRADING,
+  dryRun: process.env.MEXC_DRY_RUN,
+};
+process.env.MEXC_LIVE_TRADING = "false";
+process.env.MEXC_DRY_RUN = "true";
+delete process.env.MEXC_API_KEY;
+delete process.env.MEXC_SECRET_KEY;
 
 // 1. Kiểm tra Contract Size
 const solSize = getContractSize("SOL_USDT");
@@ -62,6 +75,67 @@ const tpslRes = await submitMexcTpSl({
 });
 assert.equal(tpslRes.success, true, "Dry run TP/SL must succeed");
 assert.equal(tpslRes.isDryRun, true, "Must flag isDryRun");
+
+// 7. Live mode must use the current endpoint and attach SL atomically.
+process.env.MEXC_API_KEY = "test_key";
+process.env.MEXC_SECRET_KEY = "test_secret";
+process.env.MEXC_LIVE_TRADING = "true";
+process.env.MEXC_DRY_RUN = "false";
+let orderRequest;
+globalThis.fetch = async (url, init) => {
+  orderRequest = { url: String(url), init };
+  return Response.json({ success: true, code: 0, data: { orderId: "live-order-1" } });
+};
+const liveOrder = await submitMexcOrder({
+  symbol: "SOL_USDT",
+  side: 1,
+  notional: 125,
+  price: 100,
+  leverage: 10,
+  stopLossPrice: 98,
+});
+assert.equal(liveOrder.success, true);
+assert.ok(orderRequest.url.endsWith("/api/v1/private/order/create"));
+assert.equal(JSON.parse(orderRequest.init.body).stopLossPrice, 98);
+
+// 8. TP orders require a real position id and verify every API response.
+const tpBodies = [];
+globalThis.fetch = async (url, init) => {
+  if (String(url).endsWith("/position/open_positions")) {
+    return Response.json({ success: true, code: 0, data: [{ positionId: "pos-1", symbol: "SOL_USDT", holdVol: 18, positionType: 1 }] });
+  }
+  if (String(url).endsWith("/stoporder/open_orders")) {
+    return Response.json({ success: true, code: 0, data: [{ id: "sl-1", positionId: "pos-1", stopLossPrice: 98, isFinished: 0 }] });
+  }
+  tpBodies.push(JSON.parse(init.body));
+  return Response.json({ success: true, code: 0, data: `tp-${tpBodies.length}` });
+};
+const liveProtection = await submitMexcTpSl({
+  symbol: "SOL_USDT",
+  side: 1,
+  vol: 18,
+  stopLossPrice: 98,
+  takeProfit1Price: 102,
+  takeProfit2Price: 104,
+});
+assert.equal(liveProtection.success, true);
+assert.deepEqual(tpBodies.map((body) => body.vol), [9, 9]);
+assert.deepEqual(tpBodies.map((body) => body.positionId), ["pos-1", "pos-1"]);
+
+// 9. Position lookup fails closed; an API error must never look like an empty account.
+globalThis.fetch = async () => Response.json({ success: false, code: 500, message: "temporary failure" }, { status: 503 });
+await assert.rejects(() => getMexcOpenPositions(), /MEXC_POSITIONS_UNAVAILABLE/);
+
+globalThis.fetch = originalFetch;
+for (const [key, value] of Object.entries({
+  MEXC_API_KEY: originalEnv.key,
+  MEXC_SECRET_KEY: originalEnv.secret,
+  MEXC_LIVE_TRADING: originalEnv.live,
+  MEXC_DRY_RUN: originalEnv.dryRun,
+})) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 console.log("All MEXC client & OpenAPI signature tests passed!");
 

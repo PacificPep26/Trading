@@ -68,11 +68,14 @@ export function analyse(all: Candle[]) {
   const setups: Setup[] = [];
 
   // Tính Volume SMA20 & tỷ lệ khối lượng
-  const recentVols = cs.slice(-20).map((x) => x.v || 0);
+  // Compare the signal candle with the previous 20 closed candles. Including
+  // the signal candle in its own baseline weakens the volume filter.
+  const recentVols = cs.slice(-21, -1).map((x) => x.v || 0);
   const avgVol = recentVols.length > 0 ? recentVols.reduce((a, b) => a + b, 0) / recentVols.length : 0;
-  const volumeRatio = avgVol > 0 && (c.v || 0) > 0 ? Math.round(((c.v || 0) / avgVol) * 100) / 100 : 1.0;
+  const rawVolumeRatio = avgVol > 0 && (c.v || 0) > 0 ? (c.v || 0) / avgVol : 1.0;
+  const volumeRatio = Math.round(rawVolumeRatio * 100) / 100;
   // Khối lượng được xác nhận: nếu có data volume thì phải >= 0.75x trung bình (chặn nến kiệt volume)
-  const isVolumeSupported = avgVol === 0 || (c.v || 0) === 0 || volumeRatio >= 0.75;
+  const isVolumeSupported = avgVol === 0 || (c.v || 0) === 0 || rawVolumeRatio >= 0.75;
 
   // BOS: close beyond the last swing in the trend direction; stop beyond the opposite swing
   if (trend !== 0 && highs.length && lows.length) {

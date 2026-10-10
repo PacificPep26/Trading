@@ -1,5 +1,5 @@
 /** Nguồn chân lý cho policy trading. Chuẩn hóa v2.0.0 */
-export const STRATEGY_VERSION = "paper-v2.0.0";
+export const STRATEGY_VERSION = "paper-v2.3.1";
 export const MAX_LEVERAGE = 10;
 export const RISK_PER_TRADE = 0.10;
 export const MAX_DRAWDOWN = 0.20;
@@ -78,8 +78,24 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
   if (side > 0) {
     return ownDaily > 0 && btcDaily > 0;
   } else {
-    return ownDaily < 0 || btcDaily < 0;
+    return ownDaily < 0 && btcDaily < 0;
   }
+}
+
+/**
+ * Chỉ cho phép vào lệnh LIVE tiền thật đối với chiến lược đã được chứng minh
+ * có kỳ vọng toán học dương sau phí Taker MEXC (0.16%) và trượt giá:
+ * Hiện tại CHỈ CÓ: 4H Double Top/Bottom đồng thuận xu hướng BTC & Coin (cả 2 cùng chiều với setup).
+ */
+export function isLiveEligible(
+  style: string,
+  side: 1 | -1,
+  tf: Timeframe,
+  ownDaily: number,
+  btcDaily: number
+): boolean {
+  const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
+  return tf === "4H" && style === "double_top_bottom" && isFullyAligned;
 }
 
 /** Kiểm tra Funding Rate có nằm trong biên an toàn không (tránh bẫy phí và squeeze) */

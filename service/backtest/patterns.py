@@ -167,6 +167,9 @@ def sr_break_retest(ctx, i):
 def double_top_bottom(ctx, i):
     """Two swing highs within 0.3 ATR, close below the low between them (neckline) -> short. Mirror."""
     cs, c, a = ctx.cs, ctx.cs[i], ctx.atr[i]
+    volume_supported = ctx.vol_avg[i] == 0 or c.v == 0 or c.v / ctx.vol_avg[i] >= 0.75
+    if not volume_supported:
+        return None
     hs = confirmed(ctx.highs, i, 2)
     if len(hs) == 2 and abs(cs[hs[0]].h - cs[hs[1]].h) <= 0.3 * a and hs[1] - hs[0] >= 5:
         neck = min(x.l for x in cs[hs[0] : hs[1] + 1])
@@ -226,13 +229,18 @@ def bos(ctx, i):
     """Break of structure in the trend: close beyond the last swing high (uptrend) -> long, stop under last swing low."""
     t = trend(ctx, i)
     cs, c, a = ctx.cs, ctx.cs[i], ctx.atr[i]
+    volume_supported = ctx.vol_avg[i] == 0 or c.v == 0 or c.v / ctx.vol_avg[i] >= 0.75
+    candle_range = c.h - c.l
+    decisive_body = candle_range == 0 or abs(c.c - c.o) >= 0.25 * candle_range
+    if not volume_supported or not decisive_body:
+        return None
     if t > 0:
         h = cs[confirmed(ctx.highs, i, 1)[0]].h
-        if c.c > h >= cs[i - 1].c:
+        if c.c > c.o and c.c > h >= cs[i - 1].c:
             return {"side": 1, "stop": cs[confirmed(ctx.lows, i, 1)[0]].l - 0.1 * a, "target": None}
     if t < 0:
         l = cs[confirmed(ctx.lows, i, 1)[0]].l
-        if c.c < l <= cs[i - 1].c:
+        if c.c < c.o and c.c < l <= cs[i - 1].c:
             return {"side": -1, "stop": cs[confirmed(ctx.highs, i, 1)[0]].h + 0.1 * a, "target": None}
     return None
 

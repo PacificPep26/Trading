@@ -3,7 +3,7 @@ import { candles, ticker } from "@/lib/okx";
 import { analyse, swings } from "@/lib/patterns";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { paperSummary } from "@/lib/paper-ledger";
-import { isStarSetup, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
+import { calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier } from "@/lib/capital-tier";
 import { getMexcAccountAsset } from "@/lib/mexc-client";
 
@@ -46,11 +46,6 @@ async function getDailyTrend(coin: string): Promise<1 | -1 | 0> {
   } catch {
     return 0;
   }
-}
-
-function getStyleName(style: string, side: 1 | -1, tf: "4H" | "1H") {
-  if (style === "bos") return side > 0 ? `BOS ${tf}` : `Gãy đáy BOS ${tf}`;
-  return side > 0 ? `Hai đáy ${tf}` : `Hai đỉnh ${tf}`;
 }
 
 async function analyzeCoin(coin: string): Promise<string> {

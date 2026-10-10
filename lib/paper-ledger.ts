@@ -44,7 +44,7 @@ export function openPaperPlan(id: string, decision: SignalDecision, bars: Candle
   const next = bars.find((bar) => bar.t > plan.signalTime);
   if (!next) return;
   const slippageRate = Number(process.env.PAPER_SLIPPAGE_RATE ?? 0.0002);
-  const feeRate = Number(process.env.PAPER_FEE_RATE ?? 0.0005);
+  const feeRate = Number(process.env.PAPER_FEE_RATE ?? 0.0008);
   const fillPrice = next.o * (1 + plan.side * slippageRate);
   const slippageUsd = Math.abs(fillPrice - next.o) / next.o * plan.sizing.notional;
   const feeUsd = plan.sizing.notional * feeRate;
@@ -65,7 +65,7 @@ export function reconcilePaperPositions(coin: string, bars: Candle[], defaultEqu
       const hitTp1 = plan.side > 0 ? bar.h >= plan.tp1 : bar.l <= plan.tp1;
       const hitTp2 = plan.side > 0 ? bar.h >= plan.tp2 : bar.l <= plan.tp2;
       const account = paperSummary(defaultEquity);
-      const feeRate = Number(process.env.PAPER_FEE_RATE ?? 0.0005);
+      const feeRate = Number(process.env.PAPER_FEE_RATE ?? 0.0008);
       if (hitStop) {
         const remaining = current.state === "partially_closed" ? 0.5 : 1;
         const gross = -plan.sizing.actualRiskUsd * remaining;
@@ -74,15 +74,17 @@ export function reconcilePaperPositions(coin: string, bars: Candle[], defaultEqu
         break;
       }
       if (current.state === "simulated_open" && hitTp1) {
-        const gross = plan.sizing.actualRiskUsd * 0.25;
+        // Close 50% at +1R => +0.5R on the original position.
+        const gross = plan.sizing.actualRiskUsd * 0.5;
         const feeUsd = plan.sizing.notional * 0.5 * feeRate;
         const nextState: PaperState = hitTp2 ? "closed" : "partially_closed";
-        const extra = hitTp2 ? plan.sizing.actualRiskUsd * 0.5 : 0;
+        // Close the remaining 50% at +2R => another +1R.
+        const extra = hitTp2 ? plan.sizing.actualRiskUsd : 0;
         appendPaperEvent({ ...current, at: bar.t, state: nextState, fill: { price: hitTp2 ? plan.tp2 : plan.tp1, feeUsd, fundingUsd: current.fill?.fundingUsd ?? 0, slippageUsd: 0 }, equity: account.equity + gross + extra - feeUsd, peakEquity: Math.max(account.peakEquity, account.equity + gross + extra - feeUsd) });
         break;
       }
       if (current.state === "partially_closed" && hitTp2) {
-        const gross = plan.sizing.actualRiskUsd * 0.5;
+        const gross = plan.sizing.actualRiskUsd;
         const feeUsd = plan.sizing.notional * 0.5 * feeRate;
         appendPaperEvent({ ...current, at: bar.t, state: "closed", fill: { price: plan.tp2, feeUsd, fundingUsd: current.fill?.fundingUsd ?? 0, slippageUsd: 0 }, equity: account.equity + gross - feeUsd, peakEquity: Math.max(account.peakEquity, account.equity + gross - feeUsd) });
         break;

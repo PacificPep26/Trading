@@ -7,7 +7,7 @@ import {
   isWatchSetup,
 } from "../lib/trading-policy.ts";
 
-// 1. Policy test v2.0.0
+// 1. Policy test v2.3.1
 assert.equal(isAllowedSetup("bos", 1, "4H", 1, 1), true, "4H BOS LONG allowed");
 assert.equal(isAllowedSetup("bos", -1, "4H", -1, -1), true, "4H BOS SHORT allowed with downtrend");
 assert.equal(isAllowedSetup("bos", -1, "4H", 1, 1), false, "4H BOS SHORT blocked when strong uptrend");
@@ -29,7 +29,7 @@ assert.equal(isWatchSetup("double_top_bottom", -1, "1H"), true, "1H is watch and
 // 2. Star test
 assert.equal(isStarSetup(1, 1, 1), true, "LONG star when BTC & coin up");
 assert.equal(isStarSetup(1, -1, 1), false, "LONG not star when coin down");
-assert.equal(isStarSetup(-1, -1, 1), true, "SHORT star when coin is down");
+assert.equal(isStarSetup(-1, -1, 1), false, "SHORT not star when BTC is up");
 assert.equal(isStarSetup(-1, -1, -1), true, "SHORT star when BTC and coin are both down");
 
 // 3. Sizing test: Normal risk (SL 2%)
@@ -51,4 +51,4 @@ assert.equal(pnl.winTp1, 2.00, "50% at 1.0R is 0.50R = $2.00");
 assert.equal(pnl.winTp2, 4.00, "50% at 2.0R is 1.00R = $4.00");
 assert.equal(pnl.totalWin, 6.00, "Total partial win is 1.50R = $6.00");
 
-console.log("All trading policy v2.0.0 tests passed!");
+console.log("All trading policy v2.3.1 tests passed!");

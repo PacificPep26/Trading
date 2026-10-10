@@ -9,9 +9,9 @@ import { analyse, swings } from "@/lib/patterns";
 import { candles, ticker } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
-import { isStarSetup, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
+import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -48,6 +48,7 @@ declare global {
   var telegramSent: Set<string> | undefined;
   var telegramPreSent: Set<string> | undefined;
   var lastReportedTierEquity: number | undefined;
+  var mexcPeakEquity: number | undefined;
 }
 const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
 const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
@@ -97,14 +98,45 @@ export async function send(text: string): Promise<boolean> {
 }
 
 /** Scan the verified 4H setups. */
+// Không xác nhận được SL → đóng ngay, không giữ vị thế trần trụi. Trả về true nếu vị thế được giữ.
+async function keepOnlyIfProtected(
+  coin: string,
+  side: 1 | -1,
+  vol: number,
+  protection: Awaited<ReturnType<typeof submitMexcTpSl>>,
+): Promise<boolean> {
+  if (!protection.isDryRun && !protection.slConfirmed) {
+    try {
+      await closeMexcPosition({ symbol: coin, side, vol });
+      await send(`🛑 [MEXC] ${coin}: không xác nhận được SL (${protection.error ?? "unknown"}) → đã đóng vị thế ngay.`);
+    } catch (e) {
+      await send(`🚨 [MEXC] ${coin}: KHÔNG có SL và ĐÓNG THẤT BẠI (${e instanceof Error ? e.message : e}). Vào app đóng tay NGAY!`);
+    }
+    return false;
+  }
+  if (!protection.success) {
+    await send(`⚠️ [MEXC] ${coin} đã mở và có SL, nhưng đặt TP thất bại: ${protection.error ?? "unknown error"}`);
+  }
+  return true;
+}
+
 export async function scanAndAlert(): Promise<string[]> {
+  try {
+    const moved = await moveStopsToBreakeven();
+    for (const sym of moved) await send(`🔒 [MEXC] ${sym}: TP1 đã khớp → dời SL về giá vào (hòa vốn).`);
+  } catch (e) {
+    await send(`⚠️ [MEXC] Không dời được SL về hòa vốn: ${e instanceof Error ? e.message : e}`);
+  }
+
   const [btc, btc1h] = await Promise.all([
     dailyTrend("BTC"),
     candles("BTC-USDT-SWAP", "1H", 10).catch(() => []),
   ]);
   const mexcAsset = await getMexcAccountAsset(CAPITAL);
   const currentEquity = mexcAsset.equity;
+  globalThis.mexcPeakEquity = Math.max(globalThis.mexcPeakEquity ?? currentEquity, currentEquity);
   const currentTier = getCapitalTier(currentEquity);
+  let remainingMargin = mexcAsset.availableBalance;
 
   if (globalThis.lastReportedTierEquity !== undefined && globalThis.lastReportedTierEquity !== currentEquity) {
     const tierCheck = checkTierChange(globalThis.lastReportedTierEquity, currentEquity);
@@ -152,11 +184,11 @@ export async function scanAndAlert(): Promise<string[]> {
 
   // Lấy danh sách vị thế đang mở thực tế trên MEXC
   const livePositions = await getMexcOpenPositions();
-  const openSymbols = new Set(livePositions.filter((p: any) => Number(p.holdVol) > 0).map((p: any) => p.symbol.replace("_USDT", "")));
+  const openSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
 
   // Cho phép tối đa 3 lệnh nếu là kèo đẹp (Star Setup), bình thường giữ tối đa 2 lệnh
-  const maxAllowedTrades = Math.min(3, currentTier.maxOpenTrades + 1);
-  if (openSymbols.size >= maxAllowedTrades) {
+  const starTradeLimit = currentTier.tier === 1 ? 3 : currentTier.maxOpenTrades;
+  if (openSymbols.size >= starTradeLimit) {
     return [];
   }
 
@@ -177,13 +209,16 @@ export async function scanAndAlert(): Promise<string[]> {
       // 1. Quét 4H
       for (const s of a4.setups) {
         if (s.state !== "triggered") continue;
+        const isStar = isStarSetup(s.side, own, btc);
+        const tradeLimit = isStar ? starTradeLimit : currentTier.maxOpenTrades;
+        if (openSymbols.has(coin) || openSymbols.size >= tradeLimit) continue;
         const decision = evaluateSetup(s, {
           coin,
           timeframe: "4H",
           btcDaily: btc,
           ownDaily: own,
           equity: currentEquity,
-          peakEquity: paper.peakEquity,
+          peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
           lastBarTime: a4.lastBarTime,
           livePrice: tLive?.last,
           btc1hBars: btc1h,
@@ -196,27 +231,51 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key)) continue;
 
         const sizing = plan.sizing;
+        if (sizing.margin > remainingMargin) {
+          console.error(`[MEXC] Bỏ qua ${coin}: cần ${sizing.margin} USDT margin, chỉ còn ${remainingMargin} USDT`);
+          continue;
+        }
         const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
-        // Đặt lệnh MEXC (thực tế hoặc dry-run)
+        const isLiveConfigured = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
+        const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc);
+
+        // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live (ví dụ BOS kỳ vọng âm), ép về mock.
+        const effectiveDryRun = isLiveConfigured && !eligibleForLive;
+        if (effectiveDryRun) {
+          console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí). Chỉ chạy Paper/Cảnh báo.`);
+        }
+
         const mexcOrder = await submitMexcOrder({
           symbol: coin,
           side: s.side,
           notional: sizing.notional,
           price: s.entry,
           leverage: sizing.leverage,
+          stopLossPrice: s.stop,
+          dryRunOverride: effectiveDryRun,
         });
 
-        if (mexcOrder.success) {
-          await submitMexcTpSl({
+        if (!mexcOrder.success) {
+          console.error(`[MEXC] Không mở được ${coin}: ${mexcOrder.error ?? "unknown error"}`);
+          continue;
+        }
+
+        const protection = await submitMexcTpSl({
             symbol: coin,
             side: s.side,
             vol: mexcOrder.vol,
             stopLossPrice: s.stop,
             takeProfit1Price: plan.tp1,
             takeProfit2Price: plan.tp2,
-          });
+            dryRunOverride: effectiveDryRun,
+        });
+        if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection))) {
+          openSymbols.add(coin);
+          continue;
         }
+        openSymbols.add(coin);
+        remainingMargin = Math.max(0, remainingMargin - sizing.margin);
 
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const reason = formatEntryReason({
@@ -243,20 +302,25 @@ export async function scanAndAlert(): Promise<string[]> {
             `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
         });
         openPaperPlan(key, decision, bars4h, currentEquity);
+        break;
       }
 
       // 2. Quét 1H (Lướt sóng sớm)
+      if (openSymbols.has(coin)) continue;
       const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 120);
       const a1 = analyse(bars1h);
       for (const s of a1.setups) {
         if (s.state !== "triggered") continue;
+        const isStar = isStarSetup(s.side, own, btc);
+        const tradeLimit = isStar ? starTradeLimit : currentTier.maxOpenTrades;
+        if (openSymbols.has(coin) || openSymbols.size >= tradeLimit) continue;
         const decision1h = evaluateSetup(s, {
           coin,
           timeframe: "1H",
           btcDaily: btc,
           ownDaily: own,
           equity: currentEquity,
-          peakEquity: paper.peakEquity,
+          peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
           lastBarTime: a1.lastBarTime,
           livePrice: tLive?.last,
           btc1hBars: btc1h,
@@ -268,6 +332,10 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key1h)) continue;
 
         const sizing1h = plan1h.sizing;
+        if (sizing1h.margin > remainingMargin) {
+          console.error(`[MEXC] Bỏ qua ${coin}: cần ${sizing1h.margin} USDT margin, chỉ còn ${remainingMargin} USDT`);
+          continue;
+        }
         const pnl1h = calculatePartialPnL(sizing1h.actualRiskUsd);
 
         // Đặt lệnh MEXC (thực tế hoặc dry-run)
@@ -277,18 +345,28 @@ export async function scanAndAlert(): Promise<string[]> {
           notional: sizing1h.notional,
           price: s.entry,
           leverage: sizing1h.leverage,
+          stopLossPrice: s.stop,
         });
 
-        if (mexcOrder1h.success) {
-          await submitMexcTpSl({
+        if (!mexcOrder1h.success) {
+          console.error(`[MEXC] Không mở được ${coin}: ${mexcOrder1h.error ?? "unknown error"}`);
+          continue;
+        }
+
+        const protection1h = await submitMexcTpSl({
             symbol: coin,
             side: s.side,
             vol: mexcOrder1h.vol,
             stopLossPrice: s.stop,
             takeProfit1Price: plan1h.tp1,
             takeProfit2Price: plan1h.tp2,
-          });
+        });
+        if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder1h.vol, protection1h))) {
+          openSymbols.add(coin);
+          continue;
         }
+        openSymbols.add(coin);
+        remainingMargin = Math.max(0, remainingMargin - sizing1h.margin);
 
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
         const reason1h = formatEntryReason({
@@ -314,7 +392,8 @@ export async function scanAndAlert(): Promise<string[]> {
             `• *Sao vô:* ${reason1h}\n` +
             `• *Ký quỹ:* ~${sizing1h.margin}$ (x${sizing1h.leverage} Isolated) · *Rủi ro 1R:* ${sizing1h.actualRiskUsd}$`
         });
-        openPaperPlan(key1h, decision1h, bars4h, currentEquity);
+        openPaperPlan(key1h, decision1h, bars1h, currentEquity);
+        break;
       }
 
     } catch (e) {

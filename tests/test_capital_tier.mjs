@@ -3,7 +3,6 @@ import {
   getCapitalTier,
   checkTierChange,
   calculateTierSizing,
-  CAPITAL_TIERS,
 } from "../lib/capital-tier.ts";
 
 // 1. Kiểm tra xác định tầng vốn theo số dư

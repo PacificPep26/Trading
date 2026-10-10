@@ -7,8 +7,8 @@ const context = { coin: "SOL", timeframe: "4H", btcDaily: 1, ownDaily: 1, equity
 
 const accepted = evaluateSetup(setup, context);
 assert.equal(accepted.code, "ACCEPTED");
-assert.equal(accepted.plan.sizing.notional, 200);
-assert.equal(accepted.plan.sizing.actualRiskUsd, 4);
+assert.equal(accepted.plan.sizing.notional, 125);
+assert.equal(accepted.plan.sizing.actualRiskUsd, 2.5);
 assert.equal(accepted.plan.tp1, 102); // 1.0R = 100 + 2
 assert.equal(accepted.plan.tp2, 104); // 2.0R = 100 + 4
 
@@ -23,6 +23,7 @@ assert.equal(evaluateSetup({ ...setup, stop: 90 }, context).code, "INVALID_STOP"
 
 // Bot locked check (drawdown >= 20%)
 assert.equal(evaluateSetup(setup, { ...context, equity: 31, peakEquity: 40 }).code, "BOT_LOCKED");
+assert.equal(evaluateSetup(setup, { ...context, equity: 5, peakEquity: 5 }).code, "BOT_LOCKED");
 
 // Double top SHORT blocked when BTC Daily is Uptrend (btcDaily = 1)
 assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, context).code, "TREND_MISMATCH");

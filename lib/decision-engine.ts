@@ -1,6 +1,6 @@
 import type { Setup } from "./patterns.ts";
+import { CAPITAL_TIERS, calculateTierSizing } from "./capital-tier.ts";
 import {
-  calculateSizing,
   isAllowedSetup,
   isDrawdownLocked,
   isFundingSafe,
@@ -73,7 +73,8 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   }
 
   // 2. Cầu dao an toàn (Circuit Breaker)
-  if (isDrawdownLocked(ctx.equity, ctx.peakEquity)) {
+  // Dưới tầng vốn thấp nhất: rủi ro cố định 2.5$ sẽ là 30-50% tài khoản → khóa
+  if (isDrawdownLocked(ctx.equity, ctx.peakEquity) || ctx.equity < CAPITAL_TIERS[0].minEquity) {
     return reject("BOT_LOCKED");
   }
 
@@ -162,7 +163,7 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
       tp1,
       tp2,
       riskPct,
-      sizing: calculateSizing(ctx.equity, riskPct),
+      sizing: calculateTierSizing(ctx.equity, riskPct),
       level: setup.level,
     },
   };

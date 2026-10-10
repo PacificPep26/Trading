@@ -1,26 +1,44 @@
 {
  "symbols": [
   "1000PEPEUSDT",
+  "AAVEUSDT",
   "ADAUSDT",
+  "ALGOUSDT",
+  "APEUSDT",
   "APTUSDT",
   "ARBUSDT",
+  "ATOMUSDT",
   "AVAXUSDT",
   "BNBUSDT",
   "BTCUSDT",
   "DOGEUSDT",
   "DOTUSDT",
+  "ENAUSDT",
   "ETHUSDT",
+  "FETUSDT",
+  "HBARUSDT",
   "HYPEUSDT",
+  "ICPUSDT",
   "INJUSDT",
+  "JUPUSDT",
+  "LDOUSDT",
   "LINKUSDT",
   "LTCUSDT",
   "NEARUSDT",
+  "ONDOUSDT",
   "OPUSDT",
+  "ORDIUSDT",
+  "RENDERUSDT",
+  "SEIUSDT",
   "SOLUSDT",
   "SUIUSDT",
+  "TAOUSDT",
   "TIAUSDT",
   "WIFUSDT",
-  "XRPUSDT"
+  "WLDUSDT",
+  "XLMUSDT",
+  "XRPUSDT",
+  "ZECUSDT"
  ],
  "fees": {
   "market": 0.001,
@@ -33,894 +51,894 @@
    "interval": "1h",
    "target": "1.5R",
    "train": {
-    "n": 9895,
-    "winRate": 0.392,
-    "expR": -0.115,
-    "t": -10.0,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.99
-   },
-   "test": {
-    "n": 2846,
-    "winRate": 0.411,
-    "expR": -0.083,
-    "t": -3.81,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 1.73
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fib_confirm",
-   "title": "Fibonacci 0.5–0.618 + nến từ chối",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 9895,
-    "winRate": 0.349,
-    "expR": -0.117,
-    "t": -9.08,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.99
-   },
-   "test": {
-    "n": 2846,
-    "winRate": 0.371,
-    "expR": -0.074,
-    "t": -3.05,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 1.73
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fib_confirm",
-   "title": "Fibonacci 0.5–0.618 + nến từ chối",
-   "interval": "1h",
-   "target": "cấu trúc",
-   "train": {
-    "n": 9888,
-    "winRate": 0.573,
-    "expR": -0.111,
-    "t": -13.42,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.99
-   },
-   "test": {
-    "n": 2845,
-    "winRate": 0.591,
-    "expR": -0.094,
-    "t": -6.18,
-    "coinsPositive": 0.1,
-    "avgRiskPct": 1.73
-   },
-   "tradeable": false
-  },
-  {
-   "style": "rsi_divergence",
-   "title": "Phân kỳ RSI tại đỉnh/đáy",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 2897,
-    "winRate": 0.416,
-    "expR": -0.084,
-    "t": -4.02,
-    "coinsPositive": 0.14,
-    "avgRiskPct": 2.21
-   },
-   "test": {
-    "n": 867,
-    "winRate": 0.396,
-    "expR": -0.135,
-    "t": -3.66,
-    "coinsPositive": 0.19,
-    "avgRiskPct": 2.06
-   },
-   "tradeable": false
-  },
-  {
-   "style": "rsi_divergence",
-   "title": "Phân kỳ RSI tại đỉnh/đáy",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 2897,
-    "winRate": 0.38,
-    "expR": -0.087,
-    "t": -3.77,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 2.21
-   },
-   "test": {
-    "n": 867,
-    "winRate": 0.363,
-    "expR": -0.139,
-    "t": -3.43,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 2.06
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_bounce",
-   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 16913,
-    "winRate": 0.38,
-    "expR": -0.175,
-    "t": -18.93,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.17
-   },
-   "test": {
-    "n": 4786,
-    "winRate": 0.389,
-    "expR": -0.169,
-    "t": -9.63,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 0.99
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_bounce",
-   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 16913,
-    "winRate": 0.323,
-    "expR": -0.174,
-    "t": -16.54,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.17
-   },
-   "test": {
-    "n": 4786,
-    "winRate": 0.332,
-    "expR": -0.164,
-    "t": -8.18,
+    "n": 17422,
+    "winRate": 0.4,
+    "expR": -0.092,
+    "t": -10.49,
     "coinsPositive": 0.05,
-    "avgRiskPct": 0.99
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_break_retest",
-   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 7960,
-    "winRate": 0.398,
-    "expR": -0.127,
-    "t": -9.27,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.16
+    "avgRiskPct": 2.11
    },
    "test": {
-    "n": 2270,
-    "winRate": 0.391,
-    "expR": -0.158,
-    "t": -6.2,
-    "coinsPositive": 0.05,
-    "avgRiskPct": 1.01
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_break_retest",
-   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 7960,
-    "winRate": 0.339,
-    "expR": -0.12,
-    "t": -7.65,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.16
-   },
-   "test": {
-    "n": 2270,
-    "winRate": 0.331,
-    "expR": -0.158,
-    "t": -5.44,
-    "coinsPositive": 0.1,
-    "avgRiskPct": 1.01
-   },
-   "tradeable": false
-  },
-  {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 3887,
-    "winRate": 0.429,
-    "expR": -0.036,
-    "t": -2.17,
-    "coinsPositive": 0.38,
-    "avgRiskPct": 2.84
-   },
-   "test": {
-    "n": 1173,
-    "winRate": 0.453,
-    "expR": -0.013,
-    "t": -0.43,
-    "coinsPositive": 0.43,
-    "avgRiskPct": 2.67
-   },
-   "tradeable": false
-  },
-  {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 3887,
-    "winRate": 0.409,
-    "expR": -0.04,
-    "t": -2.22,
-    "coinsPositive": 0.19,
-    "avgRiskPct": 2.84
-   },
-   "test": {
-    "n": 1173,
-    "winRate": 0.44,
-    "expR": -0.003,
-    "t": -0.1,
-    "coinsPositive": 0.48,
-    "avgRiskPct": 2.67
-   },
-   "tradeable": false
-  },
-  {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "1h",
-   "target": "cấu trúc",
-   "train": {
-    "n": 3788,
-    "winRate": 0.588,
-    "expR": -0.051,
-    "t": -4.05,
-    "coinsPositive": 0.1,
-    "avgRiskPct": 2.83
-   },
-   "test": {
-    "n": 1144,
-    "winRate": 0.596,
-    "expR": -0.049,
-    "t": -2.2,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 2.65
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fvg",
-   "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 4416,
-    "winRate": 0.401,
-    "expR": -0.059,
-    "t": -3.31,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 1.86
-   },
-   "test": {
-    "n": 1277,
-    "winRate": 0.452,
-    "expR": 0.035,
-    "t": 1.04,
-    "coinsPositive": 0.57,
-    "avgRiskPct": 1.65
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fvg",
-   "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 5102,
-    "winRate": 0.35,
-    "expR": -0.061,
-    "t": -3.26,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 1.82
-   },
-   "test": {
-    "n": 1472,
-    "winRate": 0.396,
-    "expR": 0.042,
-    "t": 1.19,
-    "coinsPositive": 0.57,
-    "avgRiskPct": 1.62
-   },
-   "tradeable": false
-  },
-  {
-   "style": "order_block",
-   "title": "Order block sau nến bùng nổ, limit",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 63,
-    "winRate": 0.317,
-    "expR": -0.168,
-    "t": -1.15,
-    "coinsPositive": 0.37,
-    "avgRiskPct": 2.32
-   },
-   "test": {
-    "n": 28,
-    "winRate": 0.286,
-    "expR": -0.158,
-    "t": -0.81,
-    "coinsPositive": 0.27,
-    "avgRiskPct": 3.07
-   },
-   "tradeable": false
-  },
-  {
-   "style": "order_block",
-   "title": "Order block sau nến bùng nổ, limit",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 40,
-    "winRate": 0.375,
-    "expR": -0.067,
-    "t": -0.4,
-    "coinsPositive": 0.37,
-    "avgRiskPct": 2.73
-   },
-   "test": {
-    "n": 23,
-    "winRate": 0.261,
-    "expR": -0.246,
-    "t": -1.42,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 3.29
-   },
-   "tradeable": false
-  },
-  {
-   "style": "vwap_reversion",
-   "title": "Giá lệch xa VWAP ngày + nến từ chối",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 2275,
-    "winRate": 0.349,
-    "expR": -0.25,
-    "t": -10.12,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.22
-   },
-   "test": {
-    "n": 730,
-    "winRate": 0.408,
-    "expR": -0.126,
-    "t": -2.78,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 0.98
-   },
-   "tradeable": false
-  },
-  {
-   "style": "vwap_reversion",
-   "title": "Giá lệch xa VWAP ngày + nến từ chối",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 2275,
-    "winRate": 0.284,
-    "expR": -0.289,
-    "t": -10.42,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.22
-   },
-   "test": {
-    "n": 730,
-    "winRate": 0.336,
-    "expR": -0.154,
-    "t": -2.98,
-    "coinsPositive": 0.48,
-    "avgRiskPct": 0.98
-   },
-   "tradeable": false
-  },
-  {
-   "style": "vwap_reversion",
-   "title": "Giá lệch xa VWAP ngày + nến từ chối",
-   "interval": "1h",
-   "target": "cấu trúc",
-   "train": {
-    "n": 2275,
-    "winRate": 0.21,
-    "expR": -0.314,
-    "t": -9.02,
-    "coinsPositive": 0.1,
-    "avgRiskPct": 1.22
-   },
-   "test": {
-    "n": 730,
-    "winRate": 0.248,
-    "expR": -0.159,
-    "t": -2.31,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 0.98
-   },
-   "tradeable": false
-  },
-  {
-   "style": "bos",
-   "title": "Phá cấu trúc (BOS) theo xu hướng",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 5833,
+    "n": 5143,
     "winRate": 0.414,
-    "expR": -0.074,
-    "t": -5.53,
-    "coinsPositive": 0.14,
-    "avgRiskPct": 2.97
-   },
-   "test": {
-    "n": 1710,
-    "winRate": 0.453,
-    "expR": -0.002,
-    "t": -0.08,
-    "coinsPositive": 0.48,
-    "avgRiskPct": 2.82
-   },
-   "tradeable": false
-  },
-  {
-   "style": "bos",
-   "title": "Phá cấu trúc (BOS) theo xu hướng",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 5833,
-    "winRate": 0.395,
-    "expR": -0.077,
-    "t": -5.36,
-    "coinsPositive": 0.14,
-    "avgRiskPct": 2.97
-   },
-   "test": {
-    "n": 1710,
-    "winRate": 0.44,
-    "expR": 0.026,
-    "t": 0.95,
-    "coinsPositive": 0.62,
-    "avgRiskPct": 2.82
-   },
-   "tradeable": false
-  },
-  {
-   "style": "ema_pullback",
-   "title": "Hồi về EMA20 trong xu hướng mạnh + nến từ chối",
-   "interval": "1h",
-   "target": "1.5R",
-   "train": {
-    "n": 11361,
-    "winRate": 0.388,
-    "expR": -0.142,
-    "t": -12.52,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.33
-   },
-   "test": {
-    "n": 3147,
-    "winRate": 0.38,
-    "expR": -0.174,
-    "t": -8.13,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.14
-   },
-   "tradeable": false
-  },
-  {
-   "style": "ema_pullback",
-   "title": "Hồi về EMA20 trong xu hướng mạnh + nến từ chối",
-   "interval": "1h",
-   "target": "2R",
-   "train": {
-    "n": 11361,
-    "winRate": 0.332,
-    "expR": -0.131,
-    "t": -10.11,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.33
-   },
-   "test": {
-    "n": 3147,
-    "winRate": 0.326,
-    "expR": -0.167,
-    "t": -6.83,
-    "coinsPositive": 0.0,
-    "avgRiskPct": 1.14
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fib_confirm",
-   "title": "Fibonacci 0.5–0.618 + nến từ chối",
-   "interval": "4h",
-   "target": "1.5R",
-   "train": {
-    "n": 2457,
-    "winRate": 0.408,
-    "expR": -0.075,
-    "t": -3.46,
-    "coinsPositive": 0.19,
-    "avgRiskPct": 3.77
-   },
-   "test": {
-    "n": 742,
-    "winRate": 0.414,
-    "expR": -0.071,
-    "t": -1.88,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 3.49
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fib_confirm",
-   "title": "Fibonacci 0.5–0.618 + nến từ chối",
-   "interval": "4h",
-   "target": "2R",
-   "train": {
-    "n": 2457,
-    "winRate": 0.379,
-    "expR": -0.078,
-    "t": -3.28,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 3.77
-   },
-   "test": {
-    "n": 742,
-    "winRate": 0.391,
-    "expR": -0.055,
-    "t": -1.31,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 3.49
-   },
-   "tradeable": false
-  },
-  {
-   "style": "fib_confirm",
-   "title": "Fibonacci 0.5–0.618 + nến từ chối",
-   "interval": "4h",
-   "target": "cấu trúc",
-   "train": {
-    "n": 2456,
-    "winRate": 0.567,
-    "expR": -0.082,
-    "t": -5.11,
-    "coinsPositive": 0.14,
-    "avgRiskPct": 3.77
-   },
-   "test": {
-    "n": 741,
-    "winRate": 0.559,
-    "expR": -0.091,
-    "t": -3.23,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 3.49
-   },
-   "tradeable": false
-  },
-  {
-   "style": "rsi_divergence",
-   "title": "Phân kỳ RSI tại đỉnh/đáy",
-   "interval": "4h",
-   "target": "1.5R",
-   "train": {
-    "n": 705,
-    "winRate": 0.447,
-    "expR": -0.029,
-    "t": -0.75,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 4.32
-   },
-   "test": {
-    "n": 225,
-    "winRate": 0.48,
-    "expR": 0.046,
-    "t": 0.67,
-    "coinsPositive": 0.48,
-    "avgRiskPct": 3.93
-   },
-   "tradeable": false
-  },
-  {
-   "style": "rsi_divergence",
-   "title": "Phân kỳ RSI tại đỉnh/đáy",
-   "interval": "4h",
-   "target": "2R",
-   "train": {
-    "n": 705,
-    "winRate": 0.438,
-    "expR": -0.012,
-    "t": -0.29,
-    "coinsPositive": 0.43,
-    "avgRiskPct": 4.32
-   },
-   "test": {
-    "n": 225,
-    "winRate": 0.458,
-    "expR": 0.032,
-    "t": 0.43,
-    "coinsPositive": 0.48,
-    "avgRiskPct": 3.93
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_bounce",
-   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
-   "interval": "4h",
-   "target": "1.5R",
-   "train": {
-    "n": 4319,
-    "winRate": 0.403,
-    "expR": -0.074,
-    "t": -4.08,
-    "coinsPositive": 0.19,
-    "avgRiskPct": 2.32
-   },
-   "test": {
-    "n": 1336,
-    "winRate": 0.384,
-    "expR": -0.113,
-    "t": -3.5,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 1.97
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_bounce",
-   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
-   "interval": "4h",
-   "target": "2R",
-   "train": {
-    "n": 4319,
-    "winRate": 0.356,
     "expR": -0.067,
-    "t": -3.29,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 2.32
-   },
-   "test": {
-    "n": 1336,
-    "winRate": 0.328,
-    "expR": -0.129,
-    "t": -3.56,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 1.97
+    "t": -4.15,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 1.9
    },
    "tradeable": false
   },
   {
-   "style": "sr_break_retest",
-   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
-   "interval": "4h",
-   "target": "1.5R",
-   "train": {
-    "n": 2067,
-    "winRate": 0.411,
-    "expR": -0.037,
-    "t": -1.4,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 2.36
-   },
-   "test": {
-    "n": 626,
-    "winRate": 0.372,
-    "expR": -0.149,
-    "t": -3.17,
-    "coinsPositive": 0.14,
-    "avgRiskPct": 1.96
-   },
-   "tradeable": false
-  },
-  {
-   "style": "sr_break_retest",
-   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
-   "interval": "4h",
+   "style": "fib_confirm",
+   "title": "Fibonacci 0.5–0.618 + nến từ chối",
+   "interval": "1h",
    "target": "2R",
    "train": {
-    "n": 2067,
+    "n": 17422,
     "winRate": 0.357,
-    "expR": -0.034,
-    "t": -1.13,
-    "coinsPositive": 0.38,
-    "avgRiskPct": 2.36
+    "expR": -0.092,
+    "t": -9.38,
+    "coinsPositive": 0.08,
+    "avgRiskPct": 2.11
    },
    "test": {
-    "n": 626,
-    "winRate": 0.331,
-    "expR": -0.142,
-    "t": -2.71,
-    "coinsPositive": 0.19,
-    "avgRiskPct": 1.96
+    "n": 5143,
+    "winRate": 0.373,
+    "expR": -0.058,
+    "t": -3.21,
+    "coinsPositive": 0.36,
+    "avgRiskPct": 1.9
    },
    "tradeable": false
   },
   {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "4h",
-   "target": "1.5R",
-   "train": {
-    "n": 749,
-    "winRate": 0.457,
-    "expR": 0.007,
-    "t": 0.22,
-    "coinsPositive": 0.52,
-    "avgRiskPct": 5.12
-   },
-   "test": {
-    "n": 279,
-    "winRate": 0.473,
-    "expR": 0.045,
-    "t": 0.84,
-    "coinsPositive": 0.67,
-    "avgRiskPct": 4.95
-   },
-   "tradeable": false
-  },
-  {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "4h",
-   "target": "2R",
-   "train": {
-    "n": 749,
-    "winRate": 0.443,
-    "expR": 0.006,
-    "t": 0.17,
-    "coinsPositive": 0.43,
-    "avgRiskPct": 5.12
-   },
-   "test": {
-    "n": 279,
-    "winRate": 0.47,
-    "expR": 0.08,
-    "t": 1.38,
-    "coinsPositive": 0.67,
-    "avgRiskPct": 4.95
-   },
-   "tradeable": false
-  },
-  {
-   "style": "double_top_bottom",
-   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
-   "interval": "4h",
+   "style": "fib_confirm",
+   "title": "Fibonacci 0.5–0.618 + nến từ chối",
+   "interval": "1h",
    "target": "cấu trúc",
    "train": {
-    "n": 734,
-    "winRate": 0.561,
-    "expR": -0.026,
-    "t": -1.0,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 5.1
+    "n": 17404,
+    "winRate": 0.582,
+    "expR": -0.095,
+    "t": -15.28,
+    "coinsPositive": 0.05,
+    "avgRiskPct": 2.11
    },
    "test": {
-    "n": 276,
-    "winRate": 0.569,
-    "expR": 0.018,
-    "t": 0.44,
-    "coinsPositive": 0.57,
-    "avgRiskPct": 4.95
+    "n": 5135,
+    "winRate": 0.594,
+    "expR": -0.079,
+    "t": -6.96,
+    "coinsPositive": 0.1,
+    "avgRiskPct": 1.9
+   },
+   "tradeable": false
+  },
+  {
+   "style": "rsi_divergence",
+   "title": "Phân kỳ RSI tại đỉnh/đáy",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 5066,
+    "winRate": 0.409,
+    "expR": -0.088,
+    "t": -5.54,
+    "coinsPositive": 0.15,
+    "avgRiskPct": 2.27
+   },
+   "test": {
+    "n": 1513,
+    "winRate": 0.399,
+    "expR": -0.132,
+    "t": -4.7,
+    "coinsPositive": 0.21,
+    "avgRiskPct": 2.17
+   },
+   "tradeable": false
+  },
+  {
+   "style": "rsi_divergence",
+   "title": "Phân kỳ RSI tại đỉnh/đáy",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 5066,
+    "winRate": 0.369,
+    "expR": -0.104,
+    "t": -5.96,
+    "coinsPositive": 0.21,
+    "avgRiskPct": 2.27
+   },
+   "test": {
+    "n": 1513,
+    "winRate": 0.371,
+    "expR": -0.126,
+    "t": -4.07,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 2.17
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_bounce",
+   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 30037,
+    "winRate": 0.384,
+    "expR": -0.156,
+    "t": -22.4,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.27
+   },
+   "test": {
+    "n": 8577,
+    "winRate": 0.387,
+    "expR": -0.16,
+    "t": -12.25,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.09
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_bounce",
+   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 30037,
+    "winRate": 0.326,
+    "expR": -0.155,
+    "t": -19.55,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.27
+   },
+   "test": {
+    "n": 8577,
+    "winRate": 0.331,
+    "expR": -0.152,
+    "t": -10.16,
+    "coinsPositive": 0.05,
+    "avgRiskPct": 1.09
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_break_retest",
+   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 14297,
+    "winRate": 0.4,
+    "expR": -0.11,
+    "t": -10.8,
+    "coinsPositive": 0.03,
+    "avgRiskPct": 1.26
+   },
+   "test": {
+    "n": 4159,
+    "winRate": 0.391,
+    "expR": -0.144,
+    "t": -7.65,
+    "coinsPositive": 0.1,
+    "avgRiskPct": 1.12
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_break_retest",
+   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 14297,
+    "winRate": 0.341,
+    "expR": -0.103,
+    "t": -8.77,
+    "coinsPositive": 0.05,
+    "avgRiskPct": 1.26
+   },
+   "test": {
+    "n": 4159,
+    "winRate": 0.331,
+    "expR": -0.142,
+    "t": -6.6,
+    "coinsPositive": 0.13,
+    "avgRiskPct": 1.12
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 5832,
+    "winRate": 0.43,
+    "expR": -0.035,
+    "t": -2.56,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 2.99
+   },
+   "test": {
+    "n": 1795,
+    "winRate": 0.438,
+    "expR": -0.032,
+    "t": -1.34,
+    "coinsPositive": 0.44,
+    "avgRiskPct": 2.85
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 5832,
+    "winRate": 0.409,
+    "expR": -0.037,
+    "t": -2.51,
+    "coinsPositive": 0.41,
+    "avgRiskPct": 2.99
+   },
+   "test": {
+    "n": 1795,
+    "winRate": 0.423,
+    "expR": -0.028,
+    "t": -1.1,
+    "coinsPositive": 0.44,
+    "avgRiskPct": 2.85
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "1h",
+   "target": "cấu trúc",
+   "train": {
+    "n": 5686,
+    "winRate": 0.6,
+    "expR": -0.045,
+    "t": -4.45,
+    "coinsPositive": 0.21,
+    "avgRiskPct": 2.98
+   },
+   "test": {
+    "n": 1749,
+    "winRate": 0.601,
+    "expR": -0.043,
+    "t": -2.42,
+    "coinsPositive": 0.36,
+    "avgRiskPct": 2.84
    },
    "tradeable": false
   },
   {
    "style": "fvg",
    "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
-   "interval": "4h",
+   "interval": "1h",
    "target": "1.5R",
    "train": {
-    "n": 1078,
-    "winRate": 0.426,
-    "expR": -0.038,
-    "t": -1.14,
-    "coinsPositive": 0.29,
-    "avgRiskPct": 3.8
+    "n": 8020,
+    "winRate": 0.4,
+    "expR": -0.062,
+    "t": -4.68,
+    "coinsPositive": 0.31,
+    "avgRiskPct": 1.96
    },
    "test": {
-    "n": 287,
-    "winRate": 0.415,
-    "expR": -0.045,
-    "t": -0.71,
-    "coinsPositive": 0.52,
+    "n": 2379,
+    "winRate": 0.464,
+    "expR": 0.077,
+    "t": 3.13,
+    "coinsPositive": 0.74,
+    "avgRiskPct": 1.77
+   },
+   "tradeable": false
+  },
+  {
+   "style": "fvg",
+   "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 9255,
+    "winRate": 0.351,
+    "expR": -0.052,
+    "t": -3.69,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 1.92
+   },
+   "test": {
+    "n": 2763,
+    "winRate": 0.408,
+    "expR": 0.082,
+    "t": 3.12,
+    "coinsPositive": 0.67,
+    "avgRiskPct": 1.74
+   },
+   "tradeable": false
+  },
+  {
+   "style": "order_block",
+   "title": "Order block sau nến bùng nổ, limit",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 105,
+    "winRate": 0.41,
+    "expR": -0.005,
+    "t": -0.04,
+    "coinsPositive": 0.5,
+    "avgRiskPct": 2.49
+   },
+   "test": {
+    "n": 41,
+    "winRate": 0.268,
+    "expR": -0.231,
+    "t": -1.4,
+    "coinsPositive": 0.26,
+    "avgRiskPct": 2.89
+   },
+   "tradeable": false
+  },
+  {
+   "style": "order_block",
+   "title": "Order block sau nến bùng nổ, limit",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 71,
+    "winRate": 0.493,
+    "expR": 0.137,
+    "t": 1.05,
+    "coinsPositive": 0.5,
+    "avgRiskPct": 2.88
+   },
+   "test": {
+    "n": 33,
+    "winRate": 0.273,
+    "expR": -0.229,
+    "t": -1.43,
+    "coinsPositive": 0.32,
+    "avgRiskPct": 3.08
+   },
+   "tradeable": false
+  },
+  {
+   "style": "vwap_reversion",
+   "title": "Giá lệch xa VWAP ngày + nến từ chối",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 4020,
+    "winRate": 0.349,
+    "expR": -0.243,
+    "t": -13.03,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.26
+   },
+   "test": {
+    "n": 1339,
+    "winRate": 0.398,
+    "expR": -0.135,
+    "t": -4.04,
+    "coinsPositive": 0.31,
+    "avgRiskPct": 1.11
+   },
+   "tradeable": false
+  },
+  {
+   "style": "vwap_reversion",
+   "title": "Giá lệch xa VWAP ngày + nến từ chối",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 4020,
+    "winRate": 0.289,
+    "expR": -0.26,
+    "t": -12.37,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.26
+   },
+   "test": {
+    "n": 1339,
+    "winRate": 0.329,
+    "expR": -0.154,
+    "t": -4.03,
+    "coinsPositive": 0.38,
+    "avgRiskPct": 1.11
+   },
+   "tradeable": false
+  },
+  {
+   "style": "vwap_reversion",
+   "title": "Giá lệch xa VWAP ngày + nến từ chối",
+   "interval": "1h",
+   "target": "cấu trúc",
+   "train": {
+    "n": 4020,
+    "winRate": 0.215,
+    "expR": -0.275,
+    "t": -10.24,
+    "coinsPositive": 0.05,
+    "avgRiskPct": 1.26
+   },
+   "test": {
+    "n": 1339,
+    "winRate": 0.247,
+    "expR": -0.166,
+    "t": -3.35,
+    "coinsPositive": 0.31,
+    "avgRiskPct": 1.11
+   },
+   "tradeable": false
+  },
+  {
+   "style": "bos",
+   "title": "Phá cấu trúc (BOS) theo xu hướng",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 8976,
+    "winRate": 0.422,
+    "expR": -0.062,
+    "t": -5.73,
+    "coinsPositive": 0.26,
     "avgRiskPct": 3.1
    },
+   "test": {
+    "n": 2677,
+    "winRate": 0.457,
+    "expR": -0.0,
+    "t": -0.01,
+    "coinsPositive": 0.44,
+    "avgRiskPct": 2.99
+   },
+   "tradeable": false
+  },
+  {
+   "style": "bos",
+   "title": "Phá cấu trúc (BOS) theo xu hướng",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 8976,
+    "winRate": 0.403,
+    "expR": -0.066,
+    "t": -5.71,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 3.1
+   },
+   "test": {
+    "n": 2677,
+    "winRate": 0.443,
+    "expR": 0.021,
+    "t": 0.96,
+    "coinsPositive": 0.56,
+    "avgRiskPct": 2.99
+   },
+   "tradeable": false
+  },
+  {
+   "style": "ema_pullback",
+   "title": "Hồi về EMA20 trong xu hướng mạnh + nến từ chối",
+   "interval": "1h",
+   "target": "1.5R",
+   "train": {
+    "n": 20299,
+    "winRate": 0.393,
+    "expR": -0.119,
+    "t": -13.97,
+    "coinsPositive": 0.0,
+    "avgRiskPct": 1.42
+   },
+   "test": {
+    "n": 5940,
+    "winRate": 0.389,
+    "expR": -0.143,
+    "t": -9.13,
+    "coinsPositive": 0.08,
+    "avgRiskPct": 1.25
+   },
+   "tradeable": false
+  },
+  {
+   "style": "ema_pullback",
+   "title": "Hồi về EMA20 trong xu hướng mạnh + nến từ chối",
+   "interval": "1h",
+   "target": "2R",
+   "train": {
+    "n": 20299,
+    "winRate": 0.336,
+    "expR": -0.11,
+    "t": -11.27,
+    "coinsPositive": 0.03,
+    "avgRiskPct": 1.42
+   },
+   "test": {
+    "n": 5940,
+    "winRate": 0.333,
+    "expR": -0.136,
+    "t": -7.61,
+    "coinsPositive": 0.05,
+    "avgRiskPct": 1.25
+   },
+   "tradeable": false
+  },
+  {
+   "style": "fib_confirm",
+   "title": "Fibonacci 0.5–0.618 + nến từ chối",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 4242,
+    "winRate": 0.415,
+    "expR": -0.056,
+    "t": -3.36,
+    "coinsPositive": 0.21,
+    "avgRiskPct": 3.97
+   },
+   "test": {
+    "n": 1361,
+    "winRate": 0.414,
+    "expR": -0.064,
+    "t": -2.25,
+    "coinsPositive": 0.31,
+    "avgRiskPct": 3.71
+   },
+   "tradeable": false
+  },
+  {
+   "style": "fib_confirm",
+   "title": "Fibonacci 0.5–0.618 + nến từ chối",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 4242,
+    "winRate": 0.385,
+    "expR": -0.063,
+    "t": -3.45,
+    "coinsPositive": 0.23,
+    "avgRiskPct": 3.97
+   },
+   "test": {
+    "n": 1361,
+    "winRate": 0.392,
+    "expR": -0.055,
+    "t": -1.75,
+    "coinsPositive": 0.33,
+    "avgRiskPct": 3.71
+   },
+   "tradeable": false
+  },
+  {
+   "style": "fib_confirm",
+   "title": "Fibonacci 0.5–0.618 + nến từ chối",
+   "interval": "4h",
+   "target": "cấu trúc",
+   "train": {
+    "n": 4241,
+    "winRate": 0.58,
+    "expR": -0.06,
+    "t": -4.9,
+    "coinsPositive": 0.23,
+    "avgRiskPct": 3.97
+   },
+   "test": {
+    "n": 1359,
+    "winRate": 0.567,
+    "expR": -0.084,
+    "t": -4.02,
+    "coinsPositive": 0.26,
+    "avgRiskPct": 3.71
+   },
+   "tradeable": false
+  },
+  {
+   "style": "rsi_divergence",
+   "title": "Phân kỳ RSI tại đỉnh/đáy",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 1190,
+    "winRate": 0.457,
+    "expR": -0.01,
+    "t": -0.35,
+    "coinsPositive": 0.44,
+    "avgRiskPct": 4.39
+   },
+   "test": {
+    "n": 383,
+    "winRate": 0.478,
+    "expR": 0.036,
+    "t": 0.67,
+    "coinsPositive": 0.49,
+    "avgRiskPct": 3.99
+   },
+   "tradeable": false
+  },
+  {
+   "style": "rsi_divergence",
+   "title": "Phân kỳ RSI tại đỉnh/đáy",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 1190,
+    "winRate": 0.445,
+    "expR": 0.014,
+    "t": 0.42,
+    "coinsPositive": 0.54,
+    "avgRiskPct": 4.39
+   },
+   "test": {
+    "n": 383,
+    "winRate": 0.46,
+    "expR": 0.047,
+    "t": 0.8,
+    "coinsPositive": 0.51,
+    "avgRiskPct": 3.99
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_bounce",
+   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 7572,
+    "winRate": 0.404,
+    "expR": -0.068,
+    "t": -5.02,
+    "coinsPositive": 0.21,
+    "avgRiskPct": 2.49
+   },
+   "test": {
+    "n": 2393,
+    "winRate": 0.392,
+    "expR": -0.09,
+    "t": -3.72,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 2.15
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_bounce",
+   "title": "Bật khỏi hỗ trợ/kháng cự (≥3 lần chạm)",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 7572,
+    "winRate": 0.358,
+    "expR": -0.057,
+    "t": -3.71,
+    "coinsPositive": 0.26,
+    "avgRiskPct": 2.49
+   },
+   "test": {
+    "n": 2393,
+    "winRate": 0.347,
+    "expR": -0.067,
+    "t": -2.41,
+    "coinsPositive": 0.36,
+    "avgRiskPct": 2.15
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_break_retest",
+   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 3553,
+    "winRate": 0.425,
+    "expR": -0.002,
+    "t": -0.11,
+    "coinsPositive": 0.49,
+    "avgRiskPct": 2.52
+   },
+   "test": {
+    "n": 1124,
+    "winRate": 0.396,
+    "expR": -0.09,
+    "t": -2.55,
+    "coinsPositive": 0.26,
+    "avgRiskPct": 2.2
+   },
+   "tradeable": false
+  },
+  {
+   "style": "sr_break_retest",
+   "title": "Phá vùng hỗ trợ/kháng cự rồi test lại",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 3553,
+    "winRate": 0.372,
+    "expR": 0.003,
+    "t": 0.12,
+    "coinsPositive": 0.49,
+    "avgRiskPct": 2.52
+   },
+   "test": {
+    "n": 1124,
+    "winRate": 0.359,
+    "expR": -0.066,
+    "t": -1.65,
+    "coinsPositive": 0.28,
+    "avgRiskPct": 2.2
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 1083,
+    "winRate": 0.467,
+    "expR": 0.013,
+    "t": 0.48,
+    "coinsPositive": 0.51,
+    "avgRiskPct": 5.31
+   },
+   "test": {
+    "n": 404,
+    "winRate": 0.463,
+    "expR": 0.019,
+    "t": 0.43,
+    "coinsPositive": 0.59,
+    "avgRiskPct": 5.1
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 1083,
+    "winRate": 0.456,
+    "expR": 0.012,
+    "t": 0.4,
+    "coinsPositive": 0.56,
+    "avgRiskPct": 5.31
+   },
+   "test": {
+    "n": 404,
+    "winRate": 0.46,
+    "expR": 0.039,
+    "t": 0.83,
+    "coinsPositive": 0.56,
+    "avgRiskPct": 5.1
+   },
+   "tradeable": false
+  },
+  {
+   "style": "double_top_bottom",
+   "title": "Hai đỉnh / hai đáy, phá đường viền cổ",
+   "interval": "4h",
+   "target": "cấu trúc",
+   "train": {
+    "n": 1061,
+    "winRate": 0.576,
+    "expR": -0.01,
+    "t": -0.48,
+    "coinsPositive": 0.49,
+    "avgRiskPct": 5.3
+   },
+   "test": {
+    "n": 401,
+    "winRate": 0.586,
+    "expR": 0.018,
+    "t": 0.52,
+    "coinsPositive": 0.54,
+    "avgRiskPct": 5.11
+   },
    "tradeable": false
   },
   {
    "style": "fvg",
    "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
    "interval": "4h",
-   "target": "2R",
-   "train": {
-    "n": 1265,
-    "winRate": 0.391,
-    "expR": -0.054,
-    "t": -1.6,
-    "coinsPositive": 0.38,
-    "avgRiskPct": 3.68
-   },
-   "test": {
-    "n": 332,
-    "winRate": 0.389,
-    "expR": -0.057,
-    "t": -0.88,
-    "coinsPositive": 0.52,
-    "avgRiskPct": 3.05
-   },
-   "tradeable": false
-  },
-  {
-   "style": "order_block",
-   "title": "Order block sau nến bùng nổ, limit",
-   "interval": "4h",
    "target": "1.5R",
    "train": {
-    "n": 12,
-    "winRate": 0.25,
-    "expR": -0.269,
-    "t": -0.99,
-    "coinsPositive": 0.3,
-    "avgRiskPct": 5.17
+    "n": 1935,
+    "winRate": 0.438,
+    "expR": 0.0,
+    "t": 0.02,
+    "coinsPositive": 0.38,
+    "avgRiskPct": 3.96
    },
    "test": {
-    "n": 3,
-    "winRate": 0.667,
-    "expR": 0.64,
-    "t": 0.77,
-    "coinsPositive": 0.67,
+    "n": 548,
+    "winRate": 0.42,
+    "expR": -0.033,
+    "t": -0.71,
+    "coinsPositive": 0.49,
     "avgRiskPct": 3.32
    },
    "tradeable": false
   },
   {
+   "style": "fvg",
+   "title": "FVG (khoảng trống giá) theo xu hướng, limit giữa gap",
+   "interval": "4h",
+   "target": "2R",
+   "train": {
+    "n": 2267,
+    "winRate": 0.401,
+    "expR": -0.008,
+    "t": -0.29,
+    "coinsPositive": 0.49,
+    "avgRiskPct": 3.85
+   },
+   "test": {
+    "n": 626,
+    "winRate": 0.383,
+    "expR": -0.063,
+    "t": -1.32,
+    "coinsPositive": 0.46,
+    "avgRiskPct": 3.26
+   },
+   "tradeable": false
+  },
+  {
+   "style": "order_block",
+   "title": "Order block sau nến bùng nổ, limit",
+   "interval": "4h",
+   "target": "1.5R",
+   "train": {
+    "n": 23,
+    "winRate": 0.261,
+    "expR": -0.33,
+    "t": -1.79,
+    "coinsPositive": 0.26,
+    "avgRiskPct": 5.48
+   },
+   "test": {
+    "n": 4,
+    "winRate": 0.75,
+    "expR": 0.849,
+    "t": 1.37,
+    "coinsPositive": 0.75,
+    "avgRiskPct": 3.28
+   },
+   "tradeable": false
+  },
+  {
    "style": "order_block",
    "title": "Order block sau nến bùng nổ, limit",
    "interval": "4h",
    "target": "2R",
    "train": {
-    "n": 19,
-    "winRate": 0.211,
-    "expR": -0.466,
-    "t": -2.7,
-    "coinsPositive": 0.25,
-    "avgRiskPct": 4.6
+    "n": 36,
+    "winRate": 0.222,
+    "expR": -0.504,
+    "t": -4.39,
+    "coinsPositive": 0.24,
+    "avgRiskPct": 5.16
    },
    "test": {
-    "n": 4,
-    "winRate": 0.25,
-    "expR": -0.286,
-    "t": -0.38,
-    "coinsPositive": 0.25,
-    "avgRiskPct": 2.77
+    "n": 7,
+    "winRate": 0.286,
+    "expR": -0.054,
+    "t": -0.1,
+    "coinsPositive": 0.29,
+    "avgRiskPct": 3.25
    },
    "tradeable": false
   },
@@ -930,12 +948,12 @@
    "interval": "4h",
    "target": "1.5R",
    "train": {
-    "n": 2,
-    "winRate": 0.5,
-    "expR": 0.202,
-    "t": 0.16,
-    "coinsPositive": 0.5,
-    "avgRiskPct": 2.07
+    "n": 3,
+    "winRate": 0.333,
+    "expR": -0.205,
+    "t": -0.25,
+    "coinsPositive": 0.33,
+    "avgRiskPct": 3.15
    },
    "test": {
     "n": 0
@@ -948,12 +966,12 @@
    "interval": "4h",
    "target": "2R",
    "train": {
-    "n": 2,
+    "n": 3,
     "winRate": 0.0,
-    "expR": -1.048,
-    "t": -877.82,
+    "expR": -1.039,
+    "t": -105.19,
     "coinsPositive": 0.0,
-    "avgRiskPct": 2.07
+    "avgRiskPct": 3.15
    },
    "test": {
     "n": 0
@@ -966,12 +984,12 @@
    "interval": "4h",
    "target": "cấu trúc",
    "train": {
-    "n": 2,
-    "winRate": 0.5,
-    "expR": 0.205,
-    "t": 0.16,
-    "coinsPositive": 0.5,
-    "avgRiskPct": 2.07
+    "n": 3,
+    "winRate": 0.333,
+    "expR": -0.203,
+    "t": -0.24,
+    "coinsPositive": 0.33,
+    "avgRiskPct": 3.15
    },
    "test": {
     "n": 0
@@ -984,20 +1002,20 @@
    "interval": "4h",
    "target": "1.5R",
    "train": {
-    "n": 1184,
-    "winRate": 0.46,
-    "expR": 0.025,
-    "t": 0.95,
-    "coinsPositive": 0.67,
-    "avgRiskPct": 5.33
+    "n": 1688,
+    "winRate": 0.457,
+    "expR": 0.018,
+    "t": 0.8,
+    "coinsPositive": 0.62,
+    "avgRiskPct": 5.5
    },
    "test": {
-    "n": 390,
-    "winRate": 0.477,
-    "expR": 0.003,
-    "t": 0.08,
-    "coinsPositive": 0.62,
-    "avgRiskPct": 5.22
+    "n": 609,
+    "winRate": 0.468,
+    "expR": 0.015,
+    "t": 0.43,
+    "coinsPositive": 0.56,
+    "avgRiskPct": 5.48
    },
    "tradeable": false
   },
@@ -1007,20 +1025,20 @@
    "interval": "4h",
    "target": "2R",
    "train": {
-    "n": 1184,
+    "n": 1688,
     "winRate": 0.448,
-    "expR": 0.029,
-    "t": 1.01,
-    "coinsPositive": 0.67,
-    "avgRiskPct": 5.33
+    "expR": 0.028,
+    "t": 1.17,
+    "coinsPositive": 0.54,
+    "avgRiskPct": 5.5
    },
    "test": {
-    "n": 390,
-    "winRate": 0.472,
-    "expR": -0.001,
-    "t": -0.02,
-    "coinsPositive": 0.67,
-    "avgRiskPct": 5.22
+    "n": 609,
+    "winRate": 0.465,
+    "expR": 0.017,
+    "t": 0.46,
+    "coinsPositive": 0.51,
+    "avgRiskPct": 5.48
    },
    "tradeable": false
   },
@@ -1030,20 +1048,20 @@
    "interval": "4h",
    "target": "1.5R",
    "train": {
-    "n": 2911,
-    "winRate": 0.393,
-    "expR": -0.082,
-    "t": -3.78,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 2.7
+    "n": 5163,
+    "winRate": 0.406,
+    "expR": -0.047,
+    "t": -2.88,
+    "coinsPositive": 0.33,
+    "avgRiskPct": 2.9
    },
    "test": {
-    "n": 810,
-    "winRate": 0.394,
-    "expR": -0.089,
-    "t": -2.16,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 2.28
+    "n": 1519,
+    "winRate": 0.413,
+    "expR": -0.043,
+    "t": -1.44,
+    "coinsPositive": 0.38,
+    "avgRiskPct": 2.51
    },
    "tradeable": false
   },
@@ -1053,40 +1071,40 @@
    "interval": "4h",
    "target": "2R",
    "train": {
-    "n": 2911,
-    "winRate": 0.353,
-    "expR": -0.066,
-    "t": -2.67,
-    "coinsPositive": 0.24,
-    "avgRiskPct": 2.7
+    "n": 5163,
+    "winRate": 0.36,
+    "expR": -0.047,
+    "t": -2.53,
+    "coinsPositive": 0.36,
+    "avgRiskPct": 2.9
    },
    "test": {
-    "n": 810,
-    "winRate": 0.357,
-    "expR": -0.071,
-    "t": -1.53,
-    "coinsPositive": 0.33,
-    "avgRiskPct": 2.28
+    "n": 1519,
+    "winRate": 0.367,
+    "expR": -0.046,
+    "t": -1.36,
+    "coinsPositive": 0.41,
+    "avgRiskPct": 2.51
    },
    "tradeable": false
   }
  ],
  "random": {
   "1h": {
-   "n": 31386,
-   "winRate": 0.396,
-   "expR": -0.136,
-   "t": -20.56,
+   "n": 31308,
+   "winRate": 0.405,
+   "expR": -0.104,
+   "t": -16.02,
    "coinsPositive": 0.0,
-   "avgRiskPct": 1.48
+   "avgRiskPct": 1.83
   },
   "4h": {
-   "n": 15783,
-   "winRate": 0.423,
-   "expR": -0.051,
-   "t": -5.77,
-   "coinsPositive": 0.14,
-   "avgRiskPct": 3.11
+   "n": 26847,
+   "winRate": 0.415,
+   "expR": -0.064,
+   "t": -9.34,
+   "coinsPositive": 0.03,
+   "avgRiskPct": 3.23
   }
  }
 }

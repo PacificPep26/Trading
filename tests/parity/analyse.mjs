@@ -5,6 +5,7 @@ process.stdin.on("data", (d) => (buf += d)).on("end", () => {
   const windows = JSON.parse(buf);
   const out = windows.map((w) => analyse(w.map((c) => ({ ...c, closed: true }))).setups
     .filter((s) => s.state === "triggered")
+    .filter((s) => s.style === "bos" || s.style === "double_top_bottom")
     .map((s) => ({ style: s.style, side: s.side, stop: s.stop })));
   process.stdout.write(JSON.stringify(out));
 });

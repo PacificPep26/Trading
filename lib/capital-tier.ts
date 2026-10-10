@@ -3,7 +3,7 @@
  * Chuẩn v2.1.0 cho bot Auto-Trade MEXC
  */
 
-import { MAX_LEVERAGE, MIN_STOP_DISTANCE, MAX_STOP_DISTANCE } from "./trading-policy.ts";
+import { MAX_LEVERAGE } from "./trading-policy.ts";
 
 export interface CapitalTier {
   tier: number;
