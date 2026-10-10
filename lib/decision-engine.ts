@@ -136,14 +136,13 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
     return reject("INVALID_STOP");
   }
 
-  // 8. Chống trôi giá / vào lệnh trễ: Bắt buộc phải có giá live hợp lệ
-  if (!ctx.livePrice || !Number.isFinite(ctx.livePrice)) {
-    return reject("INVALID_DATA");
-  }
-  const drift = Math.abs(ctx.livePrice - setup.entry) / setup.entry;
-  const maxDrift = ctx.timeframe === "1D" ? 0.015 : MAX_PRICE_DRIFT;
-  if (drift > maxDrift) {
-    return reject("RUNAWAY_PRICE");
+  // 8. Chống trôi giá / vào lệnh trễ: nếu có giá live thì kiểm tra không để đu giá
+  if (ctx.livePrice !== undefined && Number.isFinite(ctx.livePrice)) {
+    const drift = Math.abs(ctx.livePrice - setup.entry) / setup.entry;
+    const maxDrift = ctx.timeframe === "1D" ? 0.015 : MAX_PRICE_DRIFT;
+    if (drift > maxDrift) {
+      return reject("RUNAWAY_PRICE");
+    }
   }
 
   // 9. Tính toán kế hoạch lệnh chuẩn với cơ chế Đệm Chốt Lời (Front-Running TP Buffer):

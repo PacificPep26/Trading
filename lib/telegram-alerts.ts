@@ -279,6 +279,7 @@ export async function scanAndAlert(): Promise<string[]> {
               stopLossPrice: s.stop,
               takeProfit1Price: plan.tp1,
               takeProfit2Price: plan.tp2,
+              dryRunOverride: mexcOrder.isDryRun,
             });
 
             const isKept = await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection);
@@ -472,6 +473,7 @@ export async function scanAndAlert(): Promise<string[]> {
             stopLossPrice: s.stop,
             takeProfit1Price: plan1h.tp1,
             takeProfit2Price: plan1h.tp2,
+            dryRunOverride: mexcOrder1h.isDryRun,
         });
         if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder1h.vol, protection1h))) {
           openSymbols.add(coin);

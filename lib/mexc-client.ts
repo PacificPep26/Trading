@@ -325,7 +325,7 @@ export async function submitMexcTpSl(params: {
   dryRunOverride?: boolean;
 }): Promise<MexcTpSlResult> {
   const { apiKey, secretKey, isConfigured, isDryRun: defaultDryRun } = getMexcCredentials();
-  const isDryRun = params.dryRunOverride ?? defaultDryRun;
+  const isDryRun = defaultDryRun || params.dryRunOverride === true;
   const mexcSymbol = params.symbol.includes("_") ? params.symbol : `${params.symbol.replace("-USDT", "")}_USDT`;
 
   if (isDryRun || !isConfigured) {
