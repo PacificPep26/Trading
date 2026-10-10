@@ -12,7 +12,7 @@ import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/pape
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, updateMexcStopLossPrice } from "@/lib/mexc-client";
-import { registerSniperTarget, evaluate15mSniper, sniperRadar } from "@/lib/sniper-engine";
+import { registerSniperTarget, evaluate15mSniper, sniperRadar, getTradingSessionInfo, detectVolumeAbsorption, detectFundingSqueeze } from "@/lib/sniper-engine";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -579,6 +579,19 @@ export async function scanAndAlert(): Promise<string[]> {
           const tp1R = ((sniperSignal.tp1 - sniperSignal.entry) * sniperSignal.side) / rDist;
           const tp2R = ((sniperSignal.tp2 - sniperSignal.entry) * sniperSignal.side) / rDist;
 
+          const sessionInfo = getTradingSessionInfo();
+          const absorption = detectVolumeAbsorption(bars15m);
+          const fData = await funding(`${coin}-USDT-SWAP`).catch(() => null);
+          const squeeze = detectFundingSqueeze(fData?.rate);
+
+          let extraInsights = `• *Khung giờ:* ${sessionInfo.multiplierText}\n`;
+          if (absorption.isAbsorption) {
+            extraInsights += `• *Dòng tiền:* 🐋 Phát hiện Cá Mập Hấp Thụ (Volume x${absorption.ratio.toFixed(1)} nổ to đỡ giá!)\n`;
+          }
+          if (squeeze.isSqueezeSetup) {
+            extraInsights += `• *Bẫy Funding:* ${squeeze.desc}\n`;
+          }
+
           itemsToSend.push({
             key: sniperKey,
             msg:
@@ -587,6 +600,7 @@ export async function scanAndAlert(): Promise<string[]> {
               `• *Giá vào lệnh tối ưu (Entry):* ~${f(sniperSignal.entry)}\n` +
               `• *Cắt lỗ siêu ngắn (SL):* ${f(sniperSignal.stop)} (-${(sniperSignal.riskPct * 100).toFixed(2)}%)\n` +
               `• *Chốt lời:* TP1 ~${f(sniperSignal.tp1)} (+${tp1R.toFixed(1)}R) | TP2 ~${f(sniperSignal.tp2)} (+${tp2R.toFixed(1)}R)\n` +
+              extraInsights +
               `• *Lợi thế:* Đã quét sạch râu nến và xác nhận phe Mua đỡ giá. Không còn nỗi lo đu đỉnh!`
           });
         }

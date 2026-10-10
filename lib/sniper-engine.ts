@@ -172,3 +172,93 @@ export function evaluate15mSniper(
 
   return null;
 }
+
+/**
+ * 1. MẢNH GHÉP KHUNG GIỜ VÀNG (Session Open Filter)
+ * Xác định phiên giao dịch có dòng tiền lớn: London (14:00 - 18:00 VN) & New York (20:30 - 00:30 VN)
+ */
+export function getTradingSessionInfo(date = new Date()): {
+  session: "London" | "New York" | "Asian" | "Off-hours";
+  isHighVolumeWindow: boolean;
+  multiplierText: string;
+} {
+  const vnHour = (date.getUTCHours() + 7) % 24;
+  const vnMinute = date.getUTCMinutes();
+  const timeNum = vnHour + vnMinute / 60;
+
+  // Phiên London: 14:00 - 18:00 VN
+  if (timeNum >= 14.0 && timeNum < 18.0) {
+    return { session: "London", isHighVolumeWindow: true, multiplierText: "🔥 Phiên London (Tiền to Châu Âu đang vào)" };
+  }
+  // Phiên New York (Phố Wall): 20:30 - 00:30 VN
+  if ((timeNum >= 20.5 && timeNum <= 24.0) || timeNum < 0.5) {
+    return { session: "New York", isHighVolumeWindow: true, multiplierText: "🚀 Phiên New York / Phố Wall (Thanh khoản đỉnh cao)" };
+  }
+  // Phiên Á: 07:00 - 12:00 VN
+  if (timeNum >= 7.0 && timeNum < 12.0) {
+    return { session: "Asian", isHighVolumeWindow: false, multiplierText: "☕ Phiên Châu Á (Thanh khoản vừa phải)" };
+  }
+  return { session: "Off-hours", isHighVolumeWindow: false, multiplierText: "🌙 Khung giờ tĩnh (Thanh khoản mỏng)" };
+}
+
+/**
+ * 2. MẢNH GHÉP HẤP THỤ LỰC XẢ (Volume Absorption Detection)
+ * Phát hiện khi nến có Volume cực đại (> 2.0x) nhưng giá rút chân mạnh (Cá mập hấp thụ hàng)
+ */
+export function detectVolumeAbsorption(candles: Candle[]): {
+  isAbsorption: boolean;
+  type?: "bullish_absorption" | "bearish_absorption";
+  ratio: number;
+} {
+  if (candles.length < 21) return { isAbsorption: false, ratio: 1.0 };
+  const current = candles[candles.length - 1];
+  const prev20 = candles.slice(-21, -1);
+  const avgVol = prev20.reduce((sum, c) => sum + c.v, 0) / 20;
+  const ratio = avgVol > 0 ? current.v / avgVol : 1.0;
+
+  if (ratio >= 2.0) {
+    const totalRange = current.h - current.l;
+    if (totalRange <= 0) return { isAbsorption: false, ratio };
+    const lowerWick = Math.min(current.o, current.c) - current.l;
+    const upperWick = current.h - Math.max(current.o, current.c);
+
+    if (lowerWick / totalRange >= 0.4) {
+      return { isAbsorption: true, type: "bullish_absorption", ratio };
+    }
+    if (upperWick / totalRange >= 0.4) {
+      return { isAbsorption: true, type: "bearish_absorption", ratio };
+    }
+  }
+  return { isAbsorption: false, ratio };
+}
+
+/**
+ * 3. MẢNH GHÉP BẪY ÉP PHÍ TÀI TRỢ (Funding Squeeze Anomaly)
+ * Phát hiện phe Short bị ép phí âm nặng (âm sâu <= -0.05%), dễ kích hoạt Short Squeeze bắn dựng cột
+ */
+export function detectFundingSqueeze(fundingRate?: number): {
+  isSqueezeSetup: boolean;
+  direction?: 1 | -1;
+  desc: string;
+} {
+  if (fundingRate === undefined || !Number.isFinite(fundingRate)) {
+    return { isSqueezeSetup: false, desc: "Funding bình thường" };
+  }
+  // Short squeeze: Đám đông Short quá đà (Funding âm sâu <= -0.05%)
+  if (fundingRate <= -0.0005) {
+    return {
+      isSqueezeSetup: true,
+      direction: 1, // Thiên hướng Long ép Short cháy
+      desc: `⚡ BẪY ÉP PHÍ SHORT SQUEEZE: Funding âm nặng (${(fundingRate * 100).toFixed(3)}%). Phe Short đang bị bào mòn phí, dễ kích hoạt cột nổ dựng đứng!`,
+    };
+  }
+  // Long squeeze: Đám đông Long fomo quá đà (Funding dương cao >= +0.06%)
+  if (fundingRate >= 0.0006) {
+    return {
+      isSqueezeSetup: true,
+      direction: -1, // Thiên hướng Short ép Long buông tay
+      desc: `⚠️ BẪY ÉP PHÍ LONG SQUEEZE: Funding dương cực cao (${(fundingRate * 100).toFixed(3)}%). Phe Long đang chịu phí khủng, dễ có cây xả rũ!`,
+    };
+  }
+  return { isSqueezeSetup: false, desc: "Funding ổn định" };
+}
