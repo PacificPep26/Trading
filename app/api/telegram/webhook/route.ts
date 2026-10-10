@@ -163,47 +163,31 @@ async function analyzeCoin(coin: string): Promise<string> {
 async function scanWatchlist(): Promise<string> {
   const btcDaily = await getDailyTrend("BTC");
   const cand4h: string[] = [];
-  const cand1h: string[] = [];
   const paper = paperSummary(CAPITAL);
-
   for (const c of COINS) {
     try {
       const ownDaily = await getDailyTrend(c);
-      const [c4, c1] = await Promise.all([
-        candles(`${c}-USDT-SWAP`, "4H", 60),
-        candles(`${c}-USDT-SWAP`, "1H", 60),
-      ]);
+      const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
       const a4 = analyse(c4);
       for (const s of a4.setups) {
         const decision = evaluateSetup(s, { coin: c, timeframe: "4H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime });
         if (!decision.accepted) continue;
         const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        cand4h.push(`• *${c}* ${side} (${s.style.toUpperCase()}) ~${f(s.entry)}`);
-      }
-
-      const a1 = analyse(c1);
-      for (const s of a1.setups) {
-        const decision = evaluateSetup(s, { coin: c, timeframe: "1H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a1.lastBarTime });
-        if (!decision.accepted) continue;
-        const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        cand1h.push(`• *${c}* ${side} (${s.style.toUpperCase()}) ~${f(s.entry)}`);
+        const volText = s.volumeRatio ? ` (Vol x${s.volumeRatio.toFixed(1)})` : "";
+        cand4h.push(`• *${c}* ${side} (${s.style.toUpperCase()}${volText}) ~${f(s.entry)}`);
       }
     } catch {}
   }
 
   const btcText = btcDaily > 0 ? "TĂNG ↗ (ưu tiên LONG)" : btcDaily < 0 ? "GIẢM ↘ (ưu tiên SHORT)" : "CHƯA RÕ";
-  let text = `📡 *QUÉT THỊ TRƯỜNG 21 COIN*\n`;
+  let text = `📡 *QUÉT THỊ TRƯỜNG 21 COIN (4H)*\n`;
   text += `• *Bối cảnh BTC Ngày:* ${btcText}\n`;
   text += `• *Đóng nến 4H kế:* ${next4hTime()}\n\n`;
 
   if (cand4h.length > 0) {
-    text += `📌 *Sóng lớn 4H:*\n${cand4h.join("\n")}\n\n`;
-  }
-  if (cand1h.length > 0) {
-    text += `⚡ *Lướt sóng 1H:*\n${cand1h.join("\n")}\n\n`;
-  }
-  if (cand4h.length === 0 && cand1h.length === 0) {
-    text += `⚪ *Hiện tại:* Chưa có coin nào xuất hiện điểm vào đạt chuẩn. Đứng ngoài an toàn.`;
+    text += `📌 *Setup 4H đạt chuẩn:*\n${cand4h.join("\n")}\n\n`;
+  } else {
+    text += `⚪ *Hiện tại:* Chưa có coin nào xuất hiện điểm vào 4H đạt chuẩn. Đứng ngoài an toàn.`;
   }
 
   return text;
@@ -266,9 +250,8 @@ async function sendTelegramReply(token: string, chatId: number | string, text: s
         disable_web_page_preview: true,
         reply_markup: {
           keyboard: [
-            [{ text: "🔍 Kèo" }, { text: "🧭 Canh Đỉnh/Đáy" }],
-            [{ text: "🏦 Xem Vốn & Tier" }],
-            [{ text: "SOL" }, { text: "WIF" }, { text: "DOGE" }]
+            [{ text: "🔍 Kèo 4H" }, { text: "🏦 Xem Vốn & Lệnh" }],
+            [{ text: "BTC" }, { text: "SOL" }, { text: "DOGE" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -306,12 +289,11 @@ export async function POST(req: NextRequest) {
 
     // 1. Help or Start
     if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh") {
-      let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading của bạn.*\n\n`;
-      welcome += `Bạn có thể nhắn trực tiếp với tôi bất cứ lúc nào trên điện thoại:\n\n`;
-      welcome += `• Nhắn \`canh\` hoặc \`/canh\` để *bật Radar canh coin sắp chạm Đỉnh cũ / Đáy cũ*.\n`;
-      welcome += `• Nhắn \`keo\` hoặc \`quét\` để quét setup paper 4H.\n`;
-      welcome += `• Nhắn tên coin (ví dụ: \`SOL\`, \`BTC\`, \`TIA\`) để xem chi tiết thông số vào lệnh, SL, TP.\n`;
-      welcome += `• Nhắn \`von\` hoặc \`luật\` để xem policy paper 40$, rủi ro tối đa 10%.\n`;
+      let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading MEXC của bạn.*\n\n`;
+      welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh (16h - 8h sáng)* theo Chuẩn Kim Cương:\n\n`;
+      welcome += `• Bấm [ 🔍 Kèo 4H ] hoặc nhắn \`kèo\` để quét setup 4H hiện tại.\n`;
+      welcome += `• Bấm [ 🏦 Xem Vốn & Lệnh ] hoặc nhắn \`vốn\` để xem số dư MEXC & vị thế.\n`;
+      welcome += `• Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`) để xem phân tích chi tiết SL/TP.`;
       await sendTelegramReply(token, chatId, welcome);
       return NextResponse.json({ ok: true });
     }
@@ -363,10 +345,11 @@ export async function POST(req: NextRequest) {
       const asset = await getMexcAccountAsset(CAPITAL);
       const tier = getCapitalTier(asset.equity);
       let rule = `🏦 *TÀI KHOẢN & VỐN BẬC THANG*\n\n`;
-      rule += `• *Số dư ví:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
+      rule += `• *Số dư ví MEXC:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
       rule += `• *Cấp bậc:* *${tier.name}*\n`;
-      rule += `• *Rủi ro mỗi lệnh (1R):* \`${tier.riskPerTradeUsd} USDT\`\n`;
+      rule += `• *Rủi ro mỗi lệnh (1R):* \`${tier.riskPerTradeUsd} USDT\` (Cố định)\n`;
       rule += `• *Số lệnh mở tối đa:* \`${tier.maxOpenTrades} lệnh đồng thời\`\n`;
+      rule += `• *Khung giờ Auto-Trade:* \`16:00 - 08:00 sáng hôm sau (VN)\`\n`;
       rule += `• *Mốc bảo vệ lãi (Ratchet):* \`${tier.ratchetFloorUsd} USDT\``;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
@@ -386,9 +369,9 @@ export async function POST(req: NextRequest) {
 
     // 5. General AI fallback / conversation
     let reply = `🤖 *Nhận được:* "${rawText}"\n\n`;
-    reply += `• Soi coin: Nhắn tên coin (ví dụ: \`SOL\`, \`WIF\`, \`DOGE\`...)\n`;
-    reply += `• Xem kèo: Nhắn \`kèo\` hoặc bấm nút [ 🔍 Kèo ]\n`;
-    reply += `• Xem vốn: Nhắn \`vốn\` hoặc bấm nút [ 🏦 Xem Vốn & Tier ]`;
+    reply += `• Xem kèo 4H: Nhắn \`kèo\` hoặc bấm [ 🔍 Kèo 4H ]\n`;
+    reply += `• Xem tài khoản: Nhắn \`vốn\` hoặc bấm [ 🏦 Xem Vốn & Lệnh ]\n`;
+    reply += `• Soi coin: Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`...)`;
 
     await sendTelegramReply(token, chatId, reply);
     return NextResponse.json({ ok: true });
