@@ -3,7 +3,7 @@ import { evaluateSetup } from "../lib/decision-engine.ts";
 
 const now = Date.now();
 const setup = { style: "bos", state: "triggered", side: 1, entry: 100, stop: 98, tp15: 103, tp2: 104, level: 99, distancePct: 0 };
-const context = { coin: "SOL", timeframe: "4H", btcDaily: 1, ownDaily: 1, equity: 40, peakEquity: 40, lastBarTime: now - 4 * 60 * 60_000, now };
+const context = { coin: "SOL", timeframe: "4H", btcDaily: 1, ownDaily: 1, equity: 40, peakEquity: 40, lastBarTime: now - 4 * 60 * 60_000, now, livePrice: 100 };
 
 const accepted = evaluateSetup(setup, context);
 assert.equal(accepted.code, "ACCEPTED");

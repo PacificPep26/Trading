@@ -25,6 +25,7 @@ const baseContext = {
   peakEquity: 100,
   lastBarTime: now - 4 * 60 * 60_000,
   now,
+  livePrice: 100,
 };
 
 // 1. Kiểm tra nến kiệt Volume (< 0.75x SMA20) -> Bị từ chối LOW_VOLUME

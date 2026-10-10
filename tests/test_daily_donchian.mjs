@@ -48,6 +48,7 @@ const decision = evaluateSetup(s, {
   equity: 50.57,
   peakEquity: 50.57,
   lastBarTime: lastBar.t,
+  livePrice: s.entry,
 });
 
 assert.equal(decision.accepted, true, "Decision engine must accept 1D Donchian Breakout");

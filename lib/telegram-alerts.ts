@@ -192,27 +192,22 @@ export async function scanAndAlert(): Promise<string[]> {
   const livePositions = await getMexcOpenPositions();
   const openSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
 
-  // Trailing Stop & Thoát lệnh bảo toàn lãi cho các vị thế đang nắm giữ
+  // Trailing Stop & Thoát lệnh bảo toàn lãi cho các vị thế đang nắm giữ (đặc biệt là 1D Trend)
   for (const pos of livePositions) {
     if (pos.holdVol <= 0) continue;
-    const posCoin = pos.symbol.replace("_USDT", "");
-    const dailyInfo = await getDailyData(posCoin);
-    if (dailyInfo.cs.length < 25) continue;
-    const aDaily = analyseDaily(dailyInfo.cs);
-    const lastDailyClose = dailyInfo.cs.at(-1)?.c ?? 0;
+    try {
+      const posCoin = pos.symbol.replace("_USDT", "");
+      const dailyInfo = await getDailyData(posCoin);
+      if (dailyInfo.cs.length < 25) continue;
+      const aDaily = analyseDaily(dailyInfo.cs);
+      const lastDailyClose = dailyInfo.cs.at(-1)?.c ?? 0;
 
-    // 1. Nếu giá đóng cửa nến Ngày gãy đáy 10D hoặc BTC gãy xu hướng ngày -> Thoát lệnh để khóa lợi nhuận sóng lớn
-    if (pos.positionType === 1 && (lastDailyClose < aDaily.pastLow10d || btc < 0)) {
-      console.log(`[MEXC TRAILING EXIT] ${pos.symbol} gãy đáy 10D (${lastDailyClose} < ${aDaily.pastLow10d}) hoặc BTC gãy trend. Đang chốt lời...`);
-      await closeMexcPosition({ symbol: pos.symbol, side: 1, vol: pos.holdVol });
-      await send(
-        `🛡️ *[CHỐT LÃI / THOÁT TREND 1D: ${posCoin}]*\n\n` +
-        `• Nến ngày đóng cửa (\`${f(lastDailyClose)}\`) đã thủng đáy 10 ngày (\`${f(aDaily.pastLow10d)}\`) hoặc BTC gãy trend.\n` +
-        `• Đã đóng toàn bộ *${pos.holdVol} HĐ* trên MEXC để bảo toàn lợi nhuận con sóng!`
-      );
-    } else if (pos.positionType === 1 && (pos.openAvgPrice ?? 0) > 0 && aDaily.pastLow10d > (pos.openAvgPrice ?? 0)) {
-      // 2. Trailing nâng SL: Nếu đáy 10D đã cao hơn giá vào lệnh -> dời SL lên đáy 10D để lock lãi
-      await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
+      // Trailing nâng SL: Nếu đáy 10D đã cao hơn giá vào lệnh -> dời SL lên đáy 10D để lock lãi (chỉ áp dụng cho vị thế Long)
+      if (pos.positionType === 1 && (pos.openAvgPrice ?? 0) > 0 && aDaily.pastLow10d > (pos.openAvgPrice ?? 0)) {
+        await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
+      }
+    } catch (trailErr) {
+      console.error(`[MEXC TRAIL] Lỗi xử lý vị thế ${pos.symbol}:`, trailErr);
     }
   }
 
@@ -260,16 +255,11 @@ export async function scanAndAlert(): Promise<string[]> {
           const key = `1D:${coin}:${s.style}:${s.side}:${aDaily.lastBarTime}`;
           if (sent.has(key)) continue;
 
-          const nowUtc = new Date();
-          // 0 = Sunday, 6 = Saturday (UTC)
-          const isWeekend = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
-          if (isWeekend) {
-            console.log(`[MEXC WEEKEND GUARD] Hôm nay là cuối tuần (T7/CN UTC). Bỏ qua mở lệnh live ${coin} để tránh bẫy thanh khoản thấp.`);
-            continue;
-          }
-
           const sizing = plan.sizing;
           if (sizing.margin > remainingMargin) continue;
+
+          const nowUtc = new Date();
+          const isWeekend = nowUtc.getUTCDay() === 0 || nowUtc.getUTCDay() === 6;
 
           const mexcOrder = await submitMexcOrder({
             symbol: coin,
@@ -278,6 +268,7 @@ export async function scanAndAlert(): Promise<string[]> {
             price: s.entry,
             leverage: sizing.leverage,
             stopLossPrice: s.stop,
+            dryRunOverride: isWeekend ? true : undefined,
           });
 
           if (mexcOrder.success) {
@@ -290,13 +281,18 @@ export async function scanAndAlert(): Promise<string[]> {
               takeProfit2Price: plan.tp2,
             });
 
-            await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection);
+            const isKept = await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection);
+            if (!isKept) {
+              console.warn(`[MEXC 1D] Không giữ được lệnh ${coin} do lỗi SL.`);
+              continue;
+            }
+
             openSymbols.add(coin);
             remainingMargin = Math.max(0, remainingMargin - sizing.margin);
 
             const riskPct = Math.abs(s.entry - s.stop) / s.entry;
             const autoTag = mexcOrder.isDryRun
-              ? `🚀 *[VÀO LỆNH (PAPER)]*`
+              ? (isWeekend ? `🛡️ *[LỆNH 1D PAPER - NGHỈ CUỐI TUẦN]*` : `🚀 *[VÀO LỆNH (PAPER)]*`)
               : `🤖 *[MEXC ĐÃ VÀO LỆNH THẬT - ${mexcOrder.vol} HĐ]*`;
 
             itemsToSend.push({
@@ -453,7 +449,7 @@ export async function scanAndAlert(): Promise<string[]> {
         }
         const pnl1h = calculatePartialPnL(sizing1h.actualRiskUsd);
 
-        // Đặt lệnh MEXC (thực tế hoặc dry-run)
+        // QUY TẮC AN TOÀN TUYỆT ĐỐI: 1H chỉ chạy Paper & gửi Alert Telegram tham khảo, KHÔNG BAO GIỜ đặt lệnh thật
         const mexcOrder1h = await submitMexcOrder({
           symbol: coin,
           side: s.side,
@@ -461,6 +457,7 @@ export async function scanAndAlert(): Promise<string[]> {
           price: s.entry,
           leverage: sizing1h.leverage,
           stopLossPrice: s.stop,
+          dryRunOverride: true,
         });
 
         if (!mexcOrder1h.success) {

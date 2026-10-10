@@ -52,12 +52,14 @@ export interface MexcTpSlResult {
   tp2OrderId?: string;
 }
 
-// Cache thông tin hợp đồng từ file data/mexc-contracts.json
+import { MEXC_CONTRACT_SPECS } from "./mexc-contracts-data.ts";
+
+// Cache thông tin hợp đồng từ file data/mexc-contracts.json (fallback vào MEXC_CONTRACT_SPECS)
 let contractCache: Record<string, { contractSize: number; minVol: number; maxLeverage: number }> | null = null;
 
 export function loadContracts(): Record<string, { contractSize: number; minVol: number; maxLeverage: number }> {
   if (contractCache) return contractCache;
-  contractCache = {};
+  contractCache = { ...MEXC_CONTRACT_SPECS };
   try {
     const filePath = path.join(process.cwd(), "data", "mexc-contracts.json");
     if (fs.existsSync(filePath)) {
@@ -218,7 +220,11 @@ export async function submitMexcOrder(params: {
   dryRunOverride?: boolean;
 }): Promise<MexcOrderResult> {
   const { apiKey, secretKey, isConfigured, isDryRun: defaultDryRun } = getMexcCredentials();
-  const isDryRun = params.dryRunOverride ?? defaultDryRun;
+  // KHÓA AN TOÀN TUYỆT ĐỐI:
+  // Nếu hệ thống đang ở chế độ Dry-Run (hoặc chưa cấu hình Live), isDryRun LUÔN LUÔN là true.
+  // params.dryRunOverride chỉ có tác dụng ép một lệnh cụ thể về Dry-Run (nếu dryRunOverride === true),
+  // tuyệt đối KHÔNG cho phép biến một lệnh từ Dry-Run thành Live.
+  const isDryRun = defaultDryRun || params.dryRunOverride === true;
   const mexcSymbol = params.symbol.includes("_") ? params.symbol : `${params.symbol.replace("-USDT", "")}_USDT`;
   const sideStr = params.side > 0 ? "LONG" : "SHORT";
   const { vol, actualNotional } = calculateContractVol(mexcSymbol, params.notional, params.price);
@@ -494,7 +500,16 @@ export async function moveStopsToBreakeven(): Promise<string[]> {
     const live = orders.filter((o) => String(o.positionId ?? "") === String(position.positionId) && Number(o.isFinished ?? 0) === 0);
     const tps = live.filter((o) => Number(o.takeProfitPrice ?? 0) > 0 && !(Number(o.stopLossPrice ?? 0) > 0));
     const sl = live.find((o) => Number(o.stopLossPrice ?? 0) > 0);
-    if (!sl || tps.length !== 1 || position.holdVol > Number(tps[0].vol ?? 0)) continue;
+    // Chỉ dời SL về BE nếu vị thế ban đầu có chia TP1 (tối thiểu 2 hợp đồng).
+    // Nếu chỉ có 1 hợp đồng (chỉ có 1 lệnh TP từ đầu), tuyệt đối không dời về BE khi chưa chốt.
+    if (!sl || tps.length !== 1) continue;
+    // Nếu position holdVol bằng đúng vol của lệnh TP duy nhất này và chưa từng có TP1 khớp:
+    // Kiểm tra xem TP duy nhất này có phải là TP2 còn lại không
+    const tpOrder = tps[0];
+    const tpVol = Number(tpOrder.vol ?? 0);
+    // Nếu vị thế chỉ có 1 hợp đồng từ đầu (holdVol === 1 && tpVol === 1), đây không phải là đã khớp TP1!
+    if (position.holdVol === 1 && tpVol === 1) continue;
+    if (position.holdVol > tpVol) continue;
     const slPrice = Number(sl.stopLossPrice);
     const alreadyBe = position.positionType === 1 ? slPrice >= entry : slPrice <= entry;
     if (alreadyBe) continue;
@@ -520,6 +535,11 @@ export async function updateMexcStopLossPrice(symbol: string, newStopPrice: numb
     const orders = await mexcPrivate<Array<Record<string, unknown>>>("/api/v1/private/stoporder/open_orders");
     const sl = orders.find((o) => o.symbol === mexcSymbol && Number(o.stopLossPrice ?? 0) > 0 && Number(o.isFinished ?? 0) === 0);
     if (!sl?.id) return false;
+    const currentSl = Number(sl.stopLossPrice ?? 0);
+    // BẢO VỆ RỦI RO: Chỉ được phép nâng SL lên cao hơn (bảo vệ lãi), TUYỆT ĐỐI không hạ SL xuống sâu hơn
+    if (currentSl > 0 && newStopPrice <= currentSl) {
+      return false;
+    }
     await mexcPrivate("/api/v1/private/stoporder/change_plan_price", {
       stopPlanOrderId: sl.id,
       stopLossPrice: newStopPrice,
