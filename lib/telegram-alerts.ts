@@ -5,13 +5,13 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings } from "@/lib/patterns";
-import { candles, ticker } from "@/lib/okx";
+import { analyse, swings, analyseDaily } from "@/lib/patterns";
+import { candles, ticker, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, updateMexcStopLossPrice } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -53,23 +53,29 @@ declare global {
 const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
 const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
 
-const dailyTrendCache: Record<string, { trend: 1 | -1 | 0; ts: number }> = {};
+const dailyDataCache: Record<string, { trend: 1 | -1 | 0; cs: Candle[]; ts: number }> = {};
+
+async function getDailyData(coin: string): Promise<{ trend: 1 | -1 | 0; cs: Candle[] }> {
+  const cached = dailyDataCache[coin];
+  if (cached && Date.now() - cached.ts < 30 * 60_000) return cached;
+  try {
+    const cs = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
+    if (cs.length < 60) return { trend: 0, cs };
+    let ema = cs[0].c;
+    for (const c of cs) ema += (2 / 51) * (c.c - ema);
+    const trend: 1 | -1 | 0 = cs.at(-1)!.c > ema ? 1 : -1;
+    const entry = { trend, cs, ts: Date.now() };
+    dailyDataCache[coin] = entry;
+    return entry;
+  } catch {
+    if (cached) return cached;
+    return { trend: 0, cs: [] };
+  }
+}
 
 async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
-  const cached = dailyTrendCache[coin];
-  if (cached && Date.now() - cached.ts < 30 * 60_000) return cached.trend;
-  try {
-    const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
-    if (d.length < 60) return 0;
-    let ema = d[0].c;
-    for (const c of d) ema += (2 / 51) * (c.c - ema);
-    const tr = d.at(-1)!.c > ema ? 1 : -1;
-    dailyTrendCache[coin] = { trend: tr, ts: Date.now() };
-    return tr;
-  } catch {
-    if (cached) return cached.trend;
-    return 0;
-  }
+  const data = await getDailyData(coin);
+  return data.trend;
 }
 
 const f = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
@@ -186,6 +192,30 @@ export async function scanAndAlert(): Promise<string[]> {
   const livePositions = await getMexcOpenPositions();
   const openSymbols = new Set(livePositions.filter((position) => position.holdVol > 0).map((position) => position.symbol.replace("_USDT", "")));
 
+  // Trailing Stop & Thoát lệnh bảo toàn lãi cho các vị thế đang nắm giữ
+  for (const pos of livePositions) {
+    if (pos.holdVol <= 0) continue;
+    const posCoin = pos.symbol.replace("_USDT", "");
+    const dailyInfo = await getDailyData(posCoin);
+    if (dailyInfo.cs.length < 25) continue;
+    const aDaily = analyseDaily(dailyInfo.cs);
+    const lastDailyClose = dailyInfo.cs.at(-1)?.c ?? 0;
+
+    // 1. Nếu giá đóng cửa nến Ngày gãy đáy 10D hoặc BTC gãy xu hướng ngày -> Thoát lệnh để khóa lợi nhuận sóng lớn
+    if (pos.positionType === 1 && (lastDailyClose < aDaily.pastLow10d || btc < 0)) {
+      console.log(`[MEXC TRAILING EXIT] ${pos.symbol} gãy đáy 10D (${lastDailyClose} < ${aDaily.pastLow10d}) hoặc BTC gãy trend. Đang chốt lời...`);
+      await closeMexcPosition({ symbol: pos.symbol, side: 1, vol: pos.holdVol });
+      await send(
+        `🛡️ *[CHỐT LÃI / THOÁT TREND 1D: ${posCoin}]*\n\n` +
+        `• Nến ngày đóng cửa (\`${f(lastDailyClose)}\`) đã thủng đáy 10 ngày (\`${f(aDaily.pastLow10d)}\`) hoặc BTC gãy trend.\n` +
+        `• Đã đóng toàn bộ *${pos.holdVol} HĐ* trên MEXC để bảo toàn lợi nhuận con sóng!`
+      );
+    } else if (pos.positionType === 1 && (pos.openAvgPrice ?? 0) > 0 && aDaily.pastLow10d > (pos.openAvgPrice ?? 0)) {
+      // 2. Trailing nâng SL: Nếu đáy 10D đã cao hơn giá vào lệnh -> dời SL lên đáy 10D để lock lãi
+      await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
+    }
+  }
+
   // Cho phép tối đa 3 lệnh nếu là kèo đẹp (Star Setup), bình thường giữ tối đa 2 lệnh
   const starTradeLimit = currentTier.tier === 1 ? 3 : currentTier.maxOpenTrades;
   if (openSymbols.size >= starTradeLimit) {
@@ -197,14 +227,86 @@ export async function scanAndAlert(): Promise<string[]> {
     if (openSymbols.has(coin)) continue;
     try {
       await new Promise((r) => setTimeout(r, 120));
-      const [bars4h, own] = await Promise.all([
+      const [bars4h, dailyInfo] = await Promise.all([
         candles(`${coin}-USDT-SWAP`, "4H", 300),
-        coin === "BTC" ? btc : dailyTrend(coin)
+        getDailyData(coin),
       ]);
+      const own = coin === "BTC" ? btc : dailyInfo.trend;
+      const bars1d = dailyInfo.cs;
       reconcilePaperPositions(coin, bars4h, currentEquity);
       const a4 = analyse(bars4h);
 
       const tLive = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+
+      // 0. Quét Daily Trend Following Donchian (Chiến lược t = +3.35, ExpR = +0.60R)
+      if (bars1d.length >= 25 && btc > 0) {
+        const aDaily = analyseDaily(bars1d);
+        for (const s of aDaily.setups) {
+          if (s.state !== "triggered") continue;
+          if (openSymbols.has(coin) || openSymbols.size >= starTradeLimit) continue;
+          const decision = evaluateSetup(s, {
+            coin,
+            timeframe: "1D",
+            btcDaily: btc,
+            ownDaily: own,
+            equity: currentEquity,
+            peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
+            lastBarTime: aDaily.lastBarTime,
+            livePrice: tLive?.last,
+          });
+
+          if (!decision.accepted || !decision.plan) continue;
+          const plan = decision.plan;
+          const key = `1D:${coin}:${s.style}:${s.side}:${aDaily.lastBarTime}`;
+          if (sent.has(key)) continue;
+
+          const sizing = plan.sizing;
+          if (sizing.margin > remainingMargin) continue;
+
+          const mexcOrder = await submitMexcOrder({
+            symbol: coin,
+            side: s.side,
+            notional: sizing.notional,
+            price: s.entry,
+            leverage: sizing.leverage,
+            stopLossPrice: s.stop,
+          });
+
+          if (mexcOrder.success) {
+            const protection = await submitMexcTpSl({
+              symbol: coin,
+              side: s.side,
+              vol: mexcOrder.vol,
+              stopLossPrice: s.stop,
+              takeProfit1Price: plan.tp1,
+              takeProfit2Price: plan.tp2,
+            });
+
+            await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection);
+            openSymbols.add(coin);
+            remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+
+            const riskPct = Math.abs(s.entry - s.stop) / s.entry;
+            const autoTag = mexcOrder.isDryRun
+              ? `🚀 *[VÀO LỆNH (PAPER)]*`
+              : `🤖 *[MEXC ĐÃ VÀO LỆNH THẬT - ${mexcOrder.vol} HĐ]*`;
+
+            itemsToSend.push({
+              key,
+              msg:
+                `${autoTag} 🟢 LONG *${coin}* (Khung Ngày 1D)\n` +
+                `• *Chiến lược:* Daily Donchian Trend Following (t = +3.35, ExpR = +0.60R)\n` +
+                `• *Điểm vào:* ~${f(s.entry)}\n` +
+                `• *Cắt lỗ (SL cứng 2 ATR):* ${f(s.stop)} (-${(riskPct * 100).toFixed(2)}%)\n` +
+                `• *Mốc Trailing thoát lệnh (Đáy 10D):* ${f(aDaily.pastLow10d)}\n` +
+                `• *Vốn rủi ro (Risk):* \`${sizing.actualRiskUsd.toFixed(2)}$\` (${mexcOrder.vol} HĐ x10 Isolated)\n` +
+                `• *Điều kiện vĩ mô:* BTC Ngày Uptrend 🟢, Phá đỉnh 20 ngày 🚀`,
+            });
+            sent.add(key);
+            saveDedup(sent, preSent);
+          }
+        }
+      }
 
       // 1. Quét 4H
       for (const s of a4.setups) {

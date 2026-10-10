@@ -2,8 +2,8 @@
 
 > **Mục đích**: File này tóm tắt toàn bộ kiến trúc, exports, API và biến môi trường của dự án. AI trợ lý hãy đọc file này trước tiên để hiểu trọn vẹn dự án mà không cần đọc mò mẫm hàng nghìn dòng code.
 
-- **Cập nhật lúc:** `2026-10-10T07:09:16.539Z`
-- **Tổng số files mã nguồn:** `92` files
+- **Cập nhật lúc:** `2026-10-10T07:29:54.551Z`
+- **Tổng số files mã nguồn:** `97` files
 
 ### 🔑 Biến môi trường cốt lõi (`process.env`)
 `CRON_SECRET`, `MEXC_API_KEY`, `MEXC_SECRET_KEY`, `MEXC_LIVE_TRADING`, `MEXC_DRY_RUN`, `ALERT_CAPITAL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `NEXT_RUNTIME`, `PAPER_LEDGER_FILE`, `PAPER_SLIPPAGE_RATE`, `PAPER_FEE_RATE`
@@ -25,7 +25,7 @@
 
 #### 📁 `app/api/mexc-check/route.ts`
   - `const runtime`
-  - `GET(): void`
+  - `GET(request: Request): void`
 
 #### 📁 `app/api/paper/route.ts`
   - `const runtime`
@@ -76,6 +76,7 @@
   - `getMexcOpenPositions(): Promise<MexcPosition[]>`
   - `closeMexcPosition(params: { symbol: string; side: 1 | -1; vol: number }): Promise<void>`
   - `moveStopsToBreakeven(): Promise<string[]>`
+  - `updateMexcStopLossPrice(symbol: string, newStopPrice: number): Promise<boolean>`
   - *Gọi API:* `https://api.mexc.com`
 
 #### 📁 `lib/okx.ts`
@@ -102,6 +103,7 @@
   - `swings(cs: Candle[]): void`
   - `trendOf(cs: Candle[], highs: number[], lows: number[]): -1 | 0 | 1`
   - `analyse(all: Candle[]): void`
+  - `analyseDaily(all: Candle[]): void`
 
 #### 📁 `lib/telegram-alerts.ts`
   - `send(text: string): Promise<boolean>`
@@ -317,6 +319,18 @@
 #### 📁 `service/scripts/test_15m.py`
   - `def run_15m_test() -> any`
 
+#### 📁 `service/scripts/test_daily_trend_following.py`
+  - `def run_daily_trend_study(lookback_entry=20, lookback_exit=10, atr_mult=2.0) -> any`
+  - `def evaluate(trades) -> any`
+
+#### 📁 `service/scripts/trend_daily_study.py`
+  - `def atr(cs, i, n=20) -> any`
+  - `def run_symbol(cs, n_in, n_out) -> any`
+  - `def stats(rows) -> any`
+  - `def account(rows, start=50.0, risk=0.01, max_open=5) -> any`
+  - `def fmt(s) -> any`
+  - `def main() -> any`
+
 #### 📁 `service/scripts/trend_ride_study.py`
   - `def index_by_time(cs) -> any`
   - `def last_closed(idx_map, t_close, period) -> any`
@@ -346,4 +360,10 @@
 #### 📁 `tests/test_parity.py`
   - `def py_signals(win) -> any`
   - `def test_ts_matches_python(sym) -> any`
+
+#### 📁 `tests/test_trend_daily.py`
+  - `def c(t, o, h, l, cl) -> any`
+  - `def base() -> any`
+  - `def test_stop_loss_is_minus_one_r() -> any`
+  - `def test_channel_exit_next_open() -> any`
 

@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test:policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_policy.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_decision.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_capital_tier.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_hidden_factors.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_mexc_client.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_paper_ledger.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_breakeven.mjs && node tests/test_contract_wiring.mjs"
+    "test:policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_policy.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_decision.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_capital_tier.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_hidden_factors.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_mexc_client.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_paper_ledger.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_breakeven.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_daily_donchian.mjs && node tests/test_contract_wiring.mjs"
   },
   "dependencies": {
     "next": "^16.4.0",

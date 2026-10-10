@@ -5,7 +5,7 @@ import type { Candle } from "@/lib/okx";
 const W = 3;
 
 export type Setup = {
-  style: "bos" | "double_top_bottom" | "pinbar_reversal";
+  style: "bos" | "double_top_bottom" | "pinbar_reversal" | "daily_trend_donchian";
   state: "triggered" | "pending";
   side: 1 | -1;
   entry: number; // triggered: next-bar reference (last close); pending: price that triggers the setup
@@ -170,4 +170,68 @@ export function analyse(all: Candle[]) {
   }
 
   return { trend, close: c.c, atrPct: atr / c.c, lastBarTime: c.t, setups };
+}
+
+/**
+ * Phân tích Donchian Breakout 20/10 trên nến Ngày (1D):
+ * - Chiến lược Trend Following có t-statistic = +3.35, ExpR = +0.604R sau phí sàn.
+ */
+export function analyseDaily(all: Candle[]) {
+  const cs = all.filter((c) => c.closed);
+  if (cs.length < 25) {
+    return { close: cs.at(-1)?.c ?? 0, lastBarTime: cs.at(-1)?.t ?? 0, pastLow10d: 0, pastHigh20d: 0, setups: [] };
+  }
+
+  const i = cs.length - 1;
+  const c = cs[i];
+  const prev = cs[i - 1];
+
+  // ATR 20 Ngày
+  let atr = 0;
+  for (let k = 1; k < cs.length; k++) {
+    const tr = Math.max(cs[k].h - cs[k].l, Math.abs(cs[k].h - cs[k - 1].c), Math.abs(cs[k].l - cs[k - 1].c));
+    atr = k >= 20 ? (atr * 19 + tr) / 20 : tr;
+  }
+
+  // Đỉnh 20 ngày trước (không tính nến hiện tại)
+  const prev20 = cs.slice(Math.max(0, i - 20), i);
+  const pastHigh20d = Math.max(...prev20.map((x) => x.h));
+
+  // Đáy 10 ngày trước (để làm mốc Trailing Stop)
+  const prev10 = cs.slice(Math.max(0, i - 10), i);
+  const pastLow10d = Math.min(...prev10.map((x) => x.l));
+
+  const setups: Setup[] = [];
+
+  // Breakout 20-Day High (Donchian Trend Following)
+  if (c.c > pastHigh20d && pastHigh20d >= prev.c) {
+    const stop = c.c - 2.0 * atr;
+    setups.push({
+      style: "daily_trend_donchian",
+      state: "triggered",
+      side: 1,
+      entry: c.c,
+      stop,
+      ...levels(1, c.c, stop),
+      target: pastLow10d,
+      level: pastHigh20d,
+      distancePct: 0,
+      isCleanBody: true,
+    });
+  } else if (c.c <= pastHigh20d) {
+    const stop = pastHigh20d - 2.0 * atr;
+    setups.push({
+      style: "daily_trend_donchian",
+      state: "pending",
+      side: 1,
+      entry: pastHigh20d,
+      stop,
+      ...levels(1, pastHigh20d, stop),
+      target: pastLow10d,
+      level: pastHigh20d,
+      distancePct: pastHigh20d / c.c - 1,
+    });
+  }
+
+  return { close: c.c, atrPct: atr / c.c, lastBarTime: c.t, pastLow10d, pastHigh20d, setups };
 }

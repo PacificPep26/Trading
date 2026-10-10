@@ -119,25 +119,28 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
     return reject("PENDING_CONFIRMATION");
   }
 
-  // 6. Kiểm tra tín hiệu quá hạn (> 8 tiếng)
-  if (now - ctx.lastBarTime > 8 * 60 * 60_000 || ctx.lastBarTime > now + 5 * 60_000) {
+  // 6. Kiểm tra tín hiệu quá hạn (> 36 tiếng cho 1D, > 8 tiếng cho 4H)
+  const maxStaleMs = ctx.timeframe === "1D" ? 36 * 60 * 60_000 : 8 * 60 * 60_000;
+  if (now - ctx.lastBarTime > maxStaleMs || ctx.lastBarTime > now + 5 * 60_000) {
     return reject("STALE_SIGNAL");
   }
 
-  // 7. Kiểm tra khoảng cách Dừng lỗ (SL): Bắt buộc từ 1.5% đến 6.0%
+  // 7. Kiểm tra khoảng cách Dừng lỗ (SL): 1.5% đến 6.0% (cho 4H), tối đa 15% (cho 1D)
   const riskPct = Math.abs(setup.entry - setup.stop) / setup.entry;
+  const maxStopDistance = ctx.timeframe === "1D" ? 0.15 : MAX_STOP_DISTANCE;
   if (
     riskPct < MIN_STOP_DISTANCE ||
-    riskPct > MAX_STOP_DISTANCE ||
+    riskPct > maxStopDistance ||
     (setup.side > 0 ? setup.stop >= setup.entry : setup.stop <= setup.entry)
   ) {
     return reject("INVALID_STOP");
   }
 
-  // 8. Chống trôi giá / vào lệnh trễ: nếu giá live đã chạy quá 0.25% so với entry
+  // 8. Chống trôi giá / vào lệnh trễ
   if (ctx.livePrice && Number.isFinite(ctx.livePrice)) {
     const drift = Math.abs(ctx.livePrice - setup.entry) / setup.entry;
-    if (drift > MAX_PRICE_DRIFT) {
+    const maxDrift = ctx.timeframe === "1D" ? 0.015 : MAX_PRICE_DRIFT;
+    if (drift > maxDrift) {
       return reject("RUNAWAY_PRICE");
     }
   }

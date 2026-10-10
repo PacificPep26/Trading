@@ -8,7 +8,7 @@ export const MAX_STOP_DISTANCE = 0.060; // 6.0% tối đa (chặn mega-stop, an 
 export const MAX_PRICE_DRIFT = 0.0025;   // 0.25% tối đa trôi giá (chống vào trễ, đu đỉnh/đu đáy)
 
 export type StrategyStatus = "research" | "paper" | "rejected";
-export type Timeframe = "4H" | "1H";
+export type Timeframe = "4H" | "1H" | "1D";
 export type DecisionCode =
   | "ACCEPTED"
   | "PENDING_CONFIRMATION"
@@ -31,6 +31,7 @@ export const STRATEGY_REGISTRY = {
   bos_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
   double_top_bottom_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
   pinbar_reversal_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
+  daily_trend_donchian: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1D" as Timeframe },
 } as const;
 
 export interface TradeSizing {
@@ -49,6 +50,12 @@ export function isAllowedSetup(style: string, side: 1 | -1, tf: Timeframe, btcDa
   // 2. Tuyệt đối KHÔNG LONG khi BTC Ngày đang là Downtrend (-1)
   if (side > 0 && btcDaily < 0) return false;
 
+  if (tf === "1D") {
+    if (style === "daily_trend_donchian") {
+      return side > 0 ? btcDaily > 0 : btcDaily < 0;
+    }
+    return false;
+  }
   if (tf === "4H") {
     if (style === "bos") {
       if (side > 0) return !(ownDaily < 0);
@@ -94,6 +101,9 @@ export function isLiveEligible(
   ownDaily: number,
   btcDaily: number
 ): boolean {
+  if (tf === "1D" && style === "daily_trend_donchian") {
+    return side > 0 ? btcDaily > 0 : btcDaily < 0;
+  }
   const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
   return tf === "4H" && style === "double_top_bottom" && isFullyAligned;
 }
