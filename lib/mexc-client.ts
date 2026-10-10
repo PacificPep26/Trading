@@ -526,34 +526,6 @@ export async function moveStopsToBreakeven(): Promise<string[]> {
 }
 
 /**
- * Nâng mức Stop Loss lên giá cụ thể (dùng cho Trailing Stop khung Ngày theo đáy 10D)
- */
-export async function updateMexcStopLossPrice(symbol: string, newStopPrice: number): Promise<boolean> {
-  const { isConfigured, isDryRun } = getMexcCredentials();
-  if (isDryRun || !isConfigured) return false;
-  const mexcSymbol = symbol.includes("_") ? symbol : `${symbol.replace("-USDT", "")}_USDT`;
-  try {
-    const orders = await mexcPrivate<Array<Record<string, unknown>>>("/api/v1/private/stoporder/open_orders");
-    const sl = orders.find((o) => o.symbol === mexcSymbol && Number(o.stopLossPrice ?? 0) > 0 && Number(o.isFinished ?? 0) === 0);
-    if (!sl?.id) return false;
-    const currentSl = Number(sl.stopLossPrice ?? 0);
-    // BẢO VỆ RỦI RO: Chỉ được phép nâng SL lên cao hơn (bảo vệ lãi), TUYỆT ĐỐI không hạ SL xuống sâu hơn
-    if (currentSl > 0 && newStopPrice <= currentSl) {
-      return false;
-    }
-    await mexcPrivate("/api/v1/private/stoporder/change_plan_price", {
-      stopPlanOrderId: sl.id,
-      stopLossPrice: newStopPrice,
-      ...(Number(sl.takeProfitPrice ?? 0) > 0 ? { takeProfitPrice: Number(sl.takeProfitPrice) } : {}),
-    });
-    return true;
-  } catch (err) {
-    console.warn(`[MEXC TRAIL] Không dời được SL cho ${mexcSymbol}:`, err);
-    return false;
-  }
-}
-
-/**
  * Lấy danh sách lệnh điều kiện (TP / SL) đang chờ kích hoạt
  */
 export async function getMexcOpenStopOrders(): Promise<Array<Record<string, unknown>>> {

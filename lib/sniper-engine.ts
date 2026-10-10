@@ -4,7 +4,9 @@
  * - 1H Breakout / BOS được đưa vào Radar rình mồi (Watchlist).
  * - Tự động hạ xuống nến 15m kiểm tra nhịp hồi quét thanh khoản (Retest / Sweep).
  * - Chỉ kích hoạt khi nến 15m xuất hiện phản ứng rút chân (Pinbar / Bullish Rejection).
- * - SL đặt dưới đáy râu 15m (siêu ngắn: ~0.6% - 1.0%), R:R tối thiểu 1:2.5.
+ * - SL đặt dưới đáy râu 15m (0.4% - 2.5%), TP1 1.5R / TP2 3R.
+ * - Backtest 2023–2026 (service/scripts/sniper_15m_study.mjs, phí taker 0.08%/chiều): −0.31R/lệnh, t=−18,
+ *   âm cả trước phí (−0.07R) → CHỈ GỬI TIN THAM KHẢO, không đặt lệnh.
  */
 
 import type { Candle } from "./okx.ts";
@@ -12,7 +14,7 @@ import type { Candle } from "./okx.ts";
 export interface PendingSniperTarget {
   coin: string;
   side: 1 | -1;
-  breakoutTime: number;
+  breakoutTime: number; // giờ ĐÓNG nến 1H phá vỡ: chỉ nến 15m sau mốc này mới tính là nhịp hồi
   breakoutPrice: number;
   brokenLevel: number;
   waveHigh: number;
@@ -33,7 +35,7 @@ export interface SniperSignal {
   reason: string;
 }
 
-// Bảng nhớ radar rình mồi toàn cục trong tiến trình server
+// shortcut: radar chỉ nằm trong RAM, restart/redeploy là mất; lưu file nếu sniper được đưa lên live
 declare global {
   var mtfSniperRadar: Map<string, PendingSniperTarget> | undefined;
 }
@@ -69,7 +71,7 @@ export function evaluate15mSniper(
 
   if (bars15m.length < 5) return null;
 
-  // Lấy các nến 15m đóng cửa SAU thời điểm 1H phá vỡ
+  // Lấy các nến 15m đóng cửa SAU khi nến 1H phá vỡ đã đóng
   const closedBars = bars15m.filter((b) => b.closed && b.t >= target.breakoutTime);
   if (closedBars.length === 0) return null;
 
@@ -105,7 +107,7 @@ export function evaluate15mSniper(
       const stop = latestBar.l * 0.999;
       const riskPct = (entry - stop) / entry;
 
-      // Bảo vệ: Khoảng cách SL phải nằm trong khoảng an toàn (0.4% đến 2.0%)
+      // Khoảng cách SL hợp lệ: 0.4% đến 2.5%
       if (riskPct < 0.004 || riskPct > 0.025) return null;
 
       const riskDist = entry - stop;
@@ -182,20 +184,23 @@ export function getTradingSessionInfo(date = new Date()): {
   isHighVolumeWindow: boolean;
   multiplierText: string;
 } {
-  const vnHour = (date.getUTCHours() + 7) % 24;
-  const vnMinute = date.getUTCMinutes();
-  const timeNum = vnHour + vnMinute / 60;
+  // Giờ địa phương theo IANA để tự đúng khi London/New York đổi giờ mùa hè/đông
+  const localHour = (timeZone: string) => {
+    const [h, m] = date.toLocaleTimeString("en-GB", { timeZone, hour12: false, hour: "2-digit", minute: "2-digit" }).split(":").map(Number);
+    return (h % 24) + m / 60;
+  };
+  const london = localHour("Europe/London"), newYork = localHour("America/New_York"), vn = localHour("Asia/Ho_Chi_Minh");
 
-  // Phiên London: 14:00 - 18:00 VN
-  if (timeNum >= 14.0 && timeNum < 18.0) {
+  // Phiên London: 08:00 - 12:00 giờ London
+  if (london >= 8 && london < 12) {
     return { session: "London", isHighVolumeWindow: true, multiplierText: "🔥 Phiên London (Tiền to Châu Âu đang vào)" };
   }
-  // Phiên New York (Phố Wall): 20:30 - 00:30 VN
-  if ((timeNum >= 20.5 && timeNum <= 24.0) || timeNum < 0.5) {
+  // Phiên New York (Phố Wall): 09:30 - 13:30 giờ New York
+  if (newYork >= 9.5 && newYork < 13.5) {
     return { session: "New York", isHighVolumeWindow: true, multiplierText: "🚀 Phiên New York / Phố Wall (Thanh khoản đỉnh cao)" };
   }
   // Phiên Á: 07:00 - 12:00 VN
-  if (timeNum >= 7.0 && timeNum < 12.0) {
+  if (vn >= 7.0 && vn < 12.0) {
     return { session: "Asian", isHighVolumeWindow: false, multiplierText: "☕ Phiên Châu Á (Thanh khoản vừa phải)" };
   }
   return { session: "Off-hours", isHighVolumeWindow: false, multiplierText: "🌙 Khung giờ tĩnh (Thanh khoản mỏng)" };
@@ -230,35 +235,4 @@ export function detectVolumeAbsorption(candles: Candle[]): {
     }
   }
   return { isAbsorption: false, ratio };
-}
-
-/**
- * 3. MẢNH GHÉP BẪY ÉP PHÍ TÀI TRỢ (Funding Squeeze Anomaly)
- * Phát hiện phe Short bị ép phí âm nặng (âm sâu <= -0.05%), dễ kích hoạt Short Squeeze bắn dựng cột
- */
-export function detectFundingSqueeze(fundingRate?: number): {
-  isSqueezeSetup: boolean;
-  direction?: 1 | -1;
-  desc: string;
-} {
-  if (fundingRate === undefined || !Number.isFinite(fundingRate)) {
-    return { isSqueezeSetup: false, desc: "Funding bình thường" };
-  }
-  // Short squeeze: Đám đông Short quá đà (Funding âm sâu <= -0.05%)
-  if (fundingRate <= -0.0005) {
-    return {
-      isSqueezeSetup: true,
-      direction: 1, // Thiên hướng Long ép Short cháy
-      desc: `⚡ BẪY ÉP PHÍ SHORT SQUEEZE: Funding âm nặng (${(fundingRate * 100).toFixed(3)}%). Phe Short đang bị bào mòn phí, dễ kích hoạt cột nổ dựng đứng!`,
-    };
-  }
-  // Long squeeze: Đám đông Long fomo quá đà (Funding dương cao >= +0.06%)
-  if (fundingRate >= 0.0006) {
-    return {
-      isSqueezeSetup: true,
-      direction: -1, // Thiên hướng Short ép Long buông tay
-      desc: `⚠️ BẪY ÉP PHÍ LONG SQUEEZE: Funding dương cực cao (${(fundingRate * 100).toFixed(3)}%). Phe Long đang chịu phí khủng, dễ có cây xả rũ!`,
-    };
-  }
-  return { isSqueezeSetup: false, desc: "Funding ổn định" };
 }

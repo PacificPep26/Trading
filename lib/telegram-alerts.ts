@@ -11,8 +11,8 @@ import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, updateMexcStopLossPrice } from "@/lib/mexc-client";
-import { registerSniperTarget, evaluate15mSniper, sniperRadar, getTradingSessionInfo, detectVolumeAbsorption, detectFundingSqueeze } from "@/lib/sniper-engine";
+import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
+import { registerSniperTarget, evaluate15mSniper, sniperRadar, getTradingSessionInfo, detectVolumeAbsorption } from "@/lib/sniper-engine";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -238,11 +238,7 @@ export async function scanAndAlert(): Promise<string[]> {
           liveOpenSymbols.delete(posCoin);
           continue;
         }
-
-        // Nếu chưa thủng đáy 10D, tiếp tục Trailing nâng SL lên đáy 10D (nếu đáy 10D cao hơn SL hiện tại)
-        if (aDaily.pastLow10d > 0) {
-          await updateMexcStopLossPrice(pos.symbol, aDaily.pastLow10d);
-        }
+        // Không trailing SL trong ngày: backtest chỉ thoát khi NẾN NGÀY ĐÓNG thủng đáy 10D, còn lại giữ SL 2×ATR
       }
     } catch (trailErr) {
       console.error(`[MEXC TRAIL] Lỗi xử lý vị thế ${pos.symbol}:`, trailErr);
@@ -538,7 +534,7 @@ export async function scanAndAlert(): Promise<string[]> {
         registerSniperTarget({
           coin,
           side: s.side,
-          breakoutTime: a1.lastBarTime,
+          breakoutTime: a1.lastBarTime + 3_600_000,
           breakoutPrice: s.entry,
           brokenLevel: s.level,
           waveHigh: Math.max(...bars1h.slice(-12).map((b) => b.h)),
@@ -555,7 +551,7 @@ export async function scanAndAlert(): Promise<string[]> {
             `• *Chốt lời (TP):* TP1 ${f(plan1h.tp1)} (+${pnl1h.winTp1.toFixed(2)}$) | TP2 ${f(plan1h.tp2)} (+${pnl1h.totalWin.toFixed(2)}$)\n` +
             `• *Sao vô:* ${reason1h}\n` +
             `• *Ký quỹ:* ~${sizing1h.margin}$ (x${sizing1h.leverage} Isolated) · *Rủi ro 1R:* ${sizing1h.actualRiskUsd}$\n` +
-            `🎯 *[RADAR 15M ĐÃ KÍCH HOẠT]*: Đang tự động rình nhịp nến 15m hồi về test cản ${f(s.level)} để bắt điểm vào siêu tối ưu!`
+            `🎯 *[RADAR 15M]*: Theo dõi nhịp hồi 15m về cản ${f(s.level)} trong 90 phút, có tín hiệu sẽ báo (chỉ báo tin, không tự vào lệnh)`
         });
         openPaperPlan(key1h, decision1h, bars1h, currentEquity);
         break;
@@ -567,7 +563,7 @@ export async function scanAndAlert(): Promise<string[]> {
   }
 
   // 3. Quét kiểm tra các mục tiêu đang nằm trong RADAR BẮN TỈA 15M
-  for (const [coin, target] of Array.from(sniperRadar.entries())) {
+  for (const coin of Array.from(sniperRadar.keys())) {
     try {
       const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 30).catch(() => []);
       const sniperSignal = evaluate15mSniper(coin, bars15m);
@@ -580,28 +576,23 @@ export async function scanAndAlert(): Promise<string[]> {
           const tp2R = ((sniperSignal.tp2 - sniperSignal.entry) * sniperSignal.side) / rDist;
 
           const sessionInfo = getTradingSessionInfo();
-          const absorption = detectVolumeAbsorption(bars15m);
-          const fData = await funding(`${coin}-USDT-SWAP`).catch(() => null);
-          const squeeze = detectFundingSqueeze(fData?.rate);
+          const absorption = detectVolumeAbsorption(bars15m.filter((b) => b.closed));
 
           let extraInsights = `• *Khung giờ:* ${sessionInfo.multiplierText}\n`;
           if (absorption.isAbsorption) {
             extraInsights += `• *Dòng tiền:* 🐋 Phát hiện Cá Mập Hấp Thụ (Volume x${absorption.ratio.toFixed(1)} nổ to đỡ giá!)\n`;
           }
-          if (squeeze.isSqueezeSetup) {
-            extraInsights += `• *Bẫy Funding:* ${squeeze.desc}\n`;
-          }
 
           itemsToSend.push({
             key: sniperKey,
             msg:
-              `🎯 *[KÍCH HOẠT BẮN TỈA 15M - ENTRY TỐI ƯU]* ${sideStr} *${coin}*\n\n` +
+              `🎯 *[BẮN TỈA 15M - THAM KHẢO, KHÔNG VÀO LỆNH]* ${sideStr} *${coin}*\n\n` +
               `• *Tín hiệu:* ${sniperSignal.reason}\n` +
               `• *Giá vào lệnh tối ưu (Entry):* ~${f(sniperSignal.entry)}\n` +
               `• *Cắt lỗ siêu ngắn (SL):* ${f(sniperSignal.stop)} (-${(sniperSignal.riskPct * 100).toFixed(2)}%)\n` +
               `• *Chốt lời:* TP1 ~${f(sniperSignal.tp1)} (+${tp1R.toFixed(1)}R) | TP2 ~${f(sniperSignal.tp2)} (+${tp2R.toFixed(1)}R)\n` +
               extraInsights +
-              `• *Lợi thế:* Đã quét sạch râu nến và xác nhận phe Mua đỡ giá. Không còn nỗi lo đu đỉnh!`
+              `• *Lưu ý:* Backtest 2023–2026 sau phí −0.31R/lệnh (win 38%), chưa có lợi thế`
           });
         }
       }

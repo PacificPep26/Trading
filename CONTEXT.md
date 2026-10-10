@@ -22,7 +22,7 @@
 Quy định tập trung tại hàm `isLiveEligible` trong `lib/trading-policy.ts`:
 1. **Daily Trend Following (1D Donchian Breakout 20D):**
    - Vào lệnh khi nến ngày đóng phá đỉnh 20 ngày và BTC Ngày Uptrend.
-   - **Cơ chế thoát lệnh chuẩn backtest:** KHÔNG đặt TP1/TP2 cố định. Gồng lãi theo xu hướng, SL ban đầu 2×ATR20. Khi nến ngày đóng cửa thủng đáy 10 ngày (10D Low) -> đóng Market thoát lệnh ngay lập tức (dù đang lãi hay lỗ). Nếu chưa thủng thì Trailing SL theo đáy 10D.
+   - **Cơ chế thoát lệnh chuẩn backtest:** KHÔNG đặt TP1/TP2 cố định. Gồng lãi theo xu hướng, SL ban đầu 2×ATR20. Khi nến ngày đóng cửa thủng đáy 10 ngày (10D Low) -> đóng Market thoát lệnh ngay lập tức (dù đang lãi hay lỗ). Không trailing SL trong ngày (backtest chỉ thoát theo giá đóng nến ngày); còn lại giữ SL 2×ATR. Bot nhận diện vị thế 1D = vị thế LONG không có lệnh TP nào.
    - *Lưu ý nghiên cứu:* Nhật ký 10/10 ghi rõ lợi thế thị trường chủ yếu ở 2023–2024, giai đoạn 2025–2026 thị trường đi ngang nên lợi thế suy giảm. Cần quản lý vốn chặt chẽ.
 2. **4H Đảo chiều (Hai đỉnh / Hai đáy - Double Top/Bottom):**
    - Phá đường viền cổ (Neckline) đồng thuận tuyệt đối với xu hướng Ngày của BTC và Coin ($t = 1.04$).
@@ -66,17 +66,13 @@ Dành cho Agent và User tra cứu khi cần kiểm tra thông báo:
    - 🚀 **Lệnh Paper / Cảnh báo:** `🚀 [VÀO LỆNH (PAPER)]` (Các kèo BOS 4H, 1H breakout nén biên độ để user tham khảo đánh tay).
    - 🔒 **Dời SL về hòa vốn:** `🔒 [MEXC] {symbol}: TP1 đã khớp → dời SL về giá vào (hòa vốn)`.
    - 🛑 **Cảnh báo khẩn:** Báo động nếu mở vị thế nhưng không đặt được Stop Loss hoặc dính lỗi API sàn.
+   - 🚪 **Thoát lệnh 1D:** `🚪 [MEXC THOÁT LỆNH 1D - TREND EXIT]` khi nến ngày đóng thủng đáy 10 ngày.
+   - 🎯 **Bắn tỉa 15m (tham khảo):** `🎯 [BẮN TỈA 15M - THAM KHẢO, KHÔNG VÀO LỆNH]`, chỉ là tin báo.
 
 ---
 
-### 5. Hệ thống Bắn Tỉa Đa Khung Thời Gian & Bẫy Dòng Tiền (Quant Multi-Timeframe Sniper v3.0)
-Đã tích hợp và kích hoạt toàn bộ các mảnh ghép kỹ thuật tinh hoa (`lib/sniper-engine.ts`):
-1. **Radar Rình Mồi 2 Giai Đoạn (2-Phase State Machine):**
-   - Khi 1H phá đỉnh/đáy (BOS): Tuyệt đối không fomo mua ngay trên ngọn nến. Bot đưa coin vào `sniperRadar` theo dõi trong 90 phút.
-   - Hạ xuống nến 15m kiểm tra nhịp hồi về cản (Pullback / Liquidity Sweep).
-   - Chỉ kích hoạt khi nến 15m xuất hiện **Phản ứng Rút Chân (Pinbar $\ge 45\%$ râu) hoặc nến Nuốt Chửng (Engulfing)**.
-   - SL rút ngắn xuống đáy râu 15m (**-0.6% đến -0.9%**), R:R tăng vọt lên 1:3+.
-2. **Các Mảnh Ghép Bẫy Cấu Trúc Bổ Sung:**
-   - **Khung Giờ Vàng (Session Window):** Nhận diện phiên London (14h-18h VN) và New York / Phố Wall (20h30-00h30 VN) khi thanh khoản toàn cầu dồi dào nhất.
-   - **Cá Mập Hấp Thụ (Volume Absorption):** Bắt các cây nến có Volume nổ vọt $> 2.0\times$ nhưng giá rút chân mạnh (tay to chặn mua/bán).
-   - **Bẫy Ép Phí (Funding Squeeze):** Phát hiện Funding âm sâu $\le -0.05\%$ (Short Squeeze tiềm năng) hoặc dương cao $\ge +0.06\%$ (Long Squeeze).
+### 5. Bắn tỉa 15m (`lib/sniper-engine.ts`) — CHỈ BÁO TIN, KHÔNG VÀO LỆNH
+1. **Cơ chế:** kèo 1H được engine chấp nhận → đưa coin vào `sniperRadar` 90 phút (chỉ trong RAM). Chỉ xét nến 15m đóng SAU khi nến 1H phá vỡ đã đóng; kích hoạt khi nến 15m chạm vùng cản/chiết khấu rồi rút chân (râu ≥ 45%) hoặc nuốt chửng. SL dưới/trên râu 15m, cho phép **0.4%–2.5%**; TP1 1.5R, TP2 3R.
+2. **Thông tin kèm theo (chỉ hiển thị, không lọc):** giờ phiên London 08:00–12:00 giờ London, New York 09:30–13:30 giờ New York (tự đổi theo giờ mùa hè/đông); "cá mập hấp thụ" = nến 15m đã đóng có volume ≥ 2× TB20 và râu ≥ 40%.
+3. **Đã bỏ "Bẫy ép phí funding"**: ngược với bộ lọc `EXTREME_FUNDING` (|funding| > 0.03% là chặn) của decision engine nên không bao giờ hiện.
+4. **Backtest 2023–2026** ([sniper_15m_study.mjs](service/scripts/sniper_15m_study.mjs), dùng đúng code live, 21 coin, phí taker 0.08%/chiều + trượt 0.02%, TP1 rồi dời SL hòa vốn): **5.903 lệnh, −0.31R/lệnh, t=−18, win 38%**; năm nào cũng âm (−0.25 → −0.34R); chưa trừ phí vẫn −0.07R. Với 4$/lệnh ≈ −7.246$. Lọc theo phiên hay cá mập hấp thụ đều không cứu được (mọi nhóm −0.19 → −0.37R). So sánh: vào ngay kèo 1H như bot đang báo là −0.08R/lệnh (t=−8). → **Không đưa lên live.**
