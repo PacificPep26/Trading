@@ -20,13 +20,15 @@ const COINS = [
 
 const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
 
-const DEDUP_FILE = path.join(process.cwd(), "service", "telegram-sent.json");
+// data/ là Railway volume (/app/data) → chống trùng & đỉnh vốn sống sót qua redeploy
+const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 
-function loadDedup(): { sent: string[]; preSent: string[] } {
+function loadDedup(): { sent: string[]; preSent: string[]; peakEquity?: number } {
   try {
     if (fs.existsSync(DEDUP_FILE)) {
       const data = JSON.parse(fs.readFileSync(DEDUP_FILE, "utf-8"));
-      return { sent: data.sent ?? [], preSent: data.preSent ?? [] };
+      const peak = Number(data.peakEquity);
+      return { sent: data.sent ?? [], preSent: data.preSent ?? [], peakEquity: Number.isFinite(peak) && peak > 0 ? peak : undefined };
     }
   } catch {}
   return { sent: [], preSent: [] };
@@ -37,9 +39,13 @@ function saveDedup(sentSet: Set<string>, preSentSet: Set<string>) {
     const data = {
       sent: Array.from(sentSet).slice(-300),
       preSent: Array.from(preSentSet).slice(-300),
+      peakEquity: globalThis.mexcPeakEquity,
     };
+    fs.mkdirSync(path.dirname(DEDUP_FILE), { recursive: true });
     fs.writeFileSync(DEDUP_FILE, JSON.stringify(data, null, 2), "utf-8");
-  } catch {}
+  } catch (e) {
+    console.error("[DEDUP] Không ghi được file chống trùng:", e);
+  }
 }
 
 const initialDedup = loadDedup();
@@ -140,7 +146,12 @@ export async function scanAndAlert(): Promise<string[]> {
   ]);
   const mexcAsset = await getMexcAccountAsset(CAPITAL);
   const currentEquity = mexcAsset.equity;
-  globalThis.mexcPeakEquity = Math.max(globalThis.mexcPeakEquity ?? currentEquity, currentEquity);
+  const prevPeak = globalThis.mexcPeakEquity ?? initialDedup.peakEquity ?? currentEquity;
+  globalThis.mexcPeakEquity = Math.max(prevPeak, currentEquity);
+  if (globalThis.mexcPeakEquity !== initialDedup.peakEquity) {
+    initialDedup.peakEquity = globalThis.mexcPeakEquity;
+    saveDedup(sent, preSent);
+  }
   const currentTier = getCapitalTier(currentEquity);
   let remainingMargin = mexcAsset.availableBalance;
 
@@ -239,7 +250,7 @@ export async function scanAndAlert(): Promise<string[]> {
       if (!tLive || !Number.isFinite(tLive.last)) continue;
       const fundingRate = fLive?.rate;
 
-      // 0. Quét Daily Trend Following Donchian (Chiến lược t = +3.35, ExpR = +0.60R)
+      // 0. Quét Daily Trend Following Donchian (backtest: lợi thế 2025–2026 chỉ ~+0.01–0.03R/lệnh)
       if (bars1d.length >= 25 && btc > 0) {
         const aDaily = analyseDaily(bars1d);
         for (const s of aDaily.setups) {
@@ -309,7 +320,7 @@ export async function scanAndAlert(): Promise<string[]> {
               key,
               msg:
                 `${autoTag} 🟢 LONG *${coin}* (Khung Ngày 1D)\n` +
-                `• *Chiến lược:* Daily Donchian Trend Following (t = +3.35, ExpR = +0.60R)\n` +
+                `• *Chiến lược:* Daily Donchian Trend Following (thoát theo đáy 10D, không TP cố định)\n` +
                 `• *Điểm vào:* ~${f(s.entry)}\n` +
                 `• *Cắt lỗ (SL cứng 2 ATR):* ${f(s.stop)} (-${(riskPct * 100).toFixed(2)}%)\n` +
                 `• *Mốc Trailing thoát lệnh (Đáy 10D):* ${f(aDaily.pastLow10d)}\n` +

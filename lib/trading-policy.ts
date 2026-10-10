@@ -93,9 +93,9 @@ export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): b
  * Chỉ cho phép vào lệnh LIVE tiền thật đối với chiến lược đã được chứng minh
  * có kỳ vọng toán học dương sau phí Taker MEXC (0.16%) và trượt giá:
  * Hiện tại:
- * - 1D Donchian Breakout: Đạt kiểm định (t > 3 khi BTC cùng hướng).
+ * - 1D Donchian Breakout (BTC cùng hướng): ứng viên tốt nhất, nhưng lợi thế 2025–2026 chỉ ~+0.01–0.03R.
  * - 4H BOS: Chỉ chạy Paper/Telegram Alert (dữ liệu 881 lệnh sau phí là -0.005R, chưa đủ t >= 3).
- * - 4H Double Top/Bottom: Đủ chuẩn Live khi đồng thuận xu hướng cả BTC và Coin.
+ * - 4H Double Top/Bottom thuận BTC & Coin: +0.054R nhưng t=1.04 (chưa có ý nghĩa thống kê).
  */
 export function isLiveEligible(
   style: string,

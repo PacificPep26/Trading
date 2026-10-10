@@ -174,7 +174,7 @@ export function analyse(all: Candle[]) {
 
 /**
  * Phân tích Donchian Breakout 20/10 trên nến Ngày (1D):
- * - Chiến lược Trend Following có t-statistic = +3.35, ExpR = +0.604R sau phí sàn.
+ * - Backtest: train +0.80R (t=3.35, chọn sau khi xem kết quả nên bị phóng đại); 2025–2026 chỉ ~+0.01–0.03R.
  */
 export function analyseDaily(all: Candle[]) {
   const cs = all.filter((c) => c.closed);

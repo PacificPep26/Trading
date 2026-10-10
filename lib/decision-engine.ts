@@ -146,7 +146,7 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   }
 
   // 9. Tính toán kế hoạch lệnh chuẩn:
-  // - Đối với 1D Donchian Trend Following: KHÔNG CÓ TP CỐ ĐỊNH (gồng lãi theo xu hướng, thoát lệnh theo đáy 10D hoặc gãy trend BTC)
+  // - Đối với 1D Donchian Trend Following: KHÔNG CÓ TP CỐ ĐỊNH (gồng lãi theo xu hướng, thoát lệnh theo đáy 10D)
   // - Đối với 4H: Cơ chế Đệm Chốt Lời (TP1 ở 0.90R khóa hòa vốn, TP2 ở 1.85R đón đầu cản)
   const r = Math.abs(setup.entry - setup.stop);
   const isDailyDonchian = ctx.timeframe === "1D" && setup.style === "daily_trend_donchian";
