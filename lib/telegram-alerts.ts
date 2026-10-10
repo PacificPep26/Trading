@@ -128,6 +128,24 @@ export async function scanAndAlert(): Promise<string[]> {
   }
   globalThis.lastReportedTierEquity = currentEquity;
 
+  // Kiểm tra hạn API MEXC (90 ngày từ lúc tạo: 10/10/2026 -> hết hạn 08/01/2027)
+  // Chỉ cảnh báo khi còn đúng <= 1 ngày
+  const apiCreatedAt = new Date("2026-10-10T12:00:00+07:00").getTime();
+  const apiExpiresAt = apiCreatedAt + 90 * 24 * 3600 * 1000;
+  const daysLeft = (apiExpiresAt - Date.now()) / (24 * 3600 * 1000);
+  if (daysLeft <= 1.0 && daysLeft > 0) {
+    const keyExpire = `API_EXPIRE_ALERT_${new Date().toISOString().slice(0, 10)}`;
+    if (!sent.has(keyExpire)) {
+      await send(
+        `⚠️ *[CẢNH BÁO: KEY API MEXC SẮP HẾT HẠN]*\n\n` +
+        `• Key API của bác chỉ còn *${Math.max(0, Math.ceil(daysLeft * 24))} giờ* nữa là hết hạn 90 ngày!\n` +
+        `• Bác vào MEXC: *Quản lý API ➔ Thao tác ➔ Bấm Gia hạn* để cộng thêm 90 ngày nhé!`
+      );
+      sent.add(keyExpire);
+      saveDedup(sent, preSent);
+    }
+  }
+
   const paper = paperSummary(currentEquity);
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
