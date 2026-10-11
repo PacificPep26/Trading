@@ -546,7 +546,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
   if (!force && preSent.has(key)) return null;
 
   const btc = await dailyTrend("BTC");
-  const lines4h: string[] = [];
+  const candidates: { coin: string; distPct: number; line: string }[] = [];
   const paper = paperSummary(CAPITAL);
 
   for (const coin of COINS) {
@@ -566,10 +566,11 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
           const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
           const styleStr = s.style === "bos" ? "BOS 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
 
-          lines4h.push(
-            `• ${coin} ${sideStr} (${styleStr})${isStar ? " ⭐ [KÈO ĐẸP ★★★]" : ""}: ` +
-            `cần đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (cách ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (-${(risk * 100).toFixed(1)}%)`
-          );
+          candidates.push({
+            coin,
+            distPct: Math.abs(s.distancePct) * 100,
+            line: `• ${coin} ${sideStr} (${styleStr})${isStar ? " ⭐ [KÈO ĐẸP ★★★]" : ""}: cần đóng ${s.side > 0 ? ">" : "<"} ${f(s.entry)} (sát cản ${(Math.abs(s.distancePct) * 100).toFixed(2)}%) · SL ${f(s.stop)} (-${(risk * 100).toFixed(1)}%)`
+          });
         }
       }
 
@@ -578,10 +579,14 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
     }
   }
 
-  // Nếu KHÔNG có coin nào (cả 4h lẫn 1h) sắp kích hoạt: TUYỆT ĐỐI IM LẶNG, không gửi tin rác
-  if (!lines4h.length) {
+  // Nếu KHÔNG có coin nào sắp kích hoạt: TUYỆT ĐỐI IM LẶNG
+  if (!candidates.length) {
     return null;
   }
+
+  // Sắp xếp chọn ĐÚNG TOP 2 coin áp sát cản nhất, loại bỏ danh sách dài gây rối
+  candidates.sort((a, b) => a.distPct - b.distPct);
+  const lines4h = candidates.slice(0, 2).map((c) => c.line);
 
   const msg = `⏰ *[SẮP ĐÓNG NẾN 4H]* ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
     `📌 *Setup áp sát điểm kích hoạt:*\n${lines4h.join("\n")}\n\n💡 _Bot sẽ tự động đánh giá khối lượng và vào lệnh nếu đạt Chuẩn Kim Cương trong khung 16h-8h._`;
