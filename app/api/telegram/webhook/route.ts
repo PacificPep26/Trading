@@ -5,7 +5,7 @@ import { evaluateSetup } from "@/lib/decision-engine";
 import { paperSummary } from "@/lib/paper-ledger";
 import { calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier } from "@/lib/capital-tier";
-import { getMexcAccountAsset } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
