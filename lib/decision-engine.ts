@@ -153,6 +153,12 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   const tp1 = isDailyDonchian ? 0 : setup.entry + setup.side * 0.90 * r;
   const tp2 = isDailyDonchian ? 0 : setup.entry + setup.side * 1.85 * r;
 
+  const isDiamond =
+    ctx.timeframe === "4H" &&
+    setup.style === "double_top_bottom" &&
+    (setup.volumeRatio ?? 1.0) >= 2.0 &&
+    (setup.side > 0 ? (ctx.ownDaily > 0 && ctx.btcDaily > 0) : (ctx.ownDaily < 0 && ctx.btcDaily < 0));
+
   return {
     accepted: true,
     code: "ACCEPTED",
@@ -169,7 +175,7 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
       tp1,
       tp2,
       riskPct,
-      sizing: calculateTierSizing(ctx.equity, riskPct),
+      sizing: calculateTierSizing(ctx.equity, riskPct, undefined, isDiamond),
       level: setup.level,
     },
   };

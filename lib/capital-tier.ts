@@ -121,11 +121,16 @@ export interface TierSizing {
 }
 
 /**
- * Tính toán số tiền ký quỹ (Margin) và vị thế theo nấc thang vốn
+ * Tính toán số tiền ký quỹ (Margin) và vị thế theo nấc thang vốn.
+ * Đối với Kèo Kim Cương (isDiamond = true): Vào thẳng 50% vốn khả dụng theo yêu cầu của user.
  */
-export function calculateTierSizing(equity: number, stopDistancePct: number, maxLev = MAX_LEVERAGE): TierSizing {
+export function calculateTierSizing(
+  equity: number,
+  stopDistancePct: number,
+  maxLev = MAX_LEVERAGE,
+  isDiamond = false
+): TierSizing {
   const tier = getCapitalTier(equity);
-  const riskBudget = tier.riskPerTradeUsd;
   // BẢO VỆ THANH LÝ: Nếu Stop Loss xa (> 6%), tự động hạ đòn bẩy xuống x5 Isolated
   // để mức thanh lý cách xa >= 18%, đảm bảo SL luôn cắn trước khi bị thanh lý
   const effectiveLeverage = stopDistancePct > 0.06 ? Math.min(5, maxLev) : maxLev;
@@ -135,17 +140,34 @@ export function calculateTierSizing(equity: number, stopDistancePct: number, max
     return { tier, notional: 0, margin: 0, leverage: effectiveLeverage, actualRiskUsd: 0, isCapped: false };
   }
 
-  const riskSizedNotional = riskBudget / stopDistancePct;
-  const notional = Math.min(maxNotional, riskSizedNotional);
-  const margin = notional / effectiveLeverage;
-  const actualRiskUsd = notional * stopDistancePct;
+  let notional: number;
+  let margin: number;
+  let actualRiskUsd: number;
+  let isCapped = false;
+
+  if (isDiamond) {
+    // KÈO KIM CƯƠNG: Ký quỹ cố định đúng 50% vốn (equity * 0.50)
+    margin = Math.round(equity * 0.50 * 10) / 10;
+    notional = Math.round(margin * effectiveLeverage * 10) / 10;
+    actualRiskUsd = Math.round(notional * stopDistancePct * 100) / 100;
+  } else {
+    const riskBudget = tier.riskPerTradeUsd;
+    const riskSizedNotional = riskBudget / stopDistancePct;
+    notional = Math.min(maxNotional, riskSizedNotional);
+    margin = notional / effectiveLeverage;
+    actualRiskUsd = notional * stopDistancePct;
+    isCapped = riskSizedNotional > maxNotional;
+    notional = Math.round(notional * 10) / 10;
+    margin = Math.round(margin * 10) / 10;
+    actualRiskUsd = Math.round(actualRiskUsd * 100) / 100;
+  }
 
   return {
     tier,
-    notional: Math.round(notional * 10) / 10,
-    margin: Math.round(margin * 10) / 10,
+    notional,
+    margin,
     leverage: effectiveLeverage,
-    actualRiskUsd: Math.round(actualRiskUsd * 100) / 100,
-    isCapped: riskSizedNotional > maxNotional,
+    actualRiskUsd,
+    isCapped,
   };
 }
