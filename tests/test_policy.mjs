@@ -73,13 +73,13 @@ assert.equal(isAutoTradeTimeWindow(daytime), false, "10:00 VN is outside auto-tr
 const lateAfternoon = new Date("2026-10-10T08:00:00Z");
 assert.equal(isAutoTradeTimeWindow(lateAfternoon), false, "15:00 VN is outside auto-trade window");
 
-// 7. Live Eligibility (Chuẩn Kim Cương: chỉ hai đỉnh/đáy, Volume >= 2.0x, thuận coin + BTC, 16h-8h)
+// 7. Live Eligibility (Chuẩn Kim Cương: chỉ hai đỉnh/đáy, Volume >= 2.0x, thuận coin + BTC, vào lệnh 24/7)
 assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 2.5, eveningTime), true, "4H Double Bottom Long vol 2.5x in window is eligible");
 assert.equal(isLiveEligible("double_top_bottom", -1, "4H", -1, -1, 2.0, nightTime), true, "4H Double Top Short vol 2.0x in window is eligible");
+assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 3.0, daytime), true, "4H Diamond setup is eligible in all hours (daytime included)");
 // BOS: backtest 2025–26 −0.12R/lệnh sau phí -> chỉ paper
 assert.equal(isLiveEligible("bos", 1, "4H", 1, 1, 2.5, eveningTime), false, "4H BOS blocked from live");
 assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 1.5, eveningTime), false, "vol 1.5x blocked from live");
 assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, -1, 3.0, eveningTime), false, "BTC against side blocked from live");
-assert.equal(isLiveEligible("double_top_bottom", 1, "4H", 1, 1, 3.0, daytime), false, "daytime blocked from live auto-trade");
 
 console.log("All trading policy v2.3.1 tests passed!");

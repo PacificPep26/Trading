@@ -122,10 +122,8 @@ export function isLiveEligible(
     return side > 0 ? btcDaily > 0 : btcDaily < 0;
   }
 
-  // Khung 4H: Đòi hỏi điều kiện Diamond Standard và phải nằm trong khung giờ 16:00 - 08:00
+  // Khung 4H: Đòi hỏi điều kiện Chuẩn Kim Cương (Diamond Standard) - Cho phép tự động vào lệnh 24/7 (mọi khung giờ)
   if (tf === "4H") {
-    if (!isAutoTradeTimeWindow(date)) return false;
-
     const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
     if (!isFullyAligned) return false;
 

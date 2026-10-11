@@ -494,10 +494,8 @@ export async function scanAndAlert(): Promise<string[]> {
         });
 
         const autoTag = !mexcOrder.isDryRun
-          ? `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (16H-8H) - ${mexcOrder.vol} HĐ]*`
-          : isAutoTradeTimeWindow()
-            ? `📋 *[PAPER - KHÔNG ĐỦ CHUẨN LIVE]*`
-            : `🎯 *[CẢNH BÁO BAN NGÀY - TỰ BẤM TAY]*`;
+          ? `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (KIM CƯƠNG 24/7) - ${mexcOrder.vol} HĐ]*`
+          : `📋 *[PAPER - KHÔNG ĐỦ CHUẨN LIVE]*`;
 
         itemsToSend.push({
           key,
