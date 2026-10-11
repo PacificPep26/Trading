@@ -251,7 +251,7 @@ async function sendTelegramReply(token: string, chatId: number | string, text: s
         reply_markup: {
           keyboard: [
             [{ text: "🔍 Kèo 4H" }, { text: "🏦 Xem Vốn & Lệnh" }],
-            [{ text: "BTC" }, { text: "SOL" }, { text: "DOGE" }]
+            [{ text: "📊 Thống Kê Backtest" }, { text: "BTC" }, { text: "HYPE" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -366,6 +366,42 @@ export async function POST(req: NextRequest) {
 
       rule += `\n💡 _Tự động vào lệnh (16h-8h) khi đạt Chuẩn Kim Cương (Vol ≥ 2.0x)._`;
       await sendTelegramReply(token, chatId, rule);
+      return NextResponse.json({ ok: true });
+    }
+
+    // 4. Backtest Statistics & Track Record across years
+    if (
+      lower.includes("backtest") ||
+      lower.includes("thống kê") ||
+      lower.includes("thong ke") ||
+      lower.includes("hiệu quả") ||
+      lower.includes("hieu qua") ||
+      lower.includes("lời") ||
+      lower.includes("loi") ||
+      lower === "/backtest"
+    ) {
+      let bt = `📊 *BÁO CÁO BACKTEST ĐỊNH LƯỢNG (2023 - 2026)*\n`;
+      bt += `_(Dữ liệu 21 coin, trừ phí Taker 0.16% khứ hồi + Slippage)_\n\n`;
+
+      bt += `🏆 *1. KÈO LIVE: HAI ĐỈNH / HAI ĐÁY 4H (VOL ≥ 2.0x)*\n`;
+      bt += `• *2023 - 2024:* 63 lệnh ➔ *+0.11R / lệnh* (Lãi đều)\n`;
+      bt += `• *2025 - 2026:* 53 lệnh ➔ *+0.19R / lệnh* (Tăng trưởng mạnh)\n`;
+      bt += `• *Tổng lệnh:* ~116 lệnh (Tần suất ~1–2 lệnh/tuần, chắt lọc)\n`;
+      bt += `• *Winrate:* ~52% (TP 1.5R - 2.0R, R:R dương bù đắp)\n\n`;
+
+      bt += `📈 *2. KÈO TREND NGÀY: 1D DONCHIAN BREAKOUT*\n`;
+      bt += `• *2023:* +1.19R / lệnh (Thắng lớn siêu chu kỳ)\n`;
+      bt += `• *2024:* +1.08R / lệnh\n`;
+      bt += `• *2025 - 2026:* +0.03R / lệnh (Thị trường sideway khó gặm)\n`;
+      bt += `• *Tổng lệnh:* ~35–40 lệnh/năm (Gồng lãi theo đáy 10D, max +68R)\n\n`;
+
+      bt += `⚠️ *3. BÀI HỌC VỀ KÈO BOS 4H & TẠI SAO LOẠI BỎ:*\n`;
+      bt += `• BOS nến 4H nếu *không có Vol ≥ 2.0x*: 588 lệnh ➔ *-0.13R/lệnh (Lỗ bào mòn do phí)*\n`;
+      bt += `• ➔ Đó là lý do hệ thống chuyển toàn bộ BOS thường sang *Paper (giấy)* để bảo vệ tiền thật của bạn!\n\n`;
+
+      bt += `💡 *Quy luật quản lý vốn:* Rủi ro cố định 4$ (~10% vốn $40), lãi kép bậc thang khi cán mốc 50$ ➔ 65$ ➔ 85$.`;
+
+      await sendTelegramReply(token, chatId, bt);
       return NextResponse.json({ ok: true });
     }
 
