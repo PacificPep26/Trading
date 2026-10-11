@@ -342,15 +342,29 @@ export async function POST(req: NextRequest) {
       lower.includes("luat") ||
       lower.includes("kỷ luật")
     ) {
-      const asset = await getMexcAccountAsset(CAPITAL);
+      const [asset, positions] = await Promise.all([
+        getMexcAccountAsset(CAPITAL),
+        getMexcOpenPositions().catch(() => [] as MexcPosition[]),
+      ]);
+      const activePositions = positions.filter((p) => p.holdVol > 0);
       const tier = getCapitalTier(asset.equity);
-      let rule = `🏦 *TÀI KHOẢN & VỐN BẬC THANG*\n\n`;
-      rule += `• *Số dư ví MEXC:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
-      rule += `• *Cấp bậc:* *${tier.name}*\n`;
-      rule += `• *Rủi ro mỗi lệnh (1R):* \`${tier.riskPerTradeUsd} USDT\` (Cố định)\n`;
-      rule += `• *Số lệnh mở tối đa:* \`${tier.maxOpenTrades} lệnh đồng thời\`\n`;
-      rule += `• *Khung giờ Auto-Trade:* \`16:00 - 08:00 sáng hôm sau (VN)\`\n`;
-      rule += `• *Mốc bảo vệ lãi (Ratchet):* \`${tier.ratchetFloorUsd} USDT\``;
+      let rule = `🏦 *TÀI KHOẢN & VỊ THẾ MEXC*\n\n`;
+      rule += `• *Số dư ví:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
+      rule += `• *Khả dụng:* \`${asset.availableBalance.toFixed(2)} USDT\`\n`;
+      rule += `• *Cấp bậc:* *${tier.name}* (Risk 1R: \`${tier.riskPerTradeUsd}$\`)\n\n`;
+
+      if (activePositions.length > 0) {
+        rule += `📍 *VỊ THẾ ĐANG NẮM GIỮ (${activePositions.length}):*\n`;
+        for (const p of activePositions) {
+          const coinName = p.symbol.replace("_USDT", "");
+          const sideStr = p.positionType === 1 ? "🟢 LONG" : "🔴 SHORT";
+          rule += `• *${coinName}* ${sideStr}: \`${p.holdVol} HĐ\` · Entry: \`${p.openAvgPrice ? f(p.openAvgPrice) : "N/A"}\`\n`;
+        }
+      } else {
+        rule += `📍 *Vị thế đang mở:* Không có lệnh nào đang giữ (Ví trống).\n`;
+      }
+
+      rule += `\n💡 _Tự động vào lệnh (16h-8h) khi đạt Chuẩn Kim Cương (Vol ≥ 2.0x)._`;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
     }
