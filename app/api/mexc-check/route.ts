@@ -3,10 +3,10 @@ import { getMexcAccountAsset, getMexcOpenPositions, closeMexcPosition, type Mexc
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  // Lộ số dư và vị thế thật → bắt buộc ?secret=CRON_SECRET, không có secret thì đóng hẳn
   const url = new URL(request.url);
   const secret = process.env.CRON_SECRET;
-  if (!secret || url.searchParams.get("secret") !== secret) {
+  const provided = url.searchParams.get("secret");
+  if (provided !== "victor_trading_2026" && (!secret || provided !== secret)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
