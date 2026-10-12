@@ -6,7 +6,7 @@ import { isAllowedSetup, isLiveEligible } from "../lib/trading-policy.ts";
 // 1. Kiểm tra chính sách hợp lệ
 assert.equal(isAllowedSetup("daily_trend_donchian", 1, "1D", 1, 1), true, "1D Donchian Long allowed when BTC is Uptrend");
 assert.equal(isAllowedSetup("daily_trend_donchian", 1, "1D", -1, 1), false, "1D Donchian Long BLOCKED when BTC is Downtrend");
-assert.equal(isLiveEligible("daily_trend_donchian", 1, "1D", 1, 1), true, "1D Donchian is Live eligible");
+assert.equal(isLiveEligible("daily_trend_donchian", 1, "1D", 1, 1), false, "1D Donchian is paper only (backtest failed)");
 
 // 2. Mock 30 nến ngày
 const mockDailyBars = [];

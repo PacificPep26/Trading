@@ -6,6 +6,7 @@ import { paperSummary } from "@/lib/paper-ledger";
 import { calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/lib/mexc-client";
+import { loadJournal, journalStats } from "@/lib/trade-journal";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -380,26 +381,22 @@ export async function POST(req: NextRequest) {
       lower.includes("loi") ||
       lower === "/backtest"
     ) {
-      let bt = `📊 *BÁO CÁO BACKTEST ĐỊNH LƯỢNG (2023 - 2026)*\n`;
-      bt += `_(Dữ liệu 21 coin, trừ phí Taker 0.16% khứ hồi + Slippage)_\n\n`;
+      const js = journalStats(loadJournal());
+      let bt = `📊 *LỆNH THẬT MEXC (bot tự vào)*\n`;
+      bt += js.n
+        ? `• ${js.n} lệnh đã đóng, thắng ${js.wins} (${((js.wins / js.n) * 100).toFixed(0)}%), đang mở ${js.open}\n` +
+          `• *Ròng sau phí:* ${js.pnlUsd >= 0 ? "+" : ""}${js.pnlUsd.toFixed(2)}$ | TB *${js.avgR >= 0 ? "+" : ""}${js.avgR.toFixed(2)}R/lệnh*\n` +
+          `• Tốt nhất ${js.bestR.toFixed(2)}R, tệ nhất ${js.worstR.toFixed(2)}R\n`
+        : `• Chưa có lệnh nào đóng${js.open ? ` (đang mở ${js.open})` : ""}\n`;
+      bt += `_So sánh có ý nghĩa sau ~30 lệnh._\n\n`;
 
-      bt += `🏆 *1. KÈO LIVE: HAI ĐỈNH / HAI ĐÁY 4H (VOL ≥ 2.0x)*\n`;
-      bt += `• *2023 - 2024:* 63 lệnh ➔ *+0.11R / lệnh* (Lãi đều)\n`;
-      bt += `• *2025 - 2026:* 53 lệnh ➔ *+0.19R / lệnh* (Tăng trưởng mạnh)\n`;
-      bt += `• *Tổng lệnh:* ~116 lệnh (Tần suất ~1–2 lệnh/tuần, chắt lọc)\n`;
-      bt += `• *Winrate:* ~52% (TP 1.5R - 2.0R, R:R dương bù đắp)\n\n`;
-
-      bt += `📈 *2. KÈO TREND NGÀY: 1D DONCHIAN BREAKOUT*\n`;
-      bt += `• *2023:* +1.19R / lệnh (Thắng lớn siêu chu kỳ)\n`;
-      bt += `• *2024:* +1.08R / lệnh\n`;
-      bt += `• *2025 - 2026:* +0.03R / lệnh (Thị trường sideway khó gặm)\n`;
-      bt += `• *Tổng lệnh:* ~35–40 lệnh/năm (Gồng lãi theo đáy 10D, max +68R)\n\n`;
-
-      bt += `⚠️ *3. BÀI HỌC VỀ KÈO BOS 4H & TẠI SAO LOẠI BỎ:*\n`;
-      bt += `• BOS nến 4H nếu *không có Vol ≥ 2.0x*: 588 lệnh ➔ *-0.13R/lệnh (Lỗ bào mòn do phí)*\n`;
-      bt += `• ➔ Đó là lý do hệ thống chuyển toàn bộ BOS thường sang *Paper (giấy)* để bảo vệ tiền thật của bạn!\n\n`;
-
-      bt += `💡 *Quy luật quản lý vốn:* Rủi ro cố định 4$ (~10% vốn $40), lãi kép bậc thang khi cán mốc 50$ ➔ 65$ ➔ 85$.`;
+      bt += `🧪 *BACKTEST LUẬT ĐANG CHẠY (21 coin, phí 0.08%/chiều + trượt)*\n`;
+      bt += `Hai đỉnh/đáy 4H, thuận coin + BTC ngày, vol ≥ 2x, SL trailing 3 ATR:\n`;
+      bt += `• 2023–24: 69 lệnh, thắng 33%, *+0.22R/lệnh*\n`;
+      bt += `• 2025–26: 63 lệnh, thắng 43%, *+0.54R/lệnh*\n`;
+      bt += `• Đúng luật live (SL 1.5–6%, trôi giá ≤ 0.25%), 2025–nay: 29 lệnh, thắng 48%, *+1.1R/lệnh*, chuỗi thua dài nhất 7\n`;
+      bt += `• Đối chứng vào ngẫu nhiên cùng cách thoát: −0.28R / −0.14R\n\n`;
+      bt += `📄 *Chỉ chạy paper:* BOS 4H, Donchian 1D, pinbar, mọi kèo ngược trend (backtest âm hoặc ≈ 0).`;
 
       await sendTelegramReply(token, chatId, bt);
       return NextResponse.json({ ok: true });

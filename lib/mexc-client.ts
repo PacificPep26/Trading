@@ -561,3 +561,32 @@ export async function tightenStop(params: { positionId: string | number; side: 1
   });
   return { moved: true, from, dryRun: false };
 }
+
+/**
+ * Lãi/lỗ ròng (sau phí) của các lệnh ĐÓNG vị thế `symbol` từ `sinceMs`, theo lịch sử lệnh MEXC.
+ * GET ký theo chuẩn MEXC: tham số sắp theo tên, nối bằng &.
+ */
+export async function getRealizedPnl(symbol: string, sinceMs: number): Promise<{ pnlUsd: number; exitPrice: number } | null> {
+  const { apiKey, secretKey, isConfigured, isDryRun } = getMexcCredentials();
+  if (isDryRun || !isConfigured) return null;
+  const params: Record<string, string> = { page_num: "1", page_size: "50", start_time: String(sinceMs - 60_000), states: "3", symbol };
+  const query = Object.keys(params).sort().map((k) => `${k}=${encodeURIComponent(params[k])}`).join("&");
+  const timestamp = Date.now().toString();
+  const res = await fetch(`${MEXC_BASE_URL}/api/v1/private/order/list/history_orders?${query}`, {
+    headers: { ApiKey: apiKey, "Request-Time": timestamp, Signature: signMexcRequest(secretKey, apiKey, timestamp, query), "Content-Type": "application/json" },
+  });
+  const data = await res.json() as MexcApiResponse<unknown>;
+  if (!res.ok || !data.success) throw apiError(data, `MEXC history_orders failed (${res.status})`);
+  const raw = data.data as Array<Record<string, unknown>> | { resultList?: Array<Record<string, unknown>> };
+  const rows = Array.isArray(raw) ? raw : raw?.resultList ?? [];
+  // side 2 = close short, 4 = close long
+  // lệnh mở ghi nhận trước entryTime vài giây → lùi 1 phút; phí tính cả lệnh mở lẫn lệnh đóng
+  const mine = rows.filter((o) => o.symbol === symbol && Number(o.updateTime ?? o.createTime ?? 0) >= sinceMs - 60_000);
+  const closes = mine.filter((o) => [2, 4].includes(Number(o.side)));
+  if (!closes.length) return null;
+  const fee = (o: Record<string, unknown>) => Number(o.totalFee ?? Number(o.takerFee ?? 0) + Number(o.makerFee ?? 0));
+  const pnlUsd = closes.reduce((s, o) => s + Number(o.profit ?? 0), 0) - mine.reduce((s, o) => s + fee(o), 0);
+  const vol = closes.reduce((s, o) => s + Number(o.dealVol ?? 0), 0);
+  const exitPrice = vol ? closes.reduce((s, o) => s + Number(o.dealAvgPrice ?? 0) * Number(o.dealVol ?? 0), 0) / vol : 0;
+  return { pnlUsd, exitPrice };
+}

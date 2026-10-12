@@ -119,16 +119,13 @@ export function isLiveEligible(
   volumeRatio = 1.0,
   date: Date = new Date()
 ): boolean {
-  if (tf === "1D" && style === "daily_trend_donchian") {
-    return side > 0 ? btcDaily > 0 : btcDaily < 0;
-  }
+  // Donchian 1D: backtest trend_daily_study KHÔNG ĐẠT (điểm vào ≈ ngẫu nhiên) → chỉ paper
+  if (tf === "1D") return false;
 
   // Khung 4H: Đòi hỏi điều kiện Chuẩn Kim Cương (Diamond Standard) - Cho phép tự động vào lệnh 24/7 (mọi khung giờ)
   if (tf === "4H") {
-    // Với LONG: Phải thuận cả BTC & Coin ngày tăng
-    // Với SHORT: Cho phép Hai đỉnh (Double Top) tại cản khi coin có volume đảo chiều
-    if (side > 0 && !(ownDaily > 0 && btcDaily > 0)) return false;
-    if (side < 0 && style !== "double_top_bottom" && !(ownDaily < 0 && btcDaily < 0)) return false;
+    // Thuận cả coin & BTC khung ngày. Hai đỉnh ngược trend: backtest 2026-10-12 2023–24 −0.16 đến −0.26R → không live
+    if (side > 0 ? !(ownDaily > 0 && btcDaily > 0) : !(ownDaily < 0 && btcDaily < 0)) return false;
 
     // Chuẩn Kim Cương: Volume phải bùng nổ >= 2.0x SMA20
     if (volumeRatio < 2.0) return false;

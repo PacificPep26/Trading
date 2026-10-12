@@ -11,7 +11,8 @@ import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
 import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason, trailingStop } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop, getRealizedPnl } from "@/lib/mexc-client";
+import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -218,6 +219,7 @@ export async function scanAndAlert(): Promise<string[]> {
     const isStillOpen = livePositions.some((p) => p.symbol === sym && p.holdVol > 0);
     if (!isStillOpen) {
       lastPositions.delete(sym);
+      if (openTrade(sym)) continue; // lệnh có trong nhật ký → báo bằng PnL thật bên dưới
       try {
         const coinName = sym.replace("_USDT", "");
         const t = await ticker(`${coinName}-USDT-SWAP`).catch(() => null);
@@ -238,6 +240,25 @@ export async function scanAndAlert(): Promise<string[]> {
       } catch (err) {
         console.error(`[MEXC CLOSE ALERT] Lỗi báo đóng vị thế ${sym}:`, err);
       }
+    }
+  }
+
+  // Nhật ký lệnh thật: vị thế đã đóng → lấy lãi/lỗ ròng sau phí từ lịch sử lệnh MEXC
+  for (const jt of loadJournal().filter((t) => t.exitTime === undefined)) {
+    if (livePositions.some((p) => p.symbol === jt.symbol && p.holdVol > 0)) continue;
+    try {
+      const real = await getRealizedPnl(jt.symbol, jt.entryTime);
+      if (!real) continue; // lịch sử chưa cập nhật → thử lại lượt sau
+      const done = recordClose(jt.symbol, { exitTime: Date.now(), exitPrice: real.exitPrice, pnlUsd: real.pnlUsd });
+      const r = done && done.riskUsd > 0 ? real.pnlUsd / done.riskUsd : 0;
+      await send(
+        `${real.pnlUsd >= 0 ? "🎯" : "🛑"} *[MEXC ĐÃ ĐÓNG]* *${jt.symbol.replace("_USDT", "")}* ${jt.side > 0 ? "LONG" : "SHORT"}\n` +
+        `• Vào ${f(jt.entry)} ➔ Thoát ${f(real.exitPrice)}${jt.trailMoves ? ` (dời SL ${jt.trailMoves} lần)` : ""}\n` +
+        `• *Ròng sau phí:* ${real.pnlUsd >= 0 ? "+" : ""}${real.pnlUsd.toFixed(2)}$ (${r >= 0 ? "+" : ""}${r.toFixed(2)}R)\n` +
+        `• *Số dư:* \`${currentEquity.toFixed(2)}$\`\n_Gõ "thống kê" để so với backtest._`
+      );
+    } catch (e) {
+      console.error(`[JOURNAL] Không lấy được PnL ${jt.symbol}:`, e);
     }
   }
 
@@ -273,7 +294,10 @@ export async function scanAndAlert(): Promise<string[]> {
         continue;
       }
       const res = await tightenStop({ positionId: pos.positionId, side: tr.side, newStop: target });
-      if (res.moved) await send(`📈 [MEXC] ${pos.symbol}: trailing 3 ATR → dời SL ${f(res.from ?? 0)} ➔ ${f(target)}`);
+      if (res.moved) {
+        recordTrail(pos.symbol);
+        await send(`📈 [MEXC] ${pos.symbol}: trailing 3 ATR → dời SL ${f(res.from ?? 0)} ➔ ${f(target)}`);
+      }
     } catch (e) {
       await send(`⚠️ [MEXC] ${pos.symbol}: không dời được SL trailing: ${e instanceof Error ? e.message : e}`);
     }
@@ -508,6 +532,7 @@ export async function scanAndAlert(): Promise<string[]> {
           liveOpenSymbols.add(coin);
           remainingMargin = Math.max(0, remainingMargin - sizing.margin);
           if (trailMode) { trailing[`${coin}_USDT`] = { side: s.side, entryTime: Date.now() }; saveDedup(sent, preSent); }
+          recordOpen({ symbol: `${coin}_USDT`, style: s.style, side: s.side, entry: tLive.last, stop: s.stop, riskUsd: sizing.actualRiskUsd, entryTime: Date.now() });
           const fullSymbol = `${coin}_USDT`;
           lastPositions.set(fullSymbol, {
             symbol: fullSymbol,
