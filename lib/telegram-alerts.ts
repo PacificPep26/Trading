@@ -9,7 +9,7 @@ import { analyse, swings, analyseDaily } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
-import { isStarSetup, isLiveEligible, isAutoTradeTimeWindow, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
+import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
 
@@ -440,7 +440,7 @@ export async function scanAndAlert(): Promise<string[]> {
         // Đặt lệnh MEXC (thực tế hoặc dry-run). Nếu bật Live nhưng setup không đủ chuẩn Live -> Ép về mock.
         const effectiveDryRun = isLiveConfigured && !eligibleForLive;
         if (effectiveDryRun) {
-          console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí hoặc ngoài khung 16h-8h). Chỉ chạy Paper/Cảnh báo.`);
+          console.warn(`[MEXC LIVE BẢO VỆ] ${coin} ${s.style} không đủ chuẩn Live (+ExpR sau phí). Chỉ chạy Paper/Cảnh báo.`);
         }
 
         const mexcOrder = await submitMexcOrder({
@@ -552,17 +552,19 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
       await new Promise((r) => setTimeout(r, 60));
       const own = coin === "BTC" ? btc : await dailyTrend(coin);
 
-      // 1. Quét 4h nếu đang ở slot 4h (khoảng cách <= 1.5%)
+      // 1. Quét 4h nếu đang ở slot 4h: CHỈ LỌC KÈO CHUẨN KIM CƯƠNG (Hai đáy / Hai đỉnh), LOẠI BỎ BOS ĐỂ TRÁNH BÁO COIN XẤU
       if (is4hSlot) {
         const a4 = analyse(await candles(`${coin}-USDT-SWAP`, "4H", 300));
         for (const s of a4.setups) {
           if (s.state !== "pending") continue;
+          // Chỉ giữ Hai đỉnh / Hai đáy (loại bỏ hoàn toàn BOS phá cản yếu như XRP)
+          if (s.style !== "double_top_bottom") continue;
           const decision = evaluateSetup(s, { coin, timeframe: "4H", btcDaily: btc, ownDaily: own, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime, now });
           if (decision.code !== "PENDING_CONFIRMATION" || Math.abs(s.distancePct) > 0.015) continue;
           const risk = Math.abs(s.entry - s.stop) / s.entry;
           const isStar = isStarSetup(s.side, own, btc);
           const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-          const styleStr = s.style === "bos" ? "BOS 4H" : (s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H");
+          const styleStr = s.side > 0 ? "Hai đáy 4H" : "Hai đỉnh 4H";
 
           candidates.push({
             coin,
@@ -587,7 +589,7 @@ export async function preAlert(now = Date.now(), force = false): Promise<string 
   const lines4h = candidates.slice(0, 2).map((c) => c.line);
 
   const msg = `⏰ *[SẮP ĐÓNG NẾN 4H]* ${vnTime(close4h)} (còn ~${Math.round(left4h / 60_000)} phút)\n` +
-    `📌 *Setup áp sát điểm kích hoạt:*\n${lines4h.join("\n")}\n\n💡 _Bot sẽ tự động đánh giá khối lượng và vào lệnh nếu đạt Chuẩn Kim Cương trong khung 16h-8h._`;
+    `📌 *Setup áp sát điểm kích hoạt:*\n${lines4h.join("\n")}\n\n💡 _Bot sẽ tự động đánh giá khối lượng và vào lệnh nếu đạt Chuẩn Kim Cương (24/7)._`;
 
   const ok = await send(msg);
   if (ok) {
