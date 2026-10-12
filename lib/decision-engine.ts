@@ -157,7 +157,7 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
     ctx.timeframe === "4H" &&
     setup.style === "double_top_bottom" &&
     (setup.volumeRatio ?? 1.0) >= 2.0 &&
-    (setup.side > 0 ? (ctx.ownDaily > 0 && ctx.btcDaily > 0) : (ctx.ownDaily < 0 && ctx.btcDaily < 0));
+    (setup.side > 0 ? (ctx.ownDaily > 0 && ctx.btcDaily > 0) : true);
 
   return {
     accepted: true,

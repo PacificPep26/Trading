@@ -25,8 +25,11 @@ assert.equal(evaluateSetup({ ...setup, stop: 90 }, context).code, "INVALID_STOP"
 assert.equal(evaluateSetup(setup, { ...context, equity: 31, peakEquity: 40 }).code, "BOT_LOCKED");
 assert.equal(evaluateSetup(setup, { ...context, equity: 5, peakEquity: 5 }).code, "BOT_LOCKED");
 
-// Double top SHORT blocked when BTC Daily is Uptrend (btcDaily = 1)
-assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, context).code, "TREND_MISMATCH");
+// BOS SHORT blocked when BTC Daily is Uptrend (btcDaily = 1)
+assert.equal(evaluateSetup({ ...setup, style: "bos", side: -1, stop: 102 }, context).code, "TREND_MISMATCH");
+
+// Double top SHORT accepted at structural resistance
+assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, context).code, "ACCEPTED");
 
 // Double top SHORT accepted when BTC Daily is Downtrend (btcDaily = -1)
 assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, stop: 102 }, { ...context, btcDaily: -1, ownDaily: -1 }).code, "ACCEPTED");

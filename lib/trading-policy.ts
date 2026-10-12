@@ -45,10 +45,11 @@ export interface TradeSizing {
 /** Kiểm tra điều kiện cấu trúc & xu hướng */
 export function isAllowedSetup(style: string, side: 1 | -1, tf: Timeframe, btcDaily = 0, ownDaily = 0): boolean {
   // QUY TẮC BẢO VỆ CHỐNG BÃO (MACRO BTC FILTER):
-  // 1. Tuyệt đối KHÔNG SHORT khi BTC Ngày đang là Uptrend (+1)
-  if (side < 0 && btcDaily > 0) return false;
-  // 2. Tuyệt đối KHÔNG LONG khi BTC Ngày đang là Downtrend (-1)
+  // 1. Tuyệt đối KHÔNG LONG khi BTC Ngày đang là Downtrend (-1)
   if (side > 0 && btcDaily < 0) return false;
+  // 2. Đối với SHORT: Không Short đuổi (BOS) khi BTC Ngày tăng (+1),
+  // NHƯNG CHO PHÉP SHORT TẠI ĐỈNH (Hai đỉnh - Double Top) khi coin chạm cản kiệt sức rút râu.
+  if (side < 0 && btcDaily > 0 && style !== "double_top_bottom") return false;
 
   if (tf === "1D") {
     if (style === "daily_trend_donchian") {
@@ -103,7 +104,7 @@ export function isAutoTradeTimeWindow(date: Date = new Date()): boolean {
 /**
  * Điều kiện vào lệnh LIVE tiền thật trên MEXC:
  * 1. 1D Donchian Breakout: nến ngày thuận xu hướng BTC.
- * 2. 4H Chuẩn Kim Cương (Diamond Standard) trong khung giờ 16:00 - 08:00:
+ * 2. 4H Chuẩn Kim Cương (Diamond Standard), mọi khung giờ (24/7):
  *    - Cả LONG ("bật nền") và SHORT ("rớt nền" / thủng đáy).
  *    - Volume bùng nổ: volumeRatio >= 2.0x (lọc sạch 95% bẫy thanh khoản).
  *    - Thuận xu hướng lớn: Long khi BTC & Coin Uptrend, Short khi BTC & Coin Downtrend.
@@ -124,8 +125,10 @@ export function isLiveEligible(
 
   // Khung 4H: Đòi hỏi điều kiện Chuẩn Kim Cương (Diamond Standard) - Cho phép tự động vào lệnh 24/7 (mọi khung giờ)
   if (tf === "4H") {
-    const isFullyAligned = side > 0 ? (ownDaily > 0 && btcDaily > 0) : (ownDaily < 0 && btcDaily < 0);
-    if (!isFullyAligned) return false;
+    // Với LONG: Phải thuận cả BTC & Coin ngày tăng
+    // Với SHORT: Cho phép Hai đỉnh (Double Top) tại cản khi coin có volume đảo chiều
+    if (side > 0 && !(ownDaily > 0 && btcDaily > 0)) return false;
+    if (side < 0 && style !== "double_top_bottom" && !(ownDaily < 0 && btcDaily < 0)) return false;
 
     // Chuẩn Kim Cương: Volume phải bùng nổ >= 2.0x SMA20
     if (volumeRatio < 2.0) return false;
