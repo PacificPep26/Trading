@@ -122,7 +122,7 @@ export interface TierSizing {
 
 /**
  * Tính toán số tiền ký quỹ (Margin) và vị thế theo nấc thang vốn.
- * Đối với Kèo Kim Cương (isDiamond = true): Vào thẳng 50% vốn khả dụng theo yêu cầu của user.
+ * Đối với Kèo Kim Cương (isDiamond = true): Ký quỹ 90% vốn.
  */
 export function calculateTierSizing(
   equity: number,
@@ -146,8 +146,8 @@ export function calculateTierSizing(
   let isCapped = false;
 
   if (isDiamond) {
-    // KÈO KIM CƯƠNG: Ký quỹ cố định đúng 50% vốn (equity * 0.50)
-    margin = Math.round(equity * 0.50 * 10) / 10;
+    // KÈO KIM CƯƠNG: ký quỹ 90% vốn (chủ dự án chọn đánh full vốn; chừa 10% cho phí, 100% sàn từ chối)
+    margin = Math.floor(equity * 0.90 * 10) / 10;
     notional = Math.round(margin * effectiveLeverage * 10) / 10;
     actualRiskUsd = Math.round(notional * stopDistancePct * 100) / 100;
   } else {

@@ -9,9 +9,9 @@ import { analyse, swings, analyseDaily } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
-import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
+import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason, trailingStop } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven } from "@/lib/mexc-client";
+import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop } from "@/lib/mexc-client";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -23,12 +23,15 @@ const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
 // data/ là Railway volume (/app/data) → chống trùng & đỉnh vốn sống sót qua redeploy
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 
-function loadDedup(): { sent: string[]; preSent: string[]; peakEquity?: number } {
+// Vị thế 4H hai đỉnh/đáy đang trailing SL (không TP), theo symbol MEXC → phải bền qua redeploy
+type TrailEntry = { side: 1 | -1; entryTime: number };
+
+function loadDedup(): { sent: string[]; preSent: string[]; peakEquity?: number; trail?: Record<string, TrailEntry> } {
   try {
     if (fs.existsSync(DEDUP_FILE)) {
       const data = JSON.parse(fs.readFileSync(DEDUP_FILE, "utf-8"));
       const peak = Number(data.peakEquity);
-      return { sent: data.sent ?? [], preSent: data.preSent ?? [], peakEquity: Number.isFinite(peak) && peak > 0 ? peak : undefined };
+      return { sent: data.sent ?? [], preSent: data.preSent ?? [], peakEquity: Number.isFinite(peak) && peak > 0 ? peak : undefined, trail: data.trail ?? {} };
     }
   } catch {}
   return { sent: [], preSent: [] };
@@ -40,6 +43,7 @@ function saveDedup(sentSet: Set<string>, preSentSet: Set<string>) {
       sent: Array.from(sentSet).slice(-300),
       preSent: Array.from(preSentSet).slice(-300),
       peakEquity: globalThis.mexcPeakEquity,
+      trail: trailing,
     };
     fs.mkdirSync(path.dirname(DEDUP_FILE), { recursive: true });
     fs.writeFileSync(DEDUP_FILE, JSON.stringify(data, null, 2), "utf-8");
@@ -49,6 +53,7 @@ function saveDedup(sentSet: Set<string>, preSentSet: Set<string>) {
 }
 
 const initialDedup = loadDedup();
+const trailing: Record<string, TrailEntry> = initialDedup.trail ?? {};
 
 declare global {
   var telegramSent: Set<string> | undefined;
@@ -248,6 +253,32 @@ export async function scanAndAlert(): Promise<string[]> {
     }
   }
 
+  // Trailing SL 3×ATR cho lệnh 4H hai đỉnh/đáy (backtest trailing_study 2026-10-12)
+  const openSyms = new Set(livePositions.filter((p) => p.holdVol > 0).map((p) => p.symbol));
+  for (const sym of Object.keys(trailing)) {
+    if (!openSyms.has(sym)) { delete trailing[sym]; saveDedup(sent, preSent); }
+  }
+  for (const pos of livePositions) {
+    const tr = trailing[pos.symbol];
+    if (!tr || pos.holdVol <= 0) continue;
+    try {
+      const bars = await candles(`${pos.symbol.replace("_USDT", "")}-USDT-SWAP`, "4H", 120);
+      const target = trailingStop(bars, tr.side, tr.entryTime, tr.side > 0 ? 0 : Infinity);
+      if (!Number.isFinite(target) || target <= 0) continue;
+      const price = bars.at(-1)?.c ?? 0;
+      // Giá đã vượt SL mới (sàn sẽ từ chối SL này) → thoát như backtest
+      if (price > 0 && (tr.side > 0 ? price <= target : price >= target)) {
+        await closeMexcPosition({ symbol: pos.symbol, side: tr.side, vol: pos.holdVol });
+        await send(`🚪 [MEXC] ${pos.symbol}: giá ${f(price)} đã qua SL trailing ${f(target)} → đóng Market.`);
+        continue;
+      }
+      const res = await tightenStop({ positionId: pos.positionId, side: tr.side, newStop: target });
+      if (res.moved) await send(`📈 [MEXC] ${pos.symbol}: trailing 3 ATR → dời SL ${f(res.from ?? 0)} ➔ ${f(target)}`);
+    } catch (e) {
+      await send(`⚠️ [MEXC] ${pos.symbol}: không dời được SL trailing: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   // Trailing Stop & Thoát lệnh chuẩn Backtest cho các vị thế đang nắm giữ (đặc biệt là 1D Donchian Trend)
   for (const pos of livePositions) {
     if (pos.holdVol <= 0) continue;
@@ -263,7 +294,7 @@ export async function scanAndAlert(): Promise<string[]> {
         (o) => String(o.symbol ?? "") === pos.symbol && Number(o.isFinished ?? 0) === 0
       );
       const hasTpOrder = posStopOrders.some((o) => Number(o.takeProfitPrice ?? 0) > 0);
-      const is1dDonchianPosition = !hasTpOrder && pos.positionType === 1;
+      const is1dDonchianPosition = !hasTpOrder && pos.positionType === 1 && !trailing[pos.symbol];
 
       if (is1dDonchianPosition) {
         // THOÁT LỆNH CHUẨN BACKTEST: Nếu nến ngày đóng cửa thủng đáy 10 ngày -> Đóng Market ngay lập tức!
@@ -458,13 +489,15 @@ export async function scanAndAlert(): Promise<string[]> {
           continue;
         }
 
+        // Hai đỉnh/đáy đủ chuẩn live: không TP, gồng lãi bằng trailing 3 ATR
+        const trailMode = eligibleForLive && s.style === "double_top_bottom";
         const protection = await submitMexcTpSl({
             symbol: coin,
             side: s.side,
             vol: mexcOrder.vol,
             stopLossPrice: s.stop,
-            takeProfit1Price: plan.tp1,
-            takeProfit2Price: plan.tp2,
+            takeProfit1Price: trailMode ? 0 : plan.tp1,
+            takeProfit2Price: trailMode ? 0 : plan.tp2,
             dryRunOverride: effectiveDryRun,
         });
         if (!(await keepOnlyIfProtected(coin, s.side, mexcOrder.vol, protection))) {
@@ -474,6 +507,7 @@ export async function scanAndAlert(): Promise<string[]> {
         if (!mexcOrder.isDryRun) {
           liveOpenSymbols.add(coin);
           remainingMargin = Math.max(0, remainingMargin - sizing.margin);
+          if (trailMode) { trailing[`${coin}_USDT`] = { side: s.side, entryTime: Date.now() }; saveDedup(sent, preSent); }
           const fullSymbol = `${coin}_USDT`;
           lastPositions.set(fullSymbol, {
             symbol: fullSymbol,
@@ -503,7 +537,9 @@ export async function scanAndAlert(): Promise<string[]> {
             `${autoTag} ${sideStr} *${coin}*\n` +
             `• *Điểm vào:* ~${f(s.entry)}\n` +
             `• *Cắt lỗ (SL):* ${f(s.stop)} (-${(risk * 100).toFixed(2)}%)\n` +
-            `• *Chốt lời (TP):* TP1 ${f(plan.tp1)} (+${pnl.winTp1.toFixed(2)}$) | TP2 ${f(plan.tp2)} (+${pnl.totalWin.toFixed(2)}$)\n` +
+            (trailMode
+              ? `• *Chốt lời:* không TP cố định, SL trailing 3 ATR theo nến 4H đóng${mexcOrder.isDryRun ? " (DRY-RUN)" : ""}\n`
+              : `• *Chốt lời (TP):* TP1 ${f(plan.tp1)} (+${pnl.winTp1.toFixed(2)}$) | TP2 ${f(plan.tp2)} (+${pnl.totalWin.toFixed(2)}$)\n`) +
             `• *Sao vô:* ${reason}\n` +
             `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
         });

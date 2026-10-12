@@ -538,3 +538,26 @@ export async function getMexcOpenStopOrders(): Promise<Array<Record<string, unkn
     return [];
   }
 }
+
+/**
+ * Siết SL của vị thế lên `newStop` (trailing 4H). Không bao giờ nới SL ra xa.
+ * Dry-run: không gọi API, chỉ trả kế hoạch để báo Telegram.
+ */
+export async function tightenStop(params: { positionId: string | number; side: 1 | -1; newStop: number }): Promise<{ moved: boolean; from?: number; dryRun: boolean }> {
+  const { isConfigured, isDryRun } = getMexcCredentials();
+  if (isDryRun || !isConfigured) return { moved: false, dryRun: true };
+  const orders = await mexcPrivate<Array<Record<string, unknown>>>("/api/v1/private/stoporder/open_orders");
+  const sl = orders.find((o) => String(o.positionId ?? "") === String(params.positionId) && Number(o.isFinished ?? 0) === 0 && Number(o.stopLossPrice ?? 0) > 0);
+  if (!sl) throw new Error(`Không thấy lệnh SL của position ${params.positionId}`);
+  const from = Number(sl.stopLossPrice);
+  // Sàn trả SL đã làm tròn theo bước giá → giữ cùng số chữ số thập phân
+  const decimals = (String(sl.stopLossPrice).split(".")[1] ?? "").length;
+  const newStop = Number(params.newStop.toFixed(decimals));
+  if (params.side > 0 ? newStop <= from : newStop >= from) return { moved: false, from, dryRun: false };
+  await mexcPrivate("/api/v1/private/stoporder/change_plan_price", {
+    stopPlanOrderId: sl.id,
+    stopLossPrice: newStop,
+    ...(Number(sl.takeProfitPrice ?? 0) > 0 ? { takeProfitPrice: Number(sl.takeProfitPrice) } : {}),
+  });
+  return { moved: true, from, dryRun: false };
+}

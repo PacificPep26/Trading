@@ -61,9 +61,9 @@ assert.equal(szTier3.actualRiskUsd, 4.8, "Tier 3: Risk at SL must be 4.8$");
 
 // 4. Kiểm tra Kèo Kim Cương (50% vốn khả dụng)
 const szDiamond = calculateTierSizing(50, 0.04, 10, true);
-assert.equal(szDiamond.margin, 25, "Diamond margin must be 50% of 50$ = 25$");
-assert.equal(szDiamond.notional, 250, "Diamond notional with x10 must be 250$");
-assert.equal(szDiamond.actualRiskUsd, 10, "Risk at 4% SL on 250$ notional must be 10$");
+assert.equal(szDiamond.margin, 45, "Diamond margin must be 90% of 50$ = 45$");
+assert.equal(szDiamond.notional, 450, "Diamond notional with x10 must be 450$");
+assert.equal(szDiamond.actualRiskUsd, 18, "Risk at 4% SL on 450$ notional must be 18$");
 
 console.log("All capital tier & compounding ladder tests passed!");
 

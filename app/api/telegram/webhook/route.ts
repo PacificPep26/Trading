@@ -290,7 +290,7 @@ export async function POST(req: NextRequest) {
     // 1. Help or Start
     if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh") {
       let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading MEXC của bạn.*\n\n`;
-      welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh (16h - 8h sáng)* theo Chuẩn Kim Cương:\n\n`;
+      welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh 24/7* theo Chuẩn Kim Cương:\n\n`;
       welcome += `• Bấm [ 🔍 Kèo 4H ] hoặc nhắn \`kèo\` để quét setup 4H hiện tại.\n`;
       welcome += `• Bấm [ 🏦 Xem Vốn & Lệnh ] hoặc nhắn \`vốn\` để xem số dư MEXC & vị thế.\n`;
       welcome += `• Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`) để xem phân tích chi tiết SL/TP.`;
@@ -364,7 +364,7 @@ export async function POST(req: NextRequest) {
         rule += `📍 *Vị thế đang mở:* Không có lệnh nào đang giữ (Ví trống).\n`;
       }
 
-      rule += `\n💡 _Tự động vào lệnh (16h-8h) khi đạt Chuẩn Kim Cương (Vol ≥ 2.0x)._`;
+      rule += `\n💡 _Tự động vào lệnh 24/7 khi đạt Chuẩn Kim Cương (Vol ≥ 2.0x)._`;
       await sendTelegramReply(token, chatId, rule);
       return NextResponse.json({ ok: true });
     }

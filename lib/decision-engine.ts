@@ -73,8 +73,9 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   }
 
   // 2. Cầu dao an toàn (Circuit Breaker)
-  // Dưới tầng vốn thấp nhất: rủi ro cố định 2.5$ sẽ là 30-50% tài khoản → khóa
-  if (isDrawdownLocked(ctx.equity, ctx.peakEquity) || ctx.equity < CAPITAL_TIERS[0].minEquity) {
+  // Tài khoản vi mô (< tầng 1, chủ dự án chọn đánh full vốn x10): bỏ cầu dao drawdown, chỉ khóa dưới 3$
+  const micro = ctx.equity < CAPITAL_TIERS[0].minEquity;
+  if (ctx.equity < 3 || (!micro && isDrawdownLocked(ctx.equity, ctx.peakEquity))) {
     return reject("BOT_LOCKED");
   }
 

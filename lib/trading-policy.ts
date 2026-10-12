@@ -240,3 +240,30 @@ export function formatEntryReason(params: {
 
   return parts.join(" + ");
 }
+
+export const TRAIL_ATR_MULT = 3; // backtest trailing_study 2026-10-12: 2–4 ATR đều dương, chọn giữa vùng ổn định
+
+/**
+ * SL trailing cho lệnh 4H hai đỉnh/đáy: giá đóng tốt nhất từ nến vào lệnh trừ 3×ATR14, chỉ được siết lại.
+ * Chỉ dùng nến 4H đã đóng (khớp backtest: cập nhật khi nến đóng).
+ */
+export function trailingStop(
+  bars: { t: number; h: number; l: number; c: number; closed?: boolean }[],
+  side: 1 | -1,
+  entryTime: number,
+  currentStop: number,
+  mult = TRAIL_ATR_MULT,
+): number {
+  const closed = bars.filter((b) => b.closed !== false);
+  if (closed.length < 15) return currentStop;
+  let atr = closed[0].h - closed[0].l;
+  for (let i = 1; i < closed.length; i++) {
+    const p = closed[i - 1].c, b = closed[i];
+    atr = (atr * 13 + Math.max(b.h - b.l, Math.abs(b.h - p), Math.abs(b.l - p))) / 14;
+  }
+  const since = closed.filter((b) => b.t + 4 * 3_600_000 > entryTime);
+  if (!since.length) return currentStop;
+  const best = side > 0 ? Math.max(...since.map((b) => b.c)) : Math.min(...since.map((b) => b.c));
+  const trail = best - side * mult * atr;
+  return side > 0 ? Math.max(currentStop, trail) : Math.min(currentStop, trail);
+}
