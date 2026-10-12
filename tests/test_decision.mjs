@@ -23,9 +23,10 @@ assert.equal(evaluateSetup({ ...setup, stop: 90 }, context).code, "INVALID_STOP"
 
 // Bot locked check (drawdown >= 20%)
 assert.equal(evaluateSetup(setup, { ...context, equity: 31, peakEquity: 40 }).code, "BOT_LOCKED");
-assert.equal(evaluateSetup(setup, { ...context, equity: 19, peakEquity: 19 }).code, "BOT_LOCKED");
-// Tài khoản vi mô 25$: không khóa dù sụt từ đỉnh cũ 40$ (cầu dao drawdown chỉ từ 30$)
-assert.notEqual(evaluateSetup(setup, { ...context, equity: 25, peakEquity: 40 }).code, "BOT_LOCKED");
+assert.equal(evaluateSetup(setup, { ...context, equity: 2.5, peakEquity: 2.5 }).code, "BOT_LOCKED");
+// Cầu dao drawdown chỉ chạy từ 20$: 25$ sụt 37% từ 40$ → khóa; 15$ → vẫn đánh
+assert.equal(evaluateSetup(setup, { ...context, equity: 25, peakEquity: 40 }).code, "BOT_LOCKED");
+assert.notEqual(evaluateSetup(setup, { ...context, equity: 15, peakEquity: 40 }).code, "BOT_LOCKED");
 
 // BOS SHORT blocked when BTC Daily is Uptrend (btcDaily = 1)
 assert.equal(evaluateSetup({ ...setup, style: "bos", side: -1, stop: 102 }, context).code, "TREND_MISMATCH");
