@@ -251,8 +251,10 @@ async function sendTelegramReply(token: string, chatId: number | string, text: s
         disable_web_page_preview: true,
         reply_markup: {
           keyboard: [
-            [{ text: "🔍 Kèo 4H" }, { text: "🏦 Xem Vốn & Lệnh" }],
-            [{ text: "📊 Thống Kê Backtest" }, { text: "BTC" }, { text: "HYPE" }]
+            [{ text: "🏦 Vốn & Lệnh" }, { text: "📊 Thống Kê" }],
+            [{ text: "🔍 Kèo 4H" }, { text: "🎯 Canh Đỉnh/Đáy" }],
+            [{ text: "BTC" }, { text: "ETH" }, { text: "SOL" }, { text: "HYPE" }],
+            [{ text: "❓ Hướng Dẫn" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -289,11 +291,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Help or Start
-    if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh") {
+    if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh" || lower.includes("hướng dẫn")) {
       let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading MEXC của bạn.*\n\n`;
       welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh 24/7* theo Chuẩn Kim Cương:\n\n`;
-      welcome += `• Bấm [ 🔍 Kèo 4H ] hoặc nhắn \`kèo\` để quét setup 4H hiện tại.\n`;
-      welcome += `• Bấm [ 🏦 Xem Vốn & Lệnh ] hoặc nhắn \`vốn\` để xem số dư MEXC & vị thế.\n`;
+      welcome += `• [ 🏦 Vốn & Lệnh ]: số dư MEXC, lệnh đang mở\n`;
+      welcome += `• [ 📊 Thống Kê ]: lệnh thật đã đóng so với backtest\n`;
+      welcome += `• [ 🔍 Kèo 4H ]: setup 4H hiện tại\n`;
+      welcome += `• [ 🎯 Canh Đỉnh/Đáy ]: coin đang sát đỉnh/đáy cũ\n`;
       welcome += `• Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`) để xem phân tích chi tiết SL/TP.`;
       await sendTelegramReply(token, chatId, welcome);
       return NextResponse.json({ ok: true });
