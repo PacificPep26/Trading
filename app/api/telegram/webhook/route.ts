@@ -251,10 +251,7 @@ async function sendTelegramReply(token: string, chatId: number | string, text: s
         disable_web_page_preview: true,
         reply_markup: {
           keyboard: [
-            [{ text: "🏦 Vốn & Lệnh" }, { text: "📊 Thống Kê" }],
-            [{ text: "🔍 Kèo 4H" }, { text: "🎯 Canh Đỉnh/Đáy" }],
-            [{ text: "BTC" }, { text: "ETH" }, { text: "SOL" }, { text: "HYPE" }],
-            [{ text: "❓ Hướng Dẫn" }]
+            [{ text: "🏦 Vốn & Lệnh" }, { text: "📊 Thống Kê" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -296,8 +293,7 @@ export async function POST(req: NextRequest) {
       welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh 24/7* theo Chuẩn Kim Cương:\n\n`;
       welcome += `• [ 🏦 Vốn & Lệnh ]: số dư MEXC, lệnh đang mở\n`;
       welcome += `• [ 📊 Thống Kê ]: lệnh thật đã đóng so với backtest\n`;
-      welcome += `• [ 🔍 Kèo 4H ]: setup 4H hiện tại\n`;
-      welcome += `• [ 🎯 Canh Đỉnh/Đáy ]: coin đang sát đỉnh/đáy cũ\n`;
+      welcome += `• Gõ tay khi cần: \`kèo\` (setup 4H), \`canh\` (sát đỉnh/đáy), tên coin (vd \`SOL\`)\n`;
       welcome += `• Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`) để xem phân tích chi tiết SL/TP.`;
       await sendTelegramReply(token, chatId, welcome);
       return NextResponse.json({ ok: true });
