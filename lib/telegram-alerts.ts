@@ -360,32 +360,35 @@ export async function scanAndAlert(): Promise<string[]> {
     for (const coin of COINS) {
       try {
         const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
-        // Báo sớm ngay khi nến quét đóng (trước nến xác nhận ~1 giờ)
+        const own = (await getDailyData(coin)).trend;
+        // Chỉ báo kèo thuận coin + BTC ngày (sweep_entry_study 2026-10-13: ngược trend còn tệ hơn)
+        const aligned = (side: number) => own === side && btc === side;
+        // Đòn bẩy tối đa để SL nằm trước giá thanh lý (chừa 20% đệm)
+        const maxLev = (riskPct: number) => Math.min(20, Math.max(1, Math.floor(0.8 / riskPct)));
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
-        if (sw && swKey && !sent.has(swKey)) {
-          const swOwn = (await getDailyData(coin)).trend;
+        if (sw && swKey && !sent.has(swKey) && aligned(sw.side)) {
+          const swRisk = Math.abs(sw.close - sw.wick) / sw.close;
           await send(
-            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ${swOwn === sw.side && btc === sw.side ? "✅ thuận" : "⚠️ ngược"}\n` +
+            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận\n` +
             `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, đóng ${f(sw.close)})\n` +
-            `• Vào sớm: SL ngoài râu ${f(sw.wick)}. Chắc hơn: chờ nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn.`
+            `• *Nên chờ* nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn. Vào sớm ngay bây giờ backtest ≈ −0.27R/lệnh (tệ nhất).\n` +
+            `• Nếu vẫn vào sớm: SL ngoài râu ${f(sw.wick)} · đòn bẩy tối đa x${maxLev(swRisk)}`
           );
           sent.add(swKey);
           saveDedup(sent, preSent);
         }
         const w = wickReversal(bars1h);
-        if (!w) continue;
+        if (!w || !aligned(w.side) || Math.abs(w.entry - w.stop) / w.entry > 0.06) continue; // SL > 6%: như luật bot, quá xa
         const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
         if (sent.has(key)) continue;
-        const own = (await getDailyData(coin)).trend;
         const risk = Math.abs(w.entry - w.stop) / w.entry;
         await send(
-          `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
-          `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại* (râu quét rồi bị đẩy lại)\n` +
-          `• Nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận quay đầu\n` +
+          `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin + BTC ngày\n` +
+          `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại*, nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
           `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +
-          `• Ngày: coin ${own > 0 ? "tăng" : own < 0 ? "giảm" : "?"}, BTC ${btc > 0 ? "tăng" : btc < 0 ? "giảm" : "?"}${own === w.side && btc === w.side ? " ✅ thuận" : " ⚠️ ngược"}\n` +
-          `_Bot KHÔNG tự vào. Backtest kiểu này ≈ −0.13R/lệnh, bạn tự quyết._`
+          `• *Đòn bẩy tối đa x${maxLev(risk)}* (cao hơn → SL nằm sau giá thanh lý)\n` +
+          `_Bot KHÔNG tự vào. Backtest 1H thuận trend ≈ −0.1R/lệnh sau phí: chưa có lợi thế, đánh nhỏ._`
         );
         sent.add(key);
         saveDedup(sent, preSent);
@@ -488,6 +491,8 @@ export async function scanAndAlert(): Promise<string[]> {
               });
             }
 
+            // Donchian 1D chỉ paper: ghi sổ, không gửi Telegram (backtest không đạt, tránh bị vào theo)
+            if (mexcOrder.isDryRun) { sent.add(key); saveDedup(sent, preSent); continue; }
             const riskPct = Math.abs(s.entry - s.stop) / s.entry;
             const autoTag = mexcOrder.isDryRun
               ? `🚀 *[VÀO LỆNH (PAPER)]*`
@@ -607,6 +612,13 @@ export async function scanAndAlert(): Promise<string[]> {
           volumeRatio: s.volumeRatio,
         });
 
+        // Setup không đủ chuẩn live (BOS, pinbar, ngược trend): chỉ ghi sổ paper, không gửi thẻ Telegram
+        if (effectiveDryRun) {
+          sent.add(key);
+          saveDedup(sent, preSent);
+          openPaperPlan(key, decision, bars4h, currentEquity);
+          break;
+        }
         const autoTag = !mexcOrder.isDryRun
           ? `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (KIM CƯƠNG 24/7) - ${mexcOrder.vol} HĐ]*`
           : `📋 *[PAPER - KHÔNG ĐỦ CHUẨN LIVE]*`;

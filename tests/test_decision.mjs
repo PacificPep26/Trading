@@ -41,3 +41,12 @@ assert.equal(evaluateSetup({ ...setup, style: "double_top_bottom", side: -1, sto
 assert.equal(evaluateSetup({ ...setup, style: "pinbar_reversal", side: -1, stop: 102 }, { ...context, timeframe: "1H", btcDaily: -1, ownDaily: -1 }).code, "ACCEPTED");
 
 console.log("All decision engine contract tests passed!");
+
+// isDiamond = đúng điều kiện live: hai đỉnh SHORT ngược trend (coin + BTC tăng) không được sizing 90% vốn
+{
+  const dt = { ...setup, style: "double_top_bottom", side: -1, entry: 100, stop: 103, volumeRatio: 3 };
+  const counter = evaluateSetup(dt, { ...context, ownDaily: 1, btcDaily: 1, equity: 50, peakEquity: 50 });
+  assert.equal(counter.code, "ACCEPTED"); assert.notEqual(counter.plan.sizing.margin, 45, "counter-trend short must not use 90% margin");
+  const aligned = evaluateSetup(dt, { ...context, ownDaily: -1, btcDaily: -1, equity: 50, peakEquity: 50 });
+  assert.equal(aligned.code, "ACCEPTED"); assert.equal(aligned.plan.sizing.margin, 45, "aligned double top short uses 90% margin");
+}

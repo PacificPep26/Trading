@@ -5,6 +5,7 @@ import {
   isDrawdownLocked,
   isFundingSafe,
   isBtcMomentumBlocked,
+  isLiveEligible,
   MAX_STOP_DISTANCE,
   MIN_STOP_DISTANCE,
   MAX_PRICE_DRIFT,
@@ -154,11 +155,8 @@ export function evaluateSetup(setup: Setup, ctx: DecisionContext): SignalDecisio
   const tp1 = isDailyDonchian ? 0 : setup.entry + setup.side * 0.90 * r;
   const tp2 = isDailyDonchian ? 0 : setup.entry + setup.side * 1.85 * r;
 
-  const isDiamond =
-    ctx.timeframe === "4H" &&
-    setup.style === "double_top_bottom" &&
-    (setup.volumeRatio ?? 1.0) >= 2.0 &&
-    (setup.side > 0 ? (ctx.ownDaily > 0 && ctx.btcDaily > 0) : true);
+  // Cùng điều kiện với lệnh live: short ngược trend không được sizing 90% vốn
+  const isDiamond = isLiveEligible(setup.style, setup.side, ctx.timeframe, ctx.ownDaily, ctx.btcDaily, setup.volumeRatio ?? 1.0);
 
   return {
     accepted: true,
