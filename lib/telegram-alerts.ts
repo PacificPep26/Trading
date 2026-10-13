@@ -318,7 +318,8 @@ export async function scanAndAlert(): Promise<string[]> {
         (o) => String(o.symbol ?? "") === pos.symbol && Number(o.isFinished ?? 0) === 0
       );
       const hasTpOrder = posStopOrders.some((o) => Number(o.takeProfitPrice ?? 0) > 0);
-      const is1dDonchianPosition = !hasTpOrder && pos.positionType === 1 && !trailing[pos.symbol];
+      // Chỉ lệnh bot tự mở theo Donchian (có trong nhật ký); lệnh tay không TP không được bot tự đóng
+      const is1dDonchianPosition = !hasTpOrder && pos.positionType === 1 && openTrade(pos.symbol)?.style === "daily_trend_donchian";
 
       if (is1dDonchianPosition) {
         // THOÁT LỆNH CHUẨN BACKTEST: Nếu nến ngày đóng cửa thủng đáy 10 ngày -> Đóng Market ngay lập tức!
