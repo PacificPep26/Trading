@@ -364,8 +364,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
         if (sw && swKey && !sent.has(swKey)) {
+          const swOwn = (await getDailyData(coin)).trend;
           await send(
-            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
+            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ${swOwn === sw.side && btc === sw.side ? "✅ thuận" : "⚠️ ngược"}\n` +
             `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, đóng ${f(sw.close)})\n` +
             `• Vào sớm: SL ngoài râu ${f(sw.wick)}. Chắc hơn: chờ nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn.`
           );
