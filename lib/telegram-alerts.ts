@@ -15,6 +15,7 @@ import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submi
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
+import { pickCoin, type OverviewPick } from "@/lib/overview";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -25,6 +26,7 @@ const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
 
 // data/ là Railway volume (/app/data) → chống trùng & đỉnh vốn sống sót qua redeploy
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
+const OVERVIEW_PAPER = path.join(process.cwd(), "data", "paper-overview.json");
 
 // Vị thế 4H hai đỉnh/đáy đang trailing SL (không TP), theo symbol MEXC → phải bền qua redeploy
 type TrailEntry = { side: 1 | -1; entryTime: number };
@@ -354,6 +356,42 @@ export async function scanAndAlert(): Promise<string[]> {
     const { msgs, keep } = evaluateWatches(watches, price);
     for (const m of msgs) await send(m);
     if (msgs.length) saveWatches(keep);
+  }
+
+  // Toàn cảnh 5 lớp, quét mỗi 5 phút, cả LONG lẫn SHORT. Chỉ báo + paper (data/paper-overview.json).
+  if (new Date().getUTCMinutes() % 5 < 2) {
+    const picks: OverviewPick[] = [];
+    for (const coin of COINS) {
+      try {
+        const [h4o, h1o, m15o] = await Promise.all([
+          candles(`${coin}-USDT-SWAP`, "4H", 120), candles(`${coin}-USDT-SWAP`, "1H", 100), candles(`${coin}-USDT-SWAP`, "15m", 100),
+        ]);
+        const h1c = h1o.filter((x) => x.closed);
+        for (const m of managePaper1h(coin, h1o, OVERVIEW_PAPER)) await send(m.replace("PAPER 1H", "PAPER TOÀN CẢNH"));
+        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed) }, 3);
+        const key = p && `OV:${coin}:${p.side}:${Math.floor(Date.now() / 3_600_000)}`;
+        if (p && key && !sent.has(key)) {
+          picks.push(p);
+          sent.add(key);
+          if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: h1c[h1c.length - 1].t }, OVERVIEW_PAPER);
+        }
+      } catch (e) {
+        console.error(`[OVERVIEW] ${coin}:`, e);
+      }
+    }
+    if (picks.length) {
+      saveDedup(sent, preSent);
+      picks.sort((a, b) => b.score - a.score || b.rr - a.rr);
+      await send(
+        `🧭 *[TOÀN CẢNH ${vnTime(Date.now())}]* ${picks.length} kèo\n` +
+        picks.map((p) => {
+          const risk = Math.abs(p.entry - p.stop) / p.entry;
+          return `${p.score >= 4 ? "⭐ " : ""}*${p.side > 0 ? "🟢 LONG" : "🔴 SHORT"} ${p.coin}* (${p.score}/5): ${p.reasons.join(" · ")}\n` +
+            `   Vào ~${f(p.entry)} · SL ${f(p.stop)} · TP ${f(p.tp)} (${p.rr.toFixed(1)}R) · x tối đa ${Math.min(20, Math.max(1, Math.floor(0.8 / risk)))}`;
+        }).join("\n") +
+        `\n_⭐ = bot đánh paper để đo. Chưa backtest, đánh nhỏ._`
+      );
+    }
   }
 
   // Cảnh báo tay sau nến 1H: quét swing đỉnh/đáy rồi nến đảo chiều mạnh. Chỉ báo, không vào lệnh.

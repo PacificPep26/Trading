@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import path from "path";
 import { candles, ticker } from "@/lib/okx";
 import { analyse, swings } from "@/lib/patterns";
 import { evaluateSetup } from "@/lib/decision-engine";
@@ -422,6 +423,11 @@ export async function POST(req: NextRequest) {
           `• TB *${ps.avgR >= 0 ? "+" : ""}${ps.avgR.toFixed(2)}R/lệnh* (tổng ${ps.sumR >= 0 ? "+" : ""}${ps.sumR.toFixed(1)}R, sau phí)\n`
         : `• Chưa có lệnh nào đóng${ps.open ? ` (đang mở ${ps.open})` : ""}\n`;
       bt += `_Backtest 1H ≈ −0.1R/lệnh. Chỉ bật tiền thật nếu sau 2–4 tuần dương rõ._\n\n`;
+      const po = paper1hStats(loadPaper1h(path.join(process.cwd(), "data", "paper-overview.json")));
+      bt += `🧭 *PAPER TOÀN CẢNH (kèo ⭐ ≥ 4/5 lớp)*\n`;
+      bt += po.n
+        ? `• ${po.n} lệnh đã đóng, thắng ${po.wins} (${((po.wins / po.n) * 100).toFixed(0)}%), đang mở ${po.open} · TB *${po.avgR >= 0 ? "+" : ""}${po.avgR.toFixed(2)}R/lệnh*\n\n`
+        : `• Chưa có lệnh nào đóng${po.open ? ` (đang mở ${po.open})` : ""}\n\n`;
 
       bt += `🧪 *BACKTEST LUẬT ĐANG CHẠY (21 coin, phí 0.08%/chiều + trượt)*\n`;
       bt += `Hai đỉnh/đáy 4H, thuận coin + BTC ngày, vol ≥ 2x, SL trailing 3 ATR:\n`;
