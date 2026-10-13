@@ -353,8 +353,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const own = (await getDailyData(coin)).trend;
         const risk = Math.abs(w.entry - w.stop) / w.entry;
         await send(
-          `👀 *[CẢNH BÁO TAY 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
-          `• Nến 1H quét swing ${w.side > 0 ? "đáy" : "đỉnh"} ${f(w.level)} rồi nến ${w.side > 0 ? "xanh" : "đỏ"} mạnh xác nhận\n` +
+          `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
+          `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại* (râu quét rồi bị đẩy lại)\n` +
+          `• Nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận quay đầu\n` +
           `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +
           `• Ngày: coin ${own > 0 ? "tăng" : own < 0 ? "giảm" : "?"}, BTC ${btc > 0 ? "tăng" : btc < 0 ? "giảm" : "?"}${own === w.side && btc === w.side ? " ✅ thuận" : " ⚠️ ngược"}\n` +
           `_Bot KHÔNG tự vào. Backtest kiểu này ≈ −0.13R/lệnh, bạn tự quyết._`
