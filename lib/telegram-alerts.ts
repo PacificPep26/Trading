@@ -369,8 +369,11 @@ export async function scanAndAlert(): Promise<string[]> {
         const h1c = h1o.filter((x) => x.closed);
         for (const m of managePaper1h(coin, h1o, OVERVIEW_PAPER)) await send(m.replace("PAPER 1H", "PAPER TOÀN CẢNH"));
         const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed) }, 3);
-        const key = p && `OV:${coin}:${p.side}:${Math.floor(Date.now() / 3_600_000)}`;
-        if (p && key && !sent.has(key)) {
+        const hour = Math.floor(Date.now() / 3_600_000);
+        const key = p && `OV:${coin}:${p.side}:${hour}`;
+        // cùng coin vừa báo chiều ngược trong 4 giờ → không lật kèo
+        const flipped = p && [0, 1, 2, 3].some((h) => sent.has(`OV:${coin}:${-p.side}:${hour - h}`));
+        if (p && key && !sent.has(key) && !flipped) {
           picks.push(p);
           sent.add(key);
           if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: h1c[h1c.length - 1].t }, OVERVIEW_PAPER);

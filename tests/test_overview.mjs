@@ -19,3 +19,5 @@ assert.ok(L2.score < L.score);
 // minScore cao quá → không chọn
 assert.equal(pickCoin("X", { own: -1, btc: -1, h4, h1, m15 }, 5), null);
 console.log("All overview tests passed!");
+// SL tối thiểu 1 ATR(1H): ATR 1H fixture ≈ 1 → SL cách giá ≥ ~1
+assert.ok(L.entry - L.stop >= 0.99, `SL đủ xa: ${L.entry - L.stop}`);

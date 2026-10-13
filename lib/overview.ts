@@ -69,7 +69,9 @@ export function scoreSide(
 
   // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất, TP trước swing 1H đối diện, cần ≥ 1.5R
   const recent = m15.slice(-8);
-  const stop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
+  const swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
+  // SL tối thiểu 1 ATR(1H): SL 0.3% bị nến 15m thường quét (tin thật 2026-10-13: BTC/AVAX SL 0.28%)
+  const stop = side > 0 ? Math.min(swingStop, price - a1) : Math.max(swingStop, price + a1);
   const opp = side > 0 ? s1.highs.map((k) => h1[k].h).filter((x) => x > price) : s1.lows.map((k) => h1[k].l).filter((x) => x < price);
   const target = opp.length ? (side > 0 ? Math.min(...opp) : Math.max(...opp)) : NaN;
   const risk = Math.abs(price - stop);
