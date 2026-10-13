@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, wickReversal } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -339,6 +339,31 @@ export async function scanAndAlert(): Promise<string[]> {
       }
     } catch (trailErr) {
       console.error(`[MEXC TRAIL] Lỗi xử lý vị thế ${pos.symbol}:`, trailErr);
+    }
+  }
+
+  // Cảnh báo tay sau nến 1H: quét swing đỉnh/đáy rồi nến đảo chiều mạnh. Chỉ báo, không vào lệnh.
+  if (new Date().getUTCMinutes() < 15) {
+    for (const coin of COINS) {
+      try {
+        const w = wickReversal(await candles(`${coin}-USDT-SWAP`, "1H", 60));
+        if (!w) continue;
+        const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
+        if (sent.has(key)) continue;
+        const own = (await getDailyData(coin)).trend;
+        const risk = Math.abs(w.entry - w.stop) / w.entry;
+        await send(
+          `👀 *[CẢNH BÁO TAY 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
+          `• Nến 1H quét swing ${w.side > 0 ? "đáy" : "đỉnh"} ${f(w.level)} rồi nến ${w.side > 0 ? "xanh" : "đỏ"} mạnh xác nhận\n` +
+          `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +
+          `• Ngày: coin ${own > 0 ? "tăng" : own < 0 ? "giảm" : "?"}, BTC ${btc > 0 ? "tăng" : btc < 0 ? "giảm" : "?"}${own === w.side && btc === w.side ? " ✅ thuận" : " ⚠️ ngược"}\n` +
+          `_Bot KHÔNG tự vào. Backtest kiểu này ≈ −0.13R/lệnh, bạn tự quyết._`
+        );
+        sent.add(key);
+        saveDedup(sent, preSent);
+      } catch (e) {
+        console.error(`[WR1H] ${coin}:`, e);
+      }
     }
   }
 
