@@ -203,7 +203,6 @@ export async function scanAndAlert(): Promise<string[]> {
     }
   }
 
-  const paper = paperSummary(currentEquity);
   const itemsToSend: { key: string; msg: string }[] = [];
   const out: string[] = [];
 
@@ -408,7 +407,7 @@ export async function scanAndAlert(): Promise<string[]> {
             btcDaily: btc,
             ownDaily: own,
             equity: currentEquity,
-            peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
+            peakEquity: globalThis.mexcPeakEquity ?? currentEquity, // đỉnh vốn THẬT; đỉnh paper lãi ảo gây khóa oan
             lastBarTime: aDaily.lastBarTime,
             livePrice: tLive?.last,
             fundingRate,
@@ -429,6 +428,7 @@ export async function scanAndAlert(): Promise<string[]> {
             price: s.entry,
             leverage: sizing.leverage,
             stopLossPrice: s.stop,
+            dryRunOverride: !isLiveEligible(s.style, s.side, "1D", own, btc), // Donchian 1D chỉ paper
           });
 
           if (mexcOrder.success) {
@@ -494,7 +494,7 @@ export async function scanAndAlert(): Promise<string[]> {
           btcDaily: btc,
           ownDaily: own,
           equity: currentEquity,
-          peakEquity: Math.max(paper.peakEquity, globalThis.mexcPeakEquity),
+          peakEquity: globalThis.mexcPeakEquity ?? currentEquity, // đỉnh vốn THẬT; đỉnh paper lãi ảo gây khóa oan
           lastBarTime: a4.lastBarTime,
           livePrice: tLive?.last,
           btc1hBars: btc1h,
