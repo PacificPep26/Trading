@@ -13,6 +13,7 @@ import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason, tr
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop, getRealizedPnl } from "@/lib/mexc-client";
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
+import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -339,6 +340,18 @@ export async function scanAndAlert(): Promise<string[]> {
     } catch (trailErr) {
       console.error(`[MEXC TRAIL] Lỗi xử lý vị thế ${pos.symbol}:`, trailErr);
     }
+  }
+
+  // Theo dõi giá chủ tài khoản đặt qua Telegram ("theo dõi SUI 1.041 1.029 1.085 btc 82750")
+  const watches = loadWatches();
+  if (watches.length) {
+    const price: Record<string, number> = {};
+    for (const c of new Set([...watches.map((w) => w.coin), "BTC"])) {
+      price[c] = (await ticker(`${c}-USDT-SWAP`).catch(() => null))?.last ?? NaN;
+    }
+    const { msgs, keep } = evaluateWatches(watches, price);
+    for (const m of msgs) await send(m);
+    if (msgs.length) saveWatches(keep);
   }
 
   // Cảnh báo tay sau nến 1H: quét swing đỉnh/đáy rồi nến đảo chiều mạnh. Chỉ báo, không vào lệnh.

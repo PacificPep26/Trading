@@ -7,6 +7,7 @@ import { calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
 import { getCapitalTier } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/lib/mexc-client";
 import { loadJournal, journalStats } from "@/lib/trade-journal";
+import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -284,6 +285,29 @@ export async function POST(req: NextRequest) {
     const allowedChatId = process.env.TELEGRAM_CHAT_ID;
     if (allowedChatId && String(chatId) !== String(allowedChatId)) {
       await sendTelegramReply(token, chatId, "⛔ Xin lỗi, đây là bot giao dịch riêng tư của Victor.");
+      return NextResponse.json({ ok: true });
+    }
+
+    // 0. Theo dõi giá: "theo dõi SUI 1.041 1.029 1.085 btc 82750" / "theo dõi" (xem) / "bỏ theo dõi"
+    if (lower.includes("theo dõi") || lower.includes("theo doi")) {
+      let reply: string;
+      if (lower.startsWith("bỏ") || lower.startsWith("bo ")) {
+        saveWatches([]);
+        reply = "🗑 Đã xoá hết danh sách theo dõi.";
+      } else {
+        const w = parseWatch(lower, COINS);
+        const ws = loadWatches();
+        if (w) {
+          saveWatches([...ws.filter((x) => x.coin !== w.coin), w]);
+          reply = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (SL ${w.stop}, TP ${w.tp})` +
+            `${w.btcCancel ? `, huỷ nếu BTC ${w.side > 0 ? "<" : ">"} ${w.btcCancel}` : ""}. Hết hạn 23:59 hôm nay.`;
+        } else if (ws.length) {
+          reply = `👁 *Đang theo dõi:*\n` + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · SL ${x.stop} · TP ${x.tp}${x.btcCancel ? ` · huỷ BTC ${x.btcCancel}` : ""}`).join("\n");
+        } else {
+          reply = "Cú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750` (coin, giá vào, SL, TP, tuỳ chọn mức BTC huỷ). `bỏ theo dõi` để xoá.";
+        }
+      }
+      await sendTelegramReply(token, chatId, reply);
       return NextResponse.json({ ok: true });
     }
 
