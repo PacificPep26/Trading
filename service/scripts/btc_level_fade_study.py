@@ -119,5 +119,51 @@ def main():
         print(f"  {label:12s} 23–24 {T.stats(a)}\n  {'':12s} 25–26 {T.stats(b)}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and __import__("sys").argv[-1] != "scalp":
     main()
+
+
+def scalp():
+    """Owner's clarification: alts lag BTC's turn -> short scalp. Forward move of each alt after the trigger,
+    and fixed small TP/SL scalps (entry next 15m open, max 8 bars = 2h, stop first)."""
+    btc15 = load("BTCUSDT-PERP", "15m", include_holdout=True)
+    trig = triggers(btc15)
+    data = {}
+    for fp in sorted(DATA_DIR.glob("*-PERP_15m.csv")):
+        name = fp.name.split("_")[0]
+        coin = name.replace("USDT-PERP", "")
+        if coin in LIVE_COINS and coin != "BTC":
+            cs = load(name, "15m", include_holdout=True)
+            data[coin] = (cs, {c.t: n for n, c in enumerate(cs)})
+    fwd = {n: {"old": [], "new": []} for n in (1, 2, 4, 8)}
+    grid = {(tp, sl): {"old": [], "new": []} for tp in (0.004, 0.006, 0.01) for sl in (0.004, 0.006, 0.01)}
+    for i, side, _ in trig:
+        t = btc15[i].t
+        for cs, idx in data.values():
+            k = idx.get(t)
+            if k is None or k + 9 >= len(cs):
+                continue
+            entry, per = cs[k + 1].o, ("old" if year_of(t) <= 2024 else "new")
+            for n in fwd:
+                fwd[n][per].append(side * (cs[k + n].c / entry - 1))
+            for (tp, sl), acc in grid.items():
+                g = side * (cs[k + 8].c / entry - 1)
+                for b in cs[k + 1 : k + 9]:
+                    adverse = (b.h / entry - 1) if side < 0 else (1 - b.l / entry)
+                    favour = (1 - b.l / entry) if side < 0 else (b.h / entry - 1)
+                    if adverse >= sl:
+                        g = -sl; break
+                    if favour >= tp:
+                        g = tp; break
+                acc[per].append(g - T.COST)
+    avg = lambda xs: sum(xs) / len(xs) * 100 if xs else 0
+    print(f"Altcoin đi tiếp theo chiều BTC sau khi BTC quay đầu (n={len(fwd[1]['old'])}/{len(fwd[1]['new'])}, chưa trừ phí 0.2%):")
+    for n, v in fwd.items():
+        print(f"  sau {n * 15:3d} phút: 23–24 {avg(v['old']):+.3f}%  25–26 {avg(v['new']):+.3f}%")
+    print("Lướt TP/SL cố định, tối đa 2 giờ, SAU phí 0.2% (lãi TB mỗi lệnh, % giá):")
+    for (tp, sl), v in grid.items():
+        print(f"  TP {tp * 100:.1f}% SL {sl * 100:.1f}%: 23–24 {avg(v['old']):+.3f}%  25–26 {avg(v['new']):+.3f}%")
+
+
+if __name__ == "__main__" and __import__("sys").argv[-1] == "scalp":
+    scalp()
