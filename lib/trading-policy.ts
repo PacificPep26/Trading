@@ -250,6 +250,7 @@ export function trailingStop(
   entryTime: number,
   currentStop: number,
   mult = TRAIL_ATR_MULT,
+  barMs = 4 * 3_600_000,
 ): number {
   const closed = bars.filter((b) => b.closed !== false);
   if (closed.length < 15) return currentStop;
@@ -258,7 +259,7 @@ export function trailingStop(
     const p = closed[i - 1].c, b = closed[i];
     atr = (atr * 13 + Math.max(b.h - b.l, Math.abs(b.h - p), Math.abs(b.l - p))) / 14;
   }
-  const since = closed.filter((b) => b.t + 4 * 3_600_000 > entryTime);
+  const since = closed.filter((b) => b.t + barMs > entryTime);
   if (!since.length) return currentStop;
   const best = side > 0 ? Math.max(...since.map((b) => b.c)) : Math.min(...since.map((b) => b.c));
   const trail = best - side * mult * atr;

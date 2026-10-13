@@ -14,6 +14,7 @@ import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop, getRealizedPnl } from "@/lib/mexc-client";
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
+import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -360,6 +361,7 @@ export async function scanAndAlert(): Promise<string[]> {
     for (const coin of COINS) {
       try {
         const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
+        for (const m of managePaper1h(coin, bars1h)) await send(m);
         const own = (await getDailyData(coin)).trend;
         // Chỉ báo kèo thuận coin + BTC ngày (sweep_entry_study 2026-10-13: ngược trend còn tệ hơn)
         const aligned = (side: number) => own === side && btc === side;
@@ -383,7 +385,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
         if (sent.has(key)) continue;
         const risk = Math.abs(w.entry - w.stop) / w.entry;
+        const paperOpened = openPaper1h(coin, w);
         await send(
+          (paperOpened ? `🧪 _Bot đã vào lệnh PAPER (tiền giả), trailing 3 ATR 1H._\n` : "") +
           `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin + BTC ngày\n` +
           `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại*, nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
           `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +

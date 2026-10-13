@@ -8,6 +8,7 @@ import { getCapitalTier } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/lib/mexc-client";
 import { loadJournal, journalStats } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
+import { loadPaper1h, paper1hStats } from "@/lib/paper-1h";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -413,6 +414,14 @@ export async function POST(req: NextRequest) {
           `• Tốt nhất ${js.bestR.toFixed(2)}R, tệ nhất ${js.worstR.toFixed(2)}R\n`
         : `• Chưa có lệnh nào đóng${js.open ? ` (đang mở ${js.open})` : ""}\n`;
       bt += `_So sánh có ý nghĩa sau ~30 lệnh._\n\n`;
+
+      const ps = paper1hStats(loadPaper1h());
+      bt += `🧪 *PAPER TỰ ĐỘNG 1H (tiền giả, trailing 3 ATR)*\n`;
+      bt += ps.n
+        ? `• ${ps.n} lệnh đã đóng, thắng ${ps.wins} (${((ps.wins / ps.n) * 100).toFixed(0)}%), đang mở ${ps.open}\n` +
+          `• TB *${ps.avgR >= 0 ? "+" : ""}${ps.avgR.toFixed(2)}R/lệnh* (tổng ${ps.sumR >= 0 ? "+" : ""}${ps.sumR.toFixed(1)}R, sau phí)\n`
+        : `• Chưa có lệnh nào đóng${ps.open ? ` (đang mở ${ps.open})` : ""}\n`;
+      bt += `_Backtest 1H ≈ −0.1R/lệnh. Chỉ bật tiền thật nếu sau 2–4 tuần dương rõ._\n\n`;
 
       bt += `🧪 *BACKTEST LUẬT ĐANG CHẠY (21 coin, phí 0.08%/chiều + trượt)*\n`;
       bt += `Hai đỉnh/đáy 4H, thuận coin + BTC ngày, vol ≥ 2x, SL trailing 3 ATR:\n`;
