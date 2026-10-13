@@ -363,8 +363,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
         for (const m of managePaper1h(coin, bars1h)) await send(m);
         const own = (await getDailyData(coin)).trend;
-        // Chỉ báo kèo thuận coin + BTC ngày (sweep_entry_study 2026-10-13: ngược trend còn tệ hơn)
-        const aligned = (side: number) => own === side && btc === side;
+        // Chỉ báo kèo thuận xu hướng ngày của coin (chủ dự án nới: BTC ngược chiều vẫn báo, có ghi chú)
+        const aligned = (side: number) => own === side;
+        const btcNote = (side: number) => (btc === side ? "✅ BTC cùng chiều" : "⚠️ BTC ngược chiều");
         // Đòn bẩy tối đa để SL nằm trước giá thanh lý (chừa 20% đệm)
         const maxLev = (riskPct: number) => Math.min(20, Math.max(1, Math.floor(0.8 / riskPct)));
         const sw = freshSweep(bars1h);
@@ -372,7 +373,7 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sw && swKey && !sent.has(swKey) && aligned(sw.side)) {
           const swRisk = Math.abs(sw.close - sw.wick) / sw.close;
           await send(
-            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận\n` +
+            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(sw.side)}\n` +
             `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, đóng ${f(sw.close)})\n` +
             `• *Nên chờ* nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn. Vào sớm ngay bây giờ backtest ≈ −0.27R/lệnh (tệ nhất).\n` +
             `• Nếu vẫn vào sớm: SL ngoài râu ${f(sw.wick)} · đòn bẩy tối đa x${maxLev(swRisk)}`
@@ -388,7 +389,7 @@ export async function scanAndAlert(): Promise<string[]> {
         const paperOpened = openPaper1h(coin, w);
         await send(
           (paperOpened ? `🧪 _Bot đã vào lệnh PAPER (tiền giả), trailing 3 ATR 1H._\n` : "") +
-          `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin + BTC ngày\n` +
+          `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(w.side)}\n` +
           `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại*, nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
           `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +
           `• *Đòn bẩy tối đa x${maxLev(risk)}* (cao hơn → SL nằm sau giá thanh lý)\n` +
