@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily, wickReversal } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, wickReversal, freshSweep } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -93,7 +93,8 @@ async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   return data.trend;
 }
 
-const f = (v: number) => v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
+// coin giá rất nhỏ (PEPE) cần chữ số có nghĩa, không phải số lẻ cố định
+const f = (v: number) => v.toLocaleString("vi-VN", v > 0 && v < 0.01 ? { maximumSignificantDigits: 5 } : { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
 
 export async function send(text: string): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN, chat = process.env.TELEGRAM_CHAT_ID;
@@ -358,7 +359,20 @@ export async function scanAndAlert(): Promise<string[]> {
   if (new Date().getUTCMinutes() < 15) {
     for (const coin of COINS) {
       try {
-        const w = wickReversal(await candles(`${coin}-USDT-SWAP`, "1H", 60));
+        const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
+        // Báo sớm ngay khi nến quét đóng (trước nến xác nhận ~1 giờ)
+        const sw = freshSweep(bars1h);
+        const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
+        if (sw && swKey && !sent.has(swKey)) {
+          await send(
+            `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}*\n` +
+            `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, đóng ${f(sw.close)})\n` +
+            `• Vào sớm: SL ngoài râu ${f(sw.wick)}. Chắc hơn: chờ nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn.`
+          );
+          sent.add(swKey);
+          saveDedup(sent, preSent);
+        }
+        const w = wickReversal(bars1h);
         if (!w) continue;
         const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
         if (sent.has(key)) continue;

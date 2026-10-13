@@ -237,32 +237,48 @@ export function analyseDaily(all: Candle[]) {
 }
 
 /**
- * Cảnh báo tay (KHÔNG tự vào lệnh; backtest kiểu này ≈ −0.13R/lệnh): nến trước quét qua swing đáy gần nhất
- * (râu thủng, đóng lại trên) (hoặc đáy 24 nến) rồi nến vừa đóng xanh mạnh vượt đỉnh nến quét → LONG; quét swing đỉnh → SHORT.
- * SL ngoài râu + 0.1 ATR, TP 1.8R.
+ * Nến k quét swing đáy/đỉnh gần nhất (hoặc đáy/đỉnh 24 nến): râu thủng mức rồi đóng lại bên trong, hoặc râu dài hơn thân.
+ * Trả chiều lệnh và mức bị quét; null nếu không quét.
+ */
+function sweepAt(cs: Candle[], k: number): { side: 1 | -1; level: number } | null {
+  if (k < 25) return null;
+  const p = cs[k];
+  const { highs, lows } = swings(cs.slice(0, k)); // swing đã xác nhận trước nến quét
+  const prior = cs.slice(k - 24, k);
+  const loLevels = [lows.length ? cs[lows[lows.length - 1]].l : NaN, Math.min(...prior.map((x) => x.l))];
+  const hiLevels = [highs.length ? cs[highs[highs.length - 1]].h : NaN, Math.max(...prior.map((x) => x.h))];
+  const body = Math.abs(p.c - p.o);
+  const lo = loLevels.find((L) => p.l < L && L < p.h && (p.c > L || Math.min(p.o, p.c) - p.l >= body));
+  if (lo !== undefined) return { side: 1, level: lo };
+  const hi = hiLevels.find((L) => p.h > L && L > p.l && (p.c < L || p.h - Math.max(p.o, p.c) >= body));
+  return hi !== undefined ? { side: -1, level: hi } : null;
+}
+
+/** Báo sớm: nến 1H vừa đóng là nến quét (chưa có nến xác nhận). */
+export function freshSweep(all: Candle[]): { side: 1 | -1; level: number; wick: number; close: number; barTime: number } | null {
+  const cs = all.filter((c) => c.closed !== false);
+  const k = cs.length - 1, sw = sweepAt(cs, k);
+  return sw ? { ...sw, wick: sw.side > 0 ? cs[k].l : cs[k].h, close: cs[k].c, barTime: cs[k].t } : null;
+}
+
+/**
+ * Cảnh báo tay (KHÔNG tự vào lệnh; backtest kiểu này ≈ −0.13R/lệnh): nến trước quét (sweepAt),
+ * nến vừa đóng thân lớn vượt nến quét theo chiều lệnh. SL ngoài râu + 0.1 ATR, TP 1.8R.
  */
 export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop: number; tp: number; level: number; barTime: number } | null {
   const cs = all.filter((c) => c.closed !== false);
   if (cs.length < 30) return null;
   const i = cs.length - 1, p = cs[i - 1], c = cs[i];
+  const sw = sweepAt(cs, i - 1);
+  if (!sw || Math.abs(c.c - c.o) < 0.6 * (c.h - c.l)) return null;
   const atr = atrSeries(cs)[i];
-  const { highs, lows } = swings(cs.slice(0, i - 1)); // swing đã xác nhận trước nến quét
-  const strong = Math.abs(c.c - c.o) >= 0.6 * (c.h - c.l);
-  // mức bị quét: swing gần nhất, hoặc đáy/đỉnh 24 nến (giá rơi/chạy một mạch không có swing gần)
-  const prior = cs.slice(i - 25, i - 1);
-  const loLevels = [lows.length ? cs[lows[lows.length - 1]].l : NaN, Math.min(...prior.map((x) => x.l))];
-  const hiLevels = [highs.length ? cs[highs[highs.length - 1]].h : NaN, Math.max(...prior.map((x) => x.h))];
-  const body = Math.abs(p.c - p.o);
-  // quét = râu thủng mức rồi đóng lại bên trong, hoặc râu dài hơn thân (rút chân)
-  const lo = loLevels.find((L) => p.l < L && L < p.h && (p.c > L || Math.min(p.o, p.c) - p.l >= body));
-  const hi = hiLevels.find((L) => p.h > L && L > p.l && (p.c < L || p.h - Math.max(p.o, p.c) >= body));
-  if (lo !== undefined && strong && c.c > c.o && c.c > p.h) {
+  if (sw.side > 0 && c.c > c.o && c.c > p.h) {
     const stop = p.l - 0.1 * atr;
-    return { side: 1, entry: c.c, stop, tp: c.c + 1.8 * (c.c - stop), level: lo, barTime: c.t };
+    return { side: 1, entry: c.c, stop, tp: c.c + 1.8 * (c.c - stop), level: sw.level, barTime: c.t };
   }
-  if (hi !== undefined && strong && c.c < c.o && c.c < p.l) {
+  if (sw.side < 0 && c.c < c.o && c.c < p.l) {
     const stop = p.h + 0.1 * atr;
-    return { side: -1, entry: c.c, stop, tp: c.c - 1.8 * (stop - c.c), level: hi, barTime: c.t };
+    return { side: -1, entry: c.c, stop, tp: c.c - 1.8 * (stop - c.c), level: sw.level, barTime: c.t };
   }
   return null;
 }

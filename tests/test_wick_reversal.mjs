@@ -17,4 +17,9 @@ const sw2 = { t: 28 * H, o: 101, h: 105, l: 100.8, c: 101.5, v: 1, closed: true 
 const red = { t: 29 * H, o: 101.4, h: 101.5, l: 99, c: 99.2, v: 1, closed: true };
 const s = wickReversal([...flat, sw2, red]);
 assert.equal(s.side, -1); assert.equal(s.level, 102); assert.ok(s.stop > 105);
+const { freshSweep } = await import("../lib/patterns.ts");
+// báo sớm: nến quét vừa đóng, chưa có nến xác nhận
+const fs1 = freshSweep([...flat, sweep]);
+assert.equal(fs1.side, 1); assert.equal(fs1.level, 100); assert.equal(fs1.wick, 97);
+assert.equal(freshSweep(flat), null);
 console.log("All wick reversal tests passed!");
