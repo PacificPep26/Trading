@@ -369,7 +369,8 @@ export async function scanAndAlert(): Promise<string[]> {
 
   // Gộp mọi kèo tay của lượt quét thành 1 tin (chủ dự án 14/10: báo nhiều quá rối)
   const digest: { rr: number; text: string }[] = [];
-  const lev = (risk: number) => Math.min(20, Math.max(1, Math.floor(0.8 / risk)));
+  // tối đa x10 (chủ dự án 14/10: x20 với SL sát dễ bị quét cháy); SL xa thì giảm để lỗ khi chạm SL ≤ 80% ký quỹ
+  const lev = (risk: number) => Math.min(10, Math.max(1, Math.floor(0.8 / risk)));
   const plan = (tag: string, side: number, coin: string, how: string, entry: number, stop: number, tp: number, note: string) => {
     const risk = Math.abs(entry - stop) / entry, rr = Math.abs(tp - entry) / Math.abs(entry - stop);
     digest.push({ rr, text: `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${tag} · ${note}\n    ${how} ${f(entry)} · SL ${f(stop)} (${(risk * 100).toFixed(1)}%) · TP ${f(tp)} · *${rr.toFixed(1)}R* · x≤${lev(risk)}` });
