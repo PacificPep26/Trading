@@ -33,7 +33,7 @@ function resample(bars, step) {
 const lastBefore = (arr, tEnd) => { let lo = 0, hi = arr.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m].t < tEnd) { k = m; lo = m + 1; } else hi = m - 1; } return k; };
 
 // Thoát trên nến 15m: SL trước nếu cùng nến chạm cả hai; hết 48 giờ thì đóng ở giá đóng cửa
-function exitR(m15, i0, side, entry, stop, tp, slipIn) {
+function exitR(m15, i0, side, entry, stop, tp, slipIn, limitFill = false) {
   const r = Math.abs(entry - stop), riskPct = r / entry;
   const fill = entry * (1 + side * slipIn);
   for (let i = i0; i < Math.min(m15.length, i0 + MAX_BARS); i++) {
@@ -41,7 +41,8 @@ function exitR(m15, i0, side, entry, stop, tp, slipIn) {
     const hold = (i - i0 + 1) * M15;
     const cost = (FUND_8H * hold) / (8 * H) / riskPct;
     if (side > 0 ? b.l <= stop : b.h >= stop) return side * (stop * (1 - side * SLIP) - fill) / r - cost;
-    if (side > 0 ? b.h >= tp : b.l <= tp) return side * (tp - fill) / r - cost;
+    // Limit khớp trên đường giá đi xuống: đỉnh của nến khớp có thể xảy ra trước lúc khớp → không tính TP ở nến khớp
+    if ((side > 0 ? b.h >= tp : b.l <= tp) && !(limitFill && i === i0)) return side * (tp - fill) / r - cost;
   }
   const last = m15[Math.min(m15.length, i0 + MAX_BARS) - 1];
   return side * (last.c - fill) / r - (FUND_8H * MAX_BARS * M15) / (8 * H) / riskPct;
@@ -82,7 +83,7 @@ for (const coin of COINS) {
       if (j >= k + 5 || j >= m15.length) { trades.push({ coin, t: now, side: p.side, score: p.score, type: p.orderType, filled: false }); continue; }
     }
     if (p.side > 0 ? entry <= p.stop || entry >= p.tp : entry >= p.stop || entry <= p.tp) continue; // giá mở đã vượt SL/TP
-    const R = exitR(m15, j, p.side, entry, p.stop, p.tp, slipIn);
+    const R = exitR(m15, j, p.side, entry, p.stop, p.tp, slipIn, p.orderType !== "MARKET");
     trades.push({ coin, t: now, side: p.side, score: p.score, type: p.orderType, filled: true, R, rr: p.rr });
     // Đối chứng: cùng coin, cùng năm, cùng chiều, cùng khoảng cách SL/TP theo %, vào Market ở thời điểm ngẫu nhiên
     const yr = new Date(now).getUTCFullYear();
