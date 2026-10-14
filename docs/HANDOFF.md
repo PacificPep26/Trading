@@ -1,33 +1,20 @@
-# Handoff — cập nhật 2026-10-10
+# Handoff — cập nhật 2026-10-14
 
-Đọc theo thứ tự: [bot-spec.md](bot-spec.md) → [../PLAN.md](../PLAN.md) → [quy-trinh-phan-tich.md](quy-trinh-phan-tich.md). Strategy hiện tại là `paper-v2.3.1`.
+Đọc theo thứ tự: [bot-spec.md](bot-spec.md) → [../PLAN.md](../PLAN.md) → [nhat-ky-nghien-cuu.md](nhat-ky-nghien-cuu.md) → [quy-trinh-phan-tich.md](quy-trinh-phan-tich.md). Strategy `paper-v2.4.0`.
 
-## Trạng thái
+## Quy tắc khi sửa
 
-- Bot phân tích dữ liệu OKX, ghi paper ledger và có adapter đặt lệnh MEXC. Live mặc định khóa; chỉ bật khi đồng thời có credentials, `MEXC_LIVE_TRADING=true` và `MEXC_DRY_RUN=false`.
-- Registry paper gồm BOS, hai đỉnh/đáy và pinbar trên 4H/1H. Không setup nào hiện đạt tiêu chí thống kê `tradeable`; không mô tả hệ thống là có lợi thế đã được chứng minh.
-- `lib/decision-engine.ts` là contract dùng chung; `lib/trading-policy.ts` giữ version/registry/circuit breaker; `lib/capital-tier.ts` giữ sizing theo tier.
-- MEXC dùng `https://api.mexc.com`: SL gắn với lệnh mở và được kiểm tra lại; TP1/TP2 đặt qua `positionId`. Lỗi đọc tài khoản/vị thế phải fail-closed.
-- Ledger append-only ở `PAPER_LEDGER_FILE` (mặc định `data/paper-ledger.ndjson`); API đọc tại `/api/paper`. Production cần persistent volume và một replica.
-- Tier khởi động dùng risk 2.5 USDT/lệnh, leverage tối đa x10; drawdown 20% khóa entry. Scanner kiểm tra margin khả dụng, không nhồi trùng symbol và giới hạn vị thế theo tier.
+- Kèo mới chỉ được báo/vào lệnh khi qua tiêu chuẩn chốt TRƯỚC khi chạy: dương riêng 2025 và 2026, t ≥ 2, hơn vào ngẫu nhiên cùng SL/TP. Chủ dự án giao dịch tay phí 0; đường API MEXC trả taker 0.08%/chiều.
+- Backtest Limit: không tính TP trên nến khớp (đỉnh nến có thể xảy ra trước lúc khớp); SL trước nếu cùng nến.
+- Sau khi đổi luật live, chạy lại `service/scripts/live_replay_study.mjs` để chắc code live cho đúng số của backtest (14/10 phát hiện 📌 live +0.014R so với backtest +0.069R chỉ vì cách giữ lệnh chờ).
+- Đổi luật vào lệnh → tăng `STRATEGY_VERSION`.
+- Không thêm lớp chấm điểm/“AI” chưa có backtest (14/10 đã gỡ order flow và “AI meta-scorer” tự đặt trọng số).
 
-## Chưa triển khai
-
-- Tự động dời SL phần còn lại về Entry sau TP1.
-- Ratchet floor bền vững qua restart.
-- Truyền funding rate vào decision context của scanner tự động.
-- Kiểm thử end-to-end bằng lệnh tiền thật. Các test MEXC hiện dùng mock và không gửi lệnh live.
-
-## Kiểm tra trước khi bàn giao
+## Kiểm tra trước khi push (Railway tự deploy từ `main`)
 
 ```powershell
-git status --short
 npm run test:policy
-.\.venv\Scripts\python.exe -m pytest -q
-npm run lint
+node tests/test_overview.mjs; node tests/test_resting_limit.mjs
+python -m pytest -q
 npm run build
 ```
-
-Mốc xác minh `v2.3.1`: 47 pytest pass, policy/API/ledger pass, lint pass, build pass. Build còn cảnh báo Turbopack về dynamic filesystem tracing tại paper ledger.
-
-Không sửa rule mà không tăng `STRATEGY_VERSION` và bắt đầu cohort paper mới. Không bật live chỉ vì build/test xanh; điều kiện promotion thống kê vẫn chưa đạt.

@@ -70,7 +70,7 @@ def trades(cs, cands, mode):
                 break
         if g is None:
             g = cs[kk].c / entry - 1
-        out.append({"year": year_of(cs[fill].t), "r": (g - COST) / risk})
+        out.append({"year": year_of(cs[fill].t), "r": (g - COST) / risk, "start": start})
         busy = kk
     return out
 

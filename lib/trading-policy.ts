@@ -1,5 +1,5 @@
 /** Nguồn chân lý cho policy trading. Chuẩn hóa v2.0.0 */
-export const STRATEGY_VERSION = "paper-v2.3.1";
+export const STRATEGY_VERSION = "paper-v2.4.0";
 export const MAX_LEVERAGE = 10;
 export const RISK_PER_TRADE = 0.10;
 export const MAX_DRAWDOWN = 0.20;

@@ -16,6 +16,9 @@ assert.equal(s.level, 100); assert.equal(s.tp, 110);
 assert.ok(s.limit < 100 && s.stop < s.limit);
 assert.ok(Math.abs((100 - s.limit) / s.atr - 0.5) < 1e-9 && Math.abs((s.limit - s.stop) / s.atr - 1.5) < 1e-9);
 assert.equal(restingLimit(cs.slice(0, 43), 1), null); // chưa đủ 3 nến sau đáy
+// nến tạo đáy volume ≥ 2.5x TB 20 nến trước → bỏ
+assert.equal(restingLimit(cs.map((c, i) => (i === 40 ? { ...c, v: 3 } : c)), 1), null);
+assert.ok(restingLimit(cs.map((c, i) => (i === 40 ? { ...c, v: 2 } : c)), 1));
 // paper: chờ → khớp → TP
 const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "rl-")), "l.json");
 assert.equal(addLimit("NEAR", s, file), true);

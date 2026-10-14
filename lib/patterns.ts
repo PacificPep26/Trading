@@ -314,6 +314,11 @@ export function restingLimit(all: Candle[], side: 1 | -1): { side: 1 | -1; level
   const idx = side > 0 ? lows : highs;
   const k = idx[idx.length - 1];
   if (k !== n - 1 - W) return null; // chỉ swing vừa xác nhận ở nến cuối
+  // Nến tạo đáy volume ≥ 2.5x TB 20 nến trước = lực bán thật, giá hay xuyên qua Limit xuống SL
+  // (limit_tp_study 2026-10-14: 2025 −0.12R, 2026 −0.22R; các nhóm còn lại dương)
+  const prev = cs.slice(Math.max(0, k - 20), k);
+  const vAvg = prev.reduce((s, c) => s + c.v, 0) / prev.length;
+  if (vAvg > 0 && cs[k].v >= 2.5 * vAvg) return null;
   const atr = atrSeries(cs)[n - 1];
   const level = side > 0 ? cs[k].l : cs[k].h;
   const limit = level - side * 0.5 * atr;

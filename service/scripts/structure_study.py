@@ -6,7 +6,7 @@ Usage: python -m service.scripts.structure_study [--interval 1h]
 - order cancelled if price reaches TP1 or opens beyond the stop before filling
 - after fill: SL first (also inside the fill bar), then TP; exit at close after MAX_HOLD bars
 - fees: limit entry (maker 0.02%) + market exit (taker 0.05%); taker/taker shown too
-Writes lib/structure-stats.json for the web.
+Writes lib/structure-stats.json (no longer read by the app).
 """
 import argparse
 import bisect
