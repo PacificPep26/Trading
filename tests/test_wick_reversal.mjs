@@ -21,5 +21,6 @@ const { freshSweep } = await import("../lib/patterns.ts");
 // báo sớm: nến quét vừa đóng, chưa có nến xác nhận
 const fs1 = freshSweep([...flat, sweep]);
 assert.equal(fs1.side, 1); assert.equal(fs1.level, 100); assert.equal(fs1.wick, 97);
+assert.ok(fs1.stop < 97 && fs1.tp > fs1.close && fs1.confirmAbove === sweep.h);
 assert.equal(freshSweep(flat), null);
 console.log("All wick reversal tests passed!");

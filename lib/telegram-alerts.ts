@@ -414,12 +414,13 @@ export async function scanAndAlert(): Promise<string[]> {
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
         if (sw && swKey && !sent.has(swKey) && aligned(sw.side)) {
-          const swRisk = Math.abs(sw.close - sw.wick) / sw.close;
+          const swRisk = Math.abs(sw.close - sw.stop) / sw.close;
           await send(
             `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(sw.side)}\n` +
-            `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, đóng ${f(sw.close)})\n` +
-            `• *Nên chờ* nến 1H kế ${sw.side > 0 ? "xanh" : "đỏ"} thân lớn. Vào sớm ngay bây giờ backtest ≈ −0.27R/lệnh (tệ nhất).\n` +
-            `• Nếu vẫn vào sớm: SL ngoài râu ${f(sw.wick)} · đòn bẩy tối đa x${maxLev(swRisk)}`
+            `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)})\n` +
+            `• *Vào:* ~${f(sw.close)} · *SL:* ${f(sw.stop)} (${(swRisk * 100).toFixed(2)}%) · *TP:* ${f(sw.tp)} (1.8R) · x tối đa ${maxLev(swRisk)}\n` +
+            `• *Chắc hơn:* chờ nến 1H kế đóng ${sw.side > 0 ? "xanh trên" : "đỏ dưới"} ${f(sw.confirmAbove)} rồi mới vào, SL/TP như trên.\n` +
+            `_Vào sớm backtest ≈ −0.27R/lệnh, chờ xác nhận ≈ −0.1R. Đánh nhỏ._`
           );
           sent.add(swKey);
           saveDedup(sent, preSent);

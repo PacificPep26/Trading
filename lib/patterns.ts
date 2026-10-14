@@ -255,10 +255,19 @@ function sweepAt(cs: Candle[], k: number): { side: 1 | -1; level: number } | nul
 }
 
 /** Báo sớm: nến 1H vừa đóng là nến quét (chưa có nến xác nhận). */
-export function freshSweep(all: Candle[]): { side: 1 | -1; level: number; wick: number; close: number; barTime: number } | null {
+export function freshSweep(all: Candle[]): {
+  side: 1 | -1; level: number; wick: number; close: number; barTime: number;
+  stop: number; tp: number; confirmAbove: number; // confirmAbove: nến kế phải đóng vượt mức này (đỉnh/đáy nến quét)
+} | null {
   const cs = all.filter((c) => c.closed !== false);
   const k = cs.length - 1, sw = sweepAt(cs, k);
-  return sw ? { ...sw, wick: sw.side > 0 ? cs[k].l : cs[k].h, close: cs[k].c, barTime: cs[k].t } : null;
+  if (!sw) return null;
+  const p = cs[k], atr = atrSeries(cs)[k];
+  const stop = sw.side > 0 ? p.l - 0.1 * atr : p.h + 0.1 * atr; // giống wickReversal
+  return {
+    ...sw, wick: sw.side > 0 ? p.l : p.h, close: p.c, barTime: p.t,
+    stop, tp: p.c + sw.side * 1.8 * Math.abs(p.c - stop), confirmAbove: sw.side > 0 ? p.h : p.l,
+  };
 }
 
 /**
