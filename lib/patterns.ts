@@ -324,3 +324,45 @@ export function restingLimit(all: Candle[], side: 1 | -1): { side: 1 | -1; level
   if (side * (tp - limit) < Math.abs(limit - stop)) return null;
   return { side, level, limit, stop, tp, atr, barTime: cs[n - 1].t };
 }
+
+/**
+ * SMC: FVG H1 → hồi về vùng → 15m quét + đóng quay lại (fvg_mtf_study 2026-10-14, phí 0%, chỉ lần vào đầu:
+ * 2025 +0.09R, 2026 +0.27R; 2023–24 âm). Trả tín hiệu nếu NẾN 15m VỪA ĐÓNG là lần kích hoạt đầu tiên của FVG gần nhất.
+ */
+export function fvgSweepSignal(h1All: Candle[], m15All: Candle[], dailySide: number): { side: 1 | -1; entry: number; stop: number; tp: number; zoneTop: number; zoneBot: number; fvgTime: number } | null {
+  const h1 = h1All.filter((c) => c.closed !== false), m15 = m15All.filter((c) => c.closed !== false);
+  if (h1.length < 40 || m15.length < 30 || !dailySide) return null;
+  const atr1 = atrSeries(h1), atr15 = atrSeries(m15);
+  const H = 3_600_000, now15 = m15[m15.length - 1].t;
+  for (let i = h1.length - 1; i >= Math.max(30, h1.length - 48); i--) {
+    const c = h1[i], p2 = h1[i - 2], a = atr1[i];
+    const side = c.l > p2.h && c.l - p2.h >= 0.3 * a ? 1 : c.h < p2.l && p2.l - c.h >= 0.3 * a ? -1 : 0;
+    if (!side || side !== dailySide) continue;
+    const sw = swings(h1.slice(0, i + 1));
+    if (trendOf(h1.slice(0, i + 1), sw.highs, sw.lows) !== side) continue;
+    const top = side > 0 ? c.l : p2.l, bot = side > 0 ? p2.h : c.h;
+    let extreme = side > 0 ? Math.max(...h1.slice(i - 2, i + 1).map((b) => b.h)) : Math.min(...h1.slice(i - 2, i + 1).map((b) => b.l));
+    let inZone = false;
+    for (let j = 0; j < m15.length; j++) {
+      const b = m15[j];
+      if (b.t < c.t + H || j < 8) continue;
+      if (b.t >= c.t + H + 48 * H) return null;
+      if (!inZone) {
+        extreme = side > 0 ? Math.max(extreme, b.h) : Math.min(extreme, b.l);
+        if (side > 0 ? b.l <= top : b.h >= top) inZone = true;
+        continue;
+      }
+      if (side > 0 ? b.c < bot - a : b.c > bot + a) return null; // vùng hỏng
+      const prev = m15.slice(j - 8, j);
+      const ref = side > 0 ? Math.min(...prev.map((q) => q.l)) : Math.max(...prev.map((q) => q.h));
+      if (!(side > 0 ? b.l < ref && b.c > ref : b.h > ref && b.c < ref)) continue;
+      const stop = side > 0 ? b.l - 0.1 * atr15[j] : b.h + 0.1 * atr15[j];
+      const risk = Math.abs(b.c - stop) / b.c;
+      if (risk < 0.002 || risk > 0.06 || side * (extreme - b.c) < 1.5 * Math.abs(b.c - stop)) continue;
+      // lần kích hoạt đầu tiên của FVG này: chỉ báo nếu chính là nến vừa đóng
+      return b.t === now15 ? { side, entry: b.c, stop, tp: extreme, zoneTop: top, zoneBot: bot, fvgTime: c.t } : null;
+    }
+    return null; // chỉ xét FVG gần nhất
+  }
+  return null;
+}

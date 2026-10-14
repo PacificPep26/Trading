@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily, wickReversal, freshSweep, restingLimit } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, wickReversal, freshSweep, restingLimit, fvgSweepSignal } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -28,6 +28,7 @@ const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
 // data/ là Railway volume (/app/data) → chống trùng & đỉnh vốn sống sót qua redeploy
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 const OVERVIEW_PAPER = path.join(process.cwd(), "data", "paper-overview.json");
+const FVG_PAPER = path.join(process.cwd(), "data", "paper-fvg.json");
 
 // Vị thế 4H hai đỉnh/đáy đang trailing SL (không TP), theo symbol MEXC → phải bền qua redeploy
 type TrailEntry = { side: 1 | -1; entryTime: number };
@@ -365,10 +366,30 @@ export async function scanAndAlert(): Promise<string[]> {
     for (const coin of COINS) {
       try {
         const [h4o, h1o, m15o] = await Promise.all([
-          candles(`${coin}-USDT-SWAP`, "4H", 120), candles(`${coin}-USDT-SWAP`, "1H", 100), candles(`${coin}-USDT-SWAP`, "15m", 100),
+          candles(`${coin}-USDT-SWAP`, "4H", 120), candles(`${coin}-USDT-SWAP`, "1H", 100), candles(`${coin}-USDT-SWAP`, "15m", 300),
         ]);
         const h1c = h1o.filter((x) => x.closed);
         for (const m of managePaper1h(coin, h1o, OVERVIEW_PAPER)) await send(m.replace("PAPER 1H", "PAPER TOÀN CẢNH"));
+
+        // SMC: FVG H1 → hồi về vùng → 15m quét + đóng quay lại (chỉ lần đầu). Paper: data/paper-fvg.json
+        // shortcut: paper quản lý SL/TP trên nến 1H (backtest dùng 15m), đủ để so chiều hướng; đổi sang 15m nếu thành ứng viên live
+        for (const m of stepLimits(coin, h1o, FVG_PAPER)) await send(m.replace("PAPER LIMIT", "PAPER FVG"));
+        const ownD = (await getDailyData(coin)).trend;
+        const fv = fvgSweepSignal(h1o, m15o, ownD);
+        const fvKey = fv && `FVG:${coin}:${fv.fvgTime}`;
+        if (fv && fvKey && !sent.has(fvKey)) {
+          sent.add(fvKey);
+          saveDedup(sent, preSent);
+          const fr = Math.abs(fv.entry - fv.stop) / fv.entry;
+          addLimit(coin, { side: fv.side, level: fv.entry, limit: fv.entry, stop: fv.stop, tp: fv.tp, atr: 0, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, FVG_PAPER);
+          await send(
+            `🎯 *[FVG + QUÉT 15m]* ${fv.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${btc === fv.side ? "✅ BTC cùng chiều" : "⚠️ BTC ngược chiều"}\n` +
+            `• Giá hồi về vùng FVG 1H ${f(Math.min(fv.zoneTop, fv.zoneBot))}–${f(Math.max(fv.zoneTop, fv.zoneBot))}, nến 15m vừa quét ${fv.side > 0 ? "đáy" : "đỉnh"} rồi đóng quay lại\n` +
+            `• *Vào:* ~${f(fv.entry)} · *SL:* ${f(fv.stop)} (${(fr * 100).toFixed(2)}%) · *TP:* ${f(fv.tp)} (${(Math.abs(fv.tp - fv.entry) / Math.abs(fv.entry - fv.stop)).toFixed(1)}R) · x tối đa ${Math.min(20, Math.max(1, Math.floor(0.8 / fr)))}\n` +
+            `• Thua thì *không vào lại* kèo này.\n` +
+            `_Backtest phí 0%: 2025 +0.09R, 2026 +0.27R/lệnh (2023–24 âm). Thắng ~20%, ăn lệnh lớn. Bot đánh paper._`
+          );
+        }
         const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed) }, 3);
         const hour = Math.floor(Date.now() / 3_600_000);
         const key = p && `OV:${coin}:${p.side}:${hour}`;

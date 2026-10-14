@@ -430,6 +430,12 @@ export async function POST(req: NextRequest) {
         ? `• ${ls.n} lệnh đã đóng, thắng ${ls.wins} (${((ls.wins / ls.n) * 100).toFixed(0)}%) · TB *${ls.avgR >= 0 ? "+" : ""}${ls.avgR.toFixed(2)}R/lệnh* (tổng ${ls.sumR.toFixed(1)}R) · đang chờ ${ls.pending}, đang mở ${ls.open}\n`
         : `• Chưa có lệnh nào đóng (đang chờ ${ls.pending}, đang mở ${ls.open})\n`;
       bt += `_Backtest phí 0%: +0.02R / +0.07R mỗi lệnh (mỏng). Ứng viên bật tiền thật nếu paper khớp._\n\n`;
+      const fs2 = limitStats(loadLimits(path.join(process.cwd(), "data", "paper-fvg.json")));
+      bt += `🎯 *PAPER FVG + QUÉT 15m*\n`;
+      bt += fs2.n
+        ? `• ${fs2.n} lệnh đã đóng, thắng ${fs2.wins} (${((fs2.wins / fs2.n) * 100).toFixed(0)}%) · TB *${fs2.avgR >= 0 ? "+" : ""}${fs2.avgR.toFixed(2)}R/lệnh* (tổng ${fs2.sumR.toFixed(1)}R) · đang mở ${fs2.open}\n`
+        : `• Chưa có lệnh nào đóng (đang mở ${fs2.open})\n`;
+      bt += `_Backtest phí 0%: 2025 +0.09R, 2026 +0.27R. Thắng ~20%._\n\n`;
       const po = paper1hStats(loadPaper1h(path.join(process.cwd(), "data", "paper-overview.json")));
       bt += `🧭 *PAPER TOÀN CẢNH (kèo ⭐ ≥ 4/5 lớp)*\n`;
       bt += po.n
