@@ -24,10 +24,18 @@ function atr14(cs: Candle[]) {
   return a;
 }
 
-/** Chấm 5 lớp cho một chiều. bars: nến ĐÃ ĐÓNG. */
+/** Chấm các lớp cho một chiều. bars: nến ĐÃ ĐÓNG. */
 export function scoreSide(
   side: 1 | -1,
-  ctx: { own: number; btc: number; h4: Candle[]; h1: Candle[]; m15: Candle[]; btcH1?: Candle[] },
+  ctx: {
+    own: number;
+    btc: number;
+    h4: Candle[];
+    h1: Candle[];
+    m15: Candle[];
+    btcH1?: Candle[];
+    flow?: { isTrap: boolean; scoreBonus: number; warningReason?: string };
+  },
 ): { score: number; reasons: string[]; entry: number; stop: number; tp: number; rr: number; orderType: "MARKET" | "LIMIT_PULLBACK" } | null {
   const { h4, h1, m15, btcH1 } = ctx;
   if (h4.length < 30 || h1.length < 30 || m15.length < 30) return null;
@@ -78,6 +86,19 @@ export function scoreSide(
   const strong = (side > 0 ? last.c > last.o : last.c < last.o) && vAvg > 0 && last.v >= 1.5 * vAvg;
   if (strong && ctx.btc === side) { score++; reasons.push(`nến 15m mạnh, vol ${(last.v / vAvg).toFixed(1)}x, BTC cùng chiều`); }
   else if (strong) reasons.push(`nến 15m mạnh vol ${(last.v / vAvg).toFixed(1)}x (BTC ngược)`);
+
+  // 6. Dòng vốn phái sinh & Bẫy thanh lý (Derivatives Flow & Liquidation Risk)
+  if (ctx.flow) {
+    if (ctx.flow.isTrap) {
+      // Đám đông đang bị kẹt đòn bẩy quá dày -> nguy cơ bẫy thanh lý, trừ điểm hoặc hủy kèo bắt đáy sớm
+      score += ctx.flow.scoreBonus;
+      if (ctx.flow.warningReason) reasons.push(`⚠️ ${ctx.flow.warningReason}`);
+      if (score < 4) return null; // Triệt tiêu kèo nếu rơi vào bẫy thanh lý
+    } else if (ctx.flow.scoreBonus > 0) {
+      score += ctx.flow.scoreBonus;
+      if (ctx.flow.warningReason) reasons.push(`🔥 ${ctx.flow.warningReason}`);
+    }
+  }
 
   // Xử lý nến phóng quá dài (cả Marubozu lẫn Pinbar râu dài)
   const range15 = last.h - last.l;

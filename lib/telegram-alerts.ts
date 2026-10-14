@@ -17,6 +17,7 @@ import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
 import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { pickCoin } from "@/lib/overview";
+import { getDerivativesFlow, evaluateLiquidationRisk } from "@/lib/derivatives-flow";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -398,8 +399,14 @@ export async function scanAndAlert(): Promise<string[]> {
           // Bỏ cách đánh FVG + quét 15m (SL quá ngắn, nhiễu nến, backtest âm) -> không gửi alert lên Telegram
           // if (!quiet) plan("🎯 FVG + quét 15m", fv.side, coin, "Vào", fv.entry, fv.stop, fv.tp, btc === fv.side ? "BTC cùng chiều" : "⚠️ BTC ngược");
         }
-        const btcH1 = await candles("BTC-USDT-SWAP", "1H", 30).catch(() => []);
-        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1 }, 4);
+        const [btcH1, flowData] = await Promise.all([
+          candles("BTC-USDT-SWAP", "1H", 30).catch(() => []),
+          getDerivativesFlow(coin).catch(() => null),
+        ]);
+        const flowLong = evaluateLiquidationRisk(1, flowData);
+        const flowShort = evaluateLiquidationRisk(-1, flowData);
+        const flow = ownD > 0 ? flowLong : flowShort;
+        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1, flow }, 4);
         const hour = Math.floor(Date.now() / 3_600_000);
         const key = p && `OV:${coin}:${p.side}:${hour}`;
         // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
