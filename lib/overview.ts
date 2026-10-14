@@ -96,7 +96,7 @@ export function scoreSide(
     : price;
   const orderType: "MARKET" | "LIMIT_PULLBACK" = isStretched ? "LIMIT_PULLBACK" : "MARKET";
 
-  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất (không đặt theo tường lệnh: tường có thể bị rút), TP trước swing 1H đối diện, cần ≥ 1.8R
+  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất (không đặt theo tường lệnh: tường có thể bị rút), TP trước swing 1H đối diện, cần ≥ 1.5R
   const recent = m15.slice(-8);
   const swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
   // SL tối thiểu 1 ATR(1H): tránh bị quét râu
@@ -107,6 +107,7 @@ export function scoreSide(
   if (!Number.isFinite(target) || !(risk > 0) || risk / entry > 0.06 || risk / entry < 0.012) return null;
   const tp = target - side * 0.1 * a15;
   const rr = Math.abs(tp - entry) / risk;
+  if (rr < 1.5) return null;
   return { score, reasons, entry, stop, tp, rr, orderType };
 }
 
