@@ -19,7 +19,7 @@ BASES = {
 }
 BASE = BASES["spot"]
 OUT = Path(__file__).resolve().parents[2] / "data" / "crypto"
-HEADER = ["open_time_ms", "open", "high", "low", "close", "volume", "close_time_ms", "quote_volume", "trades"]
+HEADER = ["open_time_ms", "open", "high", "low", "close", "volume", "close_time_ms", "quote_volume", "trades", "taker_buy_volume"]
 
 
 def months(start: str):
@@ -69,7 +69,7 @@ def main():
                 ct = int(x[6])
                 if ct > 10**14:
                     ct //= 1000
-                rows.append([t, x[1], x[2], x[3], x[4], x[5], ct, x[7], x[8]])
+                rows.append([t, x[1], x[2], x[3], x[4], x[5], ct, x[7], x[8], x[9]])
         rows.sort(key=lambda r: r[0])
         name = f"{sym}-PERP" if a.market == "futures" else sym
         path = OUT / f"{name}_{a.interval}.csv"

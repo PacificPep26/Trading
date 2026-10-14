@@ -41,3 +41,4 @@ assert.equal(predBad.grade, "REJECT");
 assert.ok(predBad.confidenceScore < 40, `Kèo xấu xác suất phải thấp: ${predBad.confidenceScore}%`);
 
 console.log("All AI Meta-Scorer tests passed successfully!");
+
