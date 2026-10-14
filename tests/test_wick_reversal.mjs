@@ -7,6 +7,7 @@ const sweep = { t: 28 * H, o: 101, h: 101.2, l: 97, c: 100.5, v: 1, closed: true
 const green = { t: 29 * H, o: 100.6, h: 103, l: 100.5, c: 102.8, v: 1, closed: true };
 const w = wickReversal([...flat, sweep, green]);
 assert.equal(w.side, 1); assert.equal(w.level, 100); assert.equal(w.entry, 102.8);
+assert.equal(w.vr, 1); // fixture: volume đều nhau
 assert.ok(w.stop < 97 && Math.abs(w.tp - (102.8 + 1.8 * (102.8 - w.stop))) < 1e-9);
 // nến xác nhận chưa đóng → bỏ qua
 assert.equal(wickReversal([...flat, sweep, { ...green, closed: false }]), null);

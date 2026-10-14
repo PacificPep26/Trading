@@ -258,15 +258,17 @@ function sweepAt(cs: Candle[], k: number): { side: 1 | -1; level: number } | nul
 export function freshSweep(all: Candle[]): {
   side: 1 | -1; level: number; wick: number; close: number; barTime: number;
   stop: number; tp: number; confirmAbove: number; // confirmAbove: nến kế phải đóng vượt mức này (đỉnh/đáy nến quét)
+  vr: number; // volume nến quét / TB 20 nến trước
 } | null {
   const cs = all.filter((c) => c.closed !== false);
   const k = cs.length - 1, sw = sweepAt(cs, k);
   if (!sw) return null;
   const p = cs[k], atr = atrSeries(cs)[k];
   const stop = sw.side > 0 ? p.l - 0.1 * atr : p.h + 0.1 * atr; // giống wickReversal
+  const vr = volRatio(cs, k);
   return {
     ...sw, wick: sw.side > 0 ? p.l : p.h, close: p.c, barTime: p.t,
-    stop, tp: p.c + sw.side * 1.8 * Math.abs(p.c - stop), confirmAbove: sw.side > 0 ? p.h : p.l,
+    stop, tp: p.c + sw.side * 1.8 * Math.abs(p.c - stop), confirmAbove: sw.side > 0 ? p.h : p.l, vr,
   };
 }
 
@@ -274,7 +276,14 @@ export function freshSweep(all: Candle[]): {
  * Cảnh báo tay (KHÔNG tự vào lệnh; backtest kiểu này ≈ −0.13R/lệnh): nến trước quét (sweepAt),
  * nến vừa đóng thân lớn vượt nến quét theo chiều lệnh. SL ngoài râu + 0.1 ATR, TP 1.8R.
  */
-export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop: number; tp: number; level: number; barTime: number } | null {
+/** Volume nến k / trung bình 20 nến trước (0 nếu thiếu dữ liệu). */
+function volRatio(cs: Candle[], k: number) {
+  const prev = cs.slice(Math.max(0, k - 20), k);
+  const avg = prev.reduce((s, x) => s + (x.v || 0), 0) / (prev.length || 1);
+  return avg > 0 ? (cs[k].v || 0) / avg : 0;
+}
+
+export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop: number; tp: number; level: number; barTime: number; vr: number } | null {
   const cs = all.filter((c) => c.closed !== false);
   if (cs.length < 30) return null;
   const i = cs.length - 1, p = cs[i - 1], c = cs[i];
@@ -283,11 +292,11 @@ export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop
   const atr = atrSeries(cs)[i];
   if (sw.side > 0 && c.c > c.o && c.c > p.h) {
     const stop = p.l - 0.1 * atr;
-    return { side: 1, entry: c.c, stop, tp: c.c + 1.8 * (c.c - stop), level: sw.level, barTime: c.t };
+    return { side: 1, entry: c.c, stop, tp: c.c + 1.8 * (c.c - stop), level: sw.level, barTime: c.t, vr: volRatio(cs, i - 1) };
   }
   if (sw.side < 0 && c.c < c.o && c.c < p.l) {
     const stop = p.h + 0.1 * atr;
-    return { side: -1, entry: c.c, stop, tp: c.c - 1.8 * (stop - c.c), level: sw.level, barTime: c.t };
+    return { side: -1, entry: c.c, stop, tp: c.c - 1.8 * (stop - c.c), level: sw.level, barTime: c.t, vr: volRatio(cs, i - 1) };
   }
   return null;
 }

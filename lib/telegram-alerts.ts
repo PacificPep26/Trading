@@ -413,11 +413,11 @@ export async function scanAndAlert(): Promise<string[]> {
         const maxLev = (riskPct: number) => Math.min(20, Math.max(1, Math.floor(0.8 / riskPct)));
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
-        if (sw && swKey && !sent.has(swKey) && aligned(sw.side)) {
+        if (sw && swKey && !sent.has(swKey) && aligned(sw.side) && sw.vr >= 1.5) { // vol ≥ 1.5x: backtest bớt lỗ (−0.29 → −0.23R)
           const swRisk = Math.abs(sw.close - sw.stop) / sw.close;
           await send(
             `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(sw.side)}\n` +
-            `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)})\n` +
+            `• Râu ${sw.side > 0 ? "thủng đáy" : "vượt đỉnh"} ${f(sw.level)} rồi bị đẩy lại (râu ${f(sw.wick)}, vol ${sw.vr.toFixed(1)}x)\n` +
             `• *Vào:* ~${f(sw.close)} · *SL:* ${f(sw.stop)} (${(swRisk * 100).toFixed(2)}%) · *TP:* ${f(sw.tp)} (1.8R) · x tối đa ${maxLev(swRisk)}\n` +
             `• *Chắc hơn:* chờ nến 1H kế đóng ${sw.side > 0 ? "xanh trên" : "đỏ dưới"} ${f(sw.confirmAbove)} rồi mới vào, SL/TP như trên.\n` +
             `_Vào sớm backtest ≈ −0.27R/lệnh, chờ xác nhận ≈ −0.1R. Đánh nhỏ._`
@@ -426,7 +426,7 @@ export async function scanAndAlert(): Promise<string[]> {
           saveDedup(sent, preSent);
         }
         const w = wickReversal(bars1h);
-        if (!w || !aligned(w.side) || Math.abs(w.entry - w.stop) / w.entry > 0.06) continue; // SL > 6%: như luật bot, quá xa
+        if (!w || !aligned(w.side) || w.vr < 1.5 || Math.abs(w.entry - w.stop) / w.entry > 0.06) continue; // SL > 6%: như luật bot, quá xa
         const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
         if (sent.has(key)) continue;
         const risk = Math.abs(w.entry - w.stop) / w.entry;
@@ -434,7 +434,7 @@ export async function scanAndAlert(): Promise<string[]> {
         await send(
           (paperOpened ? `🧪 _Bot đã vào lệnh PAPER (tiền giả), trailing 3 ATR 1H._\n` : "") +
           `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(w.side)}\n` +
-          `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại*, nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
+          `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại* (vol nến quét ${w.vr.toFixed(1)}x), nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
           `• Entry ~${f(w.entry)} · SL ${f(w.stop)} (${(risk * 100).toFixed(2)}%) · TP 1.8R ${f(w.tp)}\n` +
           `• *Đòn bẩy tối đa x${maxLev(risk)}* (cao hơn → SL nằm sau giá thanh lý)\n` +
           `_Bot KHÔNG tự vào. Backtest 1H thuận trend ≈ −0.1R/lệnh sau phí: chưa có lợi thế, đánh nhỏ._`

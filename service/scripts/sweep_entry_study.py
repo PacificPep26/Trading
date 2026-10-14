@@ -91,7 +91,8 @@ def trades(hours):
                     g, k = run_out(cs, i, side, entry, stop)
                     net = g - T.COST - T.FUNDING_8H * (k - i + 1) * hours / 8
                     aligned = trend_at(btc, t) == side and trend_at(own, t) == side
-                    out["early"].append({"year": year_of(t), "r": net / risk, "aligned": aligned})
+                    vr = p.v / x.vol_avg[i - 1] if x.vol_avg[i - 1] else 0
+                    out["early"].append({"year": year_of(t), "r": net / risk, "aligned": aligned, "own": trend_at(own, t) == side, "vr": vr})
                     busy["early"] = k
             if not sw:
                 continue
@@ -113,7 +114,8 @@ def trades(hours):
                     continue
                 g, k = run_out(cs, f, side, entry, stop)
                 net = g - T.COST - T.FUNDING_8H * (k - i) * hours / 8
-                out[m].append({"year": year_of(cs[f].t), "r": net / risk, "aligned": aligned})
+                vr = p.v / x.vol_avg[i - 1] if x.vol_avg[i - 1] else 0
+                out[m].append({"year": year_of(cs[f].t), "r": net / risk, "aligned": aligned, "own": trend_at(own, t) == side, "vr": vr})
                 busy[m] = k
     return out
 
@@ -123,11 +125,13 @@ def main():
         res = trades(hours)
         print(f"== {hours}H")
         for m, tr in res.items():
-            for label, sel in (("tất cả", lambda t: True), ("thuận trend", lambda t: t["aligned"])):
+            for label, sel in (("tất cả", lambda t: True), ("thuận trend", lambda t: t["aligned"]),
+                               ("thuận coin", lambda t: t["own"]), ("coin+vol≥1.5x", lambda t: t["own"] and t["vr"] >= 1.5),
+                               ("coin+vol≥2x", lambda t: t["own"] and t["vr"] >= 2.0), ("tất cả vol≥2x", lambda t: t["vr"] >= 2.0)):
                 a = [t["r"] for t in tr if sel(t) and t["year"] <= 2024]
                 b = [t["r"] for t in tr if sel(t) and t["year"] >= 2025]
-                print(f"  {m:6s} {label:11s} 23–24 {T.stats(a)}")
-                print(f"  {'':6s} {'':11s} 25–26 {T.stats(b)}")
+                print(f"  {m:6s} {label:14s} 23–24 {T.stats(a)}")
+                print(f"  {'':6s} {'':14s} 25–26 {T.stats(b)}")
 
 
 if __name__ == "__main__":
