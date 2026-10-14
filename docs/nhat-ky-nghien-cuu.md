@@ -2,6 +2,8 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-14 (`service/scripts/fvg_mtf_study.py`, quy tắc video SMC: FVG H1 → chờ hồi về vùng → khung nhỏ chờ quét + đóng quay lại → vào; vào lại tối đa 1 lần; không hồi thì bỏ)**: khung nhỏ = 15m (repo không có 5m), 21 coin, thuận trend H1 + ngày, SL dưới râu quét 15m, TP đỉnh cú tăng (≥ 1.5R). Phí 0%: tất cả −0.04R / +0.09R; **chỉ lần vào đầu −0.04R (n=1.892) / +0.17R (n=1.917, t=2.5)**; lần vào lại −0.03 / −0.08R. Phí taker: −0.21 đến −0.45R (SL 15m rất sát nên phí ăn mạnh). Thắng chỉ ~20% (TP xa). Kết luận: 2025–26 dương nhưng 2023–24 âm → chưa ổn định; vào lại làm kết quả xấu đi (ủng hộ 'tối đa 1 lần', thậm chí không vào lại). Chưa đủ để thêm vào bot.
+
 - **2026-10-14 (`service/scripts/candle_patterns_study.py`, 16 mẫu nến từ ảnh TikTok hứa 'tỷ lệ thắng 70%')**: vào theo hướng mẫu ở giá mở nến kế, TP = SL = 1 ATR (50% = đoán mò), chưa phí. BTC 1H/4H và 21 coin 1H/4H (tới ~60.000 mẫu/loại): **mọi mẫu thắng 40–55%**, không mẫu nào gần 70%. BTC: không mẫu nào ổn định giữa 1H và 4H (búa ngược 1H 53.5% nhưng 4H 47.6%; sao mai 4H 53.7% nhưng 1H 47.9%). 21 coin: các mẫu GIẢM nhỉnh 50–54% còn mẫu TĂNG 45–48% → phản ánh altcoin giảm giá cả giai đoạn, không phải mẫu nến. Lọc thuận trend không đổi. Kết luận: mẫu nến đơn lẻ ≈ đoán mò.
   - Khung 15 phút và 30 phút (21 coin, cùng cách đo, ý chủ dự án: canh mẫu nến rồi vào): mọi mẫu thắng **47.9–51.5%**, còn sát 50% hơn cả khung 1H/4H. Khung nhỏ càng nhiễu.
 
