@@ -37,6 +37,9 @@ const btcShock = flat(30, H1, () => ({ o: 100, h: 100.5, l: 99.5, c: 100 }));
 btcShock[29] = { o: 100, h: 100.2, l: 97.0, c: 97.2, closed: true, v: 10 }; // xả nến đỏ ~2.8 ATR
 const LShock = scoreSide(1, { own: 1, btc: 1, h4, h1, m15, btcH1: btcShock });
 assert.equal(LShock, null, "BTC 1H shock xả mạnh phải chặn đứng lệnh LONG");
+// Nến xả vừa đóng, nến 1H mới mở đi ngang → vẫn phải chặn
+const btcShockPrev = [...btcShock, { o: 97.2, h: 97.3, l: 97.1, c: 97.2, closed: false, v: 1 }];
+assert.equal(scoreSide(1, { own: 1, btc: 1, h4, h1, m15, btcH1: btcShockPrev }), null, "Đầu giờ mới vẫn phải chặn LONG sau cú xả 1H vừa đóng");
 
 // Order flow phải chấm theo đúng chiều đang xét: CVD gom cộng cho LONG, không cộng cho SHORT
 const acc = { coin: "X", delta1h: 1, delta4hTotal: 5, isCvdAccumulating: true, isCvdDistributing: false, ratioBuySell4h: 1.3 };

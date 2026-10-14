@@ -52,13 +52,14 @@ export function scoreSide(
 
   // 0. Bộ lọc Shock tức thời của BTC (Intraday BTC Shock Filter)
   if (btcH1 && btcH1.length >= 15) {
-    const lastBtc = btcH1[btcH1.length - 1];
     const btcAtr = atr14(btcH1);
-    const btcDrop = lastBtc.o - lastBtc.c;
-    // BTC vừa xả nến đỏ 1H mạnh > 1.2 ATR -> chặn ngay mọi lệnh LONG
-    if (side > 0 && btcDrop > 1.2 * btcAtr) return null;
-    // BTC vừa pump nến xanh 1H mạnh > 1.2 ATR -> chặn lệnh SHORT đuổi
-    if (side < 0 && -btcDrop > 1.2 * btcAtr) return null;
+    // xét cả nến 1H đang chạy lẫn nến vừa đóng: đầu giờ mới nến đang chạy còn quá ngắn để thấy cú xả
+    for (const b of btcH1.slice(-2)) {
+      const btcDrop = b.o - b.c;
+      // BTC vừa xả nến đỏ 1H mạnh > 1.2 ATR -> chặn mọi lệnh LONG; pump xanh > 1.2 ATR -> chặn SHORT đuổi
+      if (side > 0 && btcDrop > 1.2 * btcAtr) return null;
+      if (side < 0 && -btcDrop > 1.2 * btcAtr) return null;
+    }
   }
 
   // 1. Xu hướng ngày của coin

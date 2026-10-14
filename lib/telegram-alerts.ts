@@ -32,6 +32,8 @@ const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 const OVERVIEW_PAPER = path.join(process.cwd(), "data", "paper-overview.json");
 const FVG_PAPER = path.join(process.cwd(), "data", "paper-fvg.json");
+// kèo Toàn cảnh dạng Limit chờ hồi: chỉ tính khi giá thật sự quay về khớp
+const OVERVIEW_LIMIT_PAPER = path.join(process.cwd(), "data", "paper-overview-limit.json");
 
 // Vị thế 4H hai đỉnh/đáy đang trailing SL (không TP), theo symbol MEXC → phải bền qua redeploy
 type TrailEntry = { side: 1 | -1; entryTime: number };
@@ -389,6 +391,7 @@ export async function scanAndAlert(): Promise<string[]> {
         // SMC: FVG H1 → hồi về vùng → 15m quét + đóng quay lại (chỉ lần đầu). Paper: data/paper-fvg.json
         // shortcut: paper quản lý SL/TP trên nến 1H (backtest dùng 15m), đủ để so chiều hướng; đổi sang 15m nếu thành ứng viên live
         for (const m of stepLimits(coin, h1o, FVG_PAPER)) await send(m.replace("PAPER LIMIT", "PAPER FVG"));
+        for (const m of stepLimits(coin, h1o, OVERVIEW_LIMIT_PAPER)) await send(m.replace("PAPER LIMIT", "PAPER TOÀN CẢNH LIMIT"));
         const ownD = (await getDailyData(coin)).trend;
         const fv = fvgSweepSignal(h1o, m15o, ownD);
         const fvKey = fv && `FVG:${coin}:${fv.fvgTime}`;
@@ -419,7 +422,11 @@ export async function scanAndAlert(): Promise<string[]> {
           markAlerted(coin, p.side);
           sent.add(key);
           // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh
-          openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, OVERVIEW_PAPER);
+          const barTime = Math.floor(Date.now() / 3_600_000) * 3_600_000;
+          // Limit chờ hồi: trước đây paper coi như khớp ngay ở giá limit → thổi phồng kết quả khi giá chạy luôn không hồi
+          // shortcut: limit paper hết hạn sau 24h (stepLimits), không phải 4 nến 15m như tin nhắn; đổi nếu kèo này thành ứng viên live
+          if (p.orderType === "LIMIT_PULLBACK") addLimit(coin, { side: p.side, level: p.entry, limit: p.entry, stop: p.stop, tp: p.tp, atr: 0, barTime }, OVERVIEW_LIMIT_PAPER);
+          else openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime }, OVERVIEW_PAPER);
         }
       } catch (e) {
         console.error(`[OVERVIEW] ${coin}:`, e);
