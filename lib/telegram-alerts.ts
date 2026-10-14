@@ -418,7 +418,9 @@ export async function scanAndAlert(): Promise<string[]> {
         // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
         const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
         if (p && key && !recent) {
-          const tag = p.score === 5 ? "💎 [KÈO ĐẸP 5/5 - ALL IN]" : "⭐ [KÈO ĐẸP 4/5]";
+          const aiText = p.aiPrediction ? ` · AI: ${p.aiPrediction.confidenceScore}% win` : "";
+          const isDiamond = p.score >= 5 || (p.aiPrediction && p.aiPrediction.confidenceScore >= 80);
+          const tag = isDiamond ? `💎 [KÈO ĐẸP 5/5 - ALL IN${aiText}]` : `⭐ [KÈO ĐẸP 4/5${aiText}]`;
           const actionText = p.orderType === "LIMIT_PULLBACK" ? "Limit Chờ Hồi (Fibo 38.2%)" : "Vào Market";
           if (!recentlyAlerted(coin, p.side)) plan(tag, p.side, coin, actionText, p.entry, p.stop, p.tp, p.reasons.slice(0, 2).join(", "));
           markAlerted(coin, p.side);

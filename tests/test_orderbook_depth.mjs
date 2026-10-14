@@ -35,3 +35,4 @@ const shortAdvantage = evaluateOrderbookSignal(-1, blockedBook);
 assert.equal(shortAdvantage.scoreBonus, 1, "Tường bán ép giá là lợi thế cho Short");
 
 console.log("All orderbook depth tests passed successfully!");
+

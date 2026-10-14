@@ -2,6 +2,7 @@
 // Chưa backtest được công bằng (chấm điểm nhiều lớp) → chỉ báo tay + paper tự động để đo.
 import type { Candle } from "./okx.ts";
 import { analyse, swings, freshSweep, wickReversal } from "./patterns.ts";
+import { predictTradeExpectancy, type AiPrediction } from "./ai-meta-scorer.ts";
 
 export type OverviewPick = {
   coin: string;
@@ -13,6 +14,7 @@ export type OverviewPick = {
   tp: number;
   rr: number;
   orderType: "MARKET" | "LIMIT_PULLBACK";
+  aiPrediction?: AiPrediction;
 };
 
 function atr14(cs: Candle[]) {
@@ -150,9 +152,26 @@ export function scoreSide(
   if (!Number.isFinite(target) || !(risk > 0) || risk / entry > 0.06 || risk / entry < 0.012) return null;
   const tp = target - side * 0.1 * a15;
   const rr = Math.abs(tp - entry) / risk;
-  if (rr < 1.5) return null;
+  // 9. AI Meta-Scorer: Dự báo xác suất thắng chiến lược
+  const lastBtc = ctx.btcH1 && ctx.btcH1.length >= 15 ? ctx.btcH1[ctx.btcH1.length - 1] : null;
+  const btcAtr = ctx.btcH1 && ctx.btcH1.length >= 15 ? atr14(ctx.btcH1) : 0;
+  const btcShockDrop = lastBtc ? (lastBtc.o - lastBtc.c) > 1.2 * btcAtr : false;
 
-  return { score, reasons, entry, stop, tp, rr, orderType };
+  const aiPrediction = predictTradeExpectancy({
+    baseScore: score,
+    rr,
+    hasSweep: Boolean(sw),
+    isCvdAccumulating: Boolean(ctx.cvd?.scoreBonus && ctx.cvd.scoreBonus > 0),
+    isCvdDistributing: Boolean(ctx.cvd?.scoreBonus && ctx.cvd.scoreBonus < 0),
+    isOiSurging: false,
+    isCrowdedTrap: Boolean(ctx.flow?.isTrap),
+    isShortSqueezePotential: Boolean(ctx.flow?.scoreBonus && ctx.flow.scoreBonus > 0),
+    isBidWallGuarded: Boolean(ctx.ob?.scoreBonus && ctx.ob.scoreBonus > 0),
+    isAskWallBlocking: Boolean(ctx.ob?.scoreBonus && ctx.ob.scoreBonus < 0),
+    btcShockDrop,
+  });
+
+  return { score, reasons, entry, stop, tp, rr, orderType, aiPrediction };
 }
 
 /** Kèo tốt nhất của coin (≥ minScore lớp, ≥ 1.5R), hoặc null. */
@@ -160,7 +179,11 @@ export function pickCoin(coin: string, ctx: Parameters<typeof scoreSide>[1], min
   const picks = ([1, -1] as const)
     .map((side) => ({ side, r: scoreSide(side, ctx) }))
     .filter((x) => x.r && x.r.score >= minScore)
-    .sort((a, b) => b.r!.score - a.r!.score || b.r!.rr - a.r!.rr);
+    .sort((a, b) => {
+      const confA = a.r?.aiPrediction?.confidenceScore ?? 0;
+      const confB = b.r?.aiPrediction?.confidenceScore ?? 0;
+      return confB - confA || b.r!.score - a.r!.score || b.r!.rr - a.r!.rr;
+    });
   const best = picks[0];
   return best ? { coin, side: best.side, ...best.r! } : null;
 }
