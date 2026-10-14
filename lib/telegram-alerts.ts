@@ -440,7 +440,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const oldRl = rl && loadLimits().find((x) => x.coin === coin && x.status === "pending");
         if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl, undefined, true)) {
           // lệnh thay thế luôn báo (bỏ qua chặn 6 giờ) để chủ tài khoản huỷ Limit cũ trên sàn
-          if (oldRl || !recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, oldRl ? `⚠️ huỷ Limit cũ @${f(oldRl.limit)}, đáy 1H mới` : "đón râu quét, hiệu lực 24h");
+          if (oldRl || !recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp,
+            // chủ dự án đánh nhanh: chốt 50% ở 1R rồi dời SL hoà vốn (2025 +0.003R, 2026 +0.076R, thắng ~53%)
+            `${oldRl ? `⚠️ huỷ Limit cũ @${f(oldRl.limit)}, đáy 1H mới` : "đón râu quét, hiệu lực 24h"} · TP1 ${f(rl.limit + rl.side * Math.abs(rl.limit - rl.stop))} chốt 50% rồi dời SL về giá vào`);
           markAlerted(coin, rl.side);
           sent.add(rlKey);
           saveDedup(sent, preSent);

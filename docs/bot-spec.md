@@ -24,7 +24,7 @@ Cập nhật: 2026-10-14. Nguồn chân lý về hành vi bot; số liệu kiể
 
 - Đáy 1H vừa xác nhận (3 nến đóng sau đáy), xu hướng ngày của coin tăng.
 - Bỏ nếu nến tạo đáy có volume ≥ 2.5x trung bình 20 nến trước (lực bán thật, giá hay xuyên qua Limit).
-- Limit mua = đáy − 0.5×ATR(1H); SL = Limit − 1.5×ATR; TP = đỉnh 1H trước đáy (bỏ nếu < 1R).
+- Limit mua = đáy − 0.5×ATR(1H); SL = Limit − 1.5×ATR; TP = đỉnh 1H trước đáy (bỏ nếu < 1R). Tin kèm **TP1 = 1R: chốt 50% rồi dời SL về giá vào** (cách chủ dự án đánh; backtest 2025 +9$ / 2026 +165$, thắng ~53%). Paper vẫn đo theo TP đỉnh 1H.
 - Hiệu lực 24 nến 1H; huỷ nếu giá chạm TP trước khi khớp. Mỗi coin 1 lệnh chờ: **đáy mới thay Limit cũ chưa khớp** (tin ghi "⚠️ huỷ Limit cũ @giá"); lệnh đã khớp thì không đặt thêm.
 - Paper: nến chạm Limit là khớp ở min(Limit, giá mở); nến khớp mà chạm SL tính thua; không tính TP trên nến khớp; tối đa 48 nến; trượt giá 0.04%.
 - SHORT không bật: +0.047R nhưng vào ngẫu nhiên +0.070R.
