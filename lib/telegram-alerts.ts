@@ -71,6 +71,11 @@ declare global {
 }
 const sent = (globalThis.telegramSent ??= new Set<string>(initialDedup.sent));
 const preSent = (globalThis.telegramPreSent ??= new Set<string>(initialDedup.preSent));
+
+// Tin tay (🧭 ⏳ 👀 📌 🎯): mỗi coin + chiều tối đa 1 tin / 6 giờ, tính chung mọi loại (13-14/10: DOT báo 5 lần, nhiều loại cùng ý)
+const alertHour = () => Math.floor(Date.now() / 3_600_000);
+const recentlyAlerted = (coin: string, side: number) => [0, 1, 2, 3, 4, 5].some((h) => sent.has(`ANY:${coin}:${side}:${alertHour() - h}`));
+const markAlerted = (coin: string, side: number) => sent.add(`ANY:${coin}:${side}:${alertHour()}`);
 const lastPositions = (globalThis.lastKnownLivePositions ??= new Map<string, { symbol: string; side: "LONG" | "SHORT"; openAvgPrice: number; holdVol: number }>());
 
 const dailyDataCache: Record<string, { trend: 1 | -1 | 0; cs: Candle[]; ts: number }> = {};
@@ -379,10 +384,13 @@ export async function scanAndAlert(): Promise<string[]> {
         const fvKey = fv && `FVG:${coin}:${fv.fvgTime}`;
         if (fv && fvKey && !sent.has(fvKey)) {
           sent.add(fvKey);
+          // paper luôn ghi (đo đủ mẫu), tin chỉ gửi nếu coin chưa được báo 6 giờ qua
+          addLimit(coin, { side: fv.side, level: fv.entry, limit: fv.entry, stop: fv.stop, tp: fv.tp, atr: 0, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, FVG_PAPER);
+          const quiet = recentlyAlerted(coin, fv.side);
+          markAlerted(coin, fv.side);
           saveDedup(sent, preSent);
           const fr = Math.abs(fv.entry - fv.stop) / fv.entry;
-          addLimit(coin, { side: fv.side, level: fv.entry, limit: fv.entry, stop: fv.stop, tp: fv.tp, atr: 0, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, FVG_PAPER);
-          await send(
+          if (!quiet) await send(
             `🎯 *[FVG + QUÉT 15m]* ${fv.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${btc === fv.side ? "✅ BTC cùng chiều" : "⚠️ BTC ngược chiều"}\n` +
             `• Giá hồi về vùng FVG 1H ${f(Math.min(fv.zoneTop, fv.zoneBot))}–${f(Math.max(fv.zoneTop, fv.zoneBot))}, nến 15m vừa quét ${fv.side > 0 ? "đáy" : "đỉnh"} rồi đóng quay lại\n` +
             `• *Vào:* ~${f(fv.entry)} · *SL:* ${f(fv.stop)} (${(fr * 100).toFixed(2)}%) · *TP:* ${f(fv.tp)} (${(Math.abs(fv.tp - fv.entry) / Math.abs(fv.entry - fv.stop)).toFixed(1)}R) · x tối đa ${Math.min(20, Math.max(1, Math.floor(0.8 / fr)))}\n` +
@@ -397,7 +405,8 @@ export async function scanAndAlert(): Promise<string[]> {
         // (2026-10-13: NEAR/DOT LONG bị báo lại mỗi giờ khi setup còn nguyên)
         const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
         if (p && key && !recent) {
-          picks.push(p);
+          if (!recentlyAlerted(coin, p.side)) picks.push(p);
+          markAlerted(coin, p.side);
           sent.add(key);
           // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh (PAPER PEPE từng "chạm SL" bằng giá trước khi vào)
           if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, OVERVIEW_PAPER);
@@ -440,7 +449,11 @@ export async function scanAndAlert(): Promise<string[]> {
         const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
         if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
           const rlRisk = Math.abs(rl.limit - rl.stop) / rl.limit;
-          await send(
+          // paper ghi mọi kèo (đúng luật backtest); tin chỉ khi R:R ≥ 1.5 và coin chưa được báo 6 giờ qua
+          const rlRR = Math.abs(rl.tp - rl.limit) / Math.abs(rl.limit - rl.stop);
+          const rlQuiet = rlRR < 1.5 || recentlyAlerted(coin, rl.side);
+          if (!rlQuiet) markAlerted(coin, rl.side);
+          if (!rlQuiet) await send(
             `📌 *[ĐẶT SẴN LIMIT]* ${rl.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận trend ngày · ${btcNote(rl.side)}\n` +
             `• ${rl.side > 0 ? "Đáy" : "Đỉnh"} 1H mới: ${f(rl.level)} → *Limit ${rl.side > 0 ? "mua" : "bán"} ${f(rl.limit)}* (đón râu quét)\n` +
             `• *SL:* ${f(rl.stop)} (${(rlRisk * 100).toFixed(2)}%) · *TP:* ${f(rl.tp)} (${(Math.abs(rl.tp - rl.limit) / Math.abs(rl.limit - rl.stop)).toFixed(1)}R) · x tối đa ${maxLev(rlRisk)}\n` +
@@ -452,7 +465,8 @@ export async function scanAndAlert(): Promise<string[]> {
         }
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
-        if (sw && swKey && !sent.has(swKey) && aligned(sw.side) && sw.vr >= 1.5) { // vol ≥ 1.5x: backtest bớt lỗ (−0.29 → −0.23R)
+        if (sw && swKey && !sent.has(swKey) && aligned(sw.side) && sw.vr >= 1.5 && !recentlyAlerted(coin, sw.side)) { // vol ≥ 1.5x: backtest bớt lỗ (−0.29 → −0.23R)
+          markAlerted(coin, sw.side);
           const swRisk = Math.abs(sw.close - sw.stop) / sw.close;
           await send(
             `⏳ *[SẮP QUAY ĐẦU 1H]* ${sw.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(sw.side)}\n` +
@@ -470,7 +484,9 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key)) continue;
         const risk = Math.abs(w.entry - w.stop) / w.entry;
         const paperOpened = openPaper1h(coin, w);
-        await send(
+        const wQuiet = recentlyAlerted(coin, w.side);
+        markAlerted(coin, w.side);
+        if (!wQuiet) await send(
           (paperOpened ? `🧪 _Bot đã vào lệnh PAPER (tiền giả), trailing 3 ATR 1H._\n` : "") +
           `👀 *[TÍN HIỆU QUAY ĐẦU 1H]* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận coin · ${btcNote(w.side)}\n` +
           `• ${w.side > 0 ? "Thủng đáy" : "Vượt đỉnh"} ${f(w.level)} *thất bại* (vol nến quét ${w.vr.toFixed(1)}x), nến 1H ${w.side > 0 ? "xanh" : "đỏ"} thân lớn xác nhận\n` +
