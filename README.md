@@ -24,12 +24,9 @@ npm run build
 
 ## Policy tóm tắt
 
-- Version `paper-v2.3.1` kết hợp **Hệ Thống Dự Phóng Dòng Tiền 4 Mô Hình (Predictive Order Flow)**:
-  1. **Mô hình 1 (Phái sinh OI & LSR):** Theo dõi Open Interest, tỷ lệ tài khoản Long/Short, Funding Rate để phát hiện đám đông dồn toa và bẫy thanh lý.
-  2. **Mô hình 2 (Cumulative Volume Delta - CVD):** Theo dõi Taker Buy/Sell volume để phát hiện cá voi gom hàng ngầm (Absorption Divergence).
-  3. **Mô hình 3 (Lực hấp dẫn Orderbook):** Quét 100 tầng sổ lệnh (Depth 100) tìm tường mua/bán khổng lồ làm lá chắn đặt Stoploss và chặn húc đầu vào tường cản.
-  4. **Mô hình 4 (AI Meta-Scorer):** Dự báo xác suất thắng chiến lược `P(Win >= 1.8R)`, gắn nhãn 💎 `[KÈO ĐẸP 5/5 - ALL IN · AI: xx% win]` khi xác suất $\ge 80\%$.
+- Version `paper-v2.3.1`. Kèo "Toàn cảnh" (`lib/overview.ts`, chỉ báo tay + paper) cộng/trừ 1 điểm từ order flow, chấm theo đúng chiều lệnh: OI/Long-Short (`derivatives-flow.ts`), CVD taker 1H (`cvd-engine.ts`), mất cân bằng sổ lệnh 100 tầng (`orderbook-depth.ts`). **Chưa backtest**: kiểm CVD bằng `service/scripts/cvd_filter_study.py`; sổ lệnh không có lịch sử miễn phí đủ chi tiết. SL không đặt theo tường lệnh.
 - Setup phải qua decision engine và các bộ lọc xu hướng, volume, funding, momentum.
 - Isolated tối đa x10; sizing dùng ngân sách rủi ro cố định theo capital tier.
 - Drawdown 20% khóa lệnh mới. Đường đặt lệnh thật có tồn tại nhưng mặc định bị khóa bằng hai cờ môi trường.
+- Backtest hiện chưa có setup nào đạt chuẩn `tradeable`; tiếp tục vận hành dry-run/paper để thu thập cohort mới.
 - Ledger cục bộ: `data/paper-ledger.ndjson`.

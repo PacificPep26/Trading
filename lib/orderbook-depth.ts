@@ -73,7 +73,7 @@ export async function getOrderbookAnalysis(coin: string, currentPrice?: number):
 export function evaluateOrderbookSignal(
   side: 1 | -1,
   ob: OrderbookAnalysis | null
-): { scoreBonus: number; reason?: string; suggestedStop?: number } {
+): { scoreBonus: number; reason?: string } {
   if (!ob) return { scoreBonus: 0 };
 
   if (side > 0) {
@@ -87,7 +87,6 @@ export function evaluateOrderbookSignal(
       return {
         scoreBonus: 1,
         reason: `Tường mua đỡ (Bids x${ob.bidAskRatio.toFixed(1)}${ob.strongestBidWallPrice ? ` @${ob.strongestBidWallPrice}` : ""})`,
-        suggestedStop: ob.strongestBidWallPrice ? ob.strongestBidWallPrice * 0.999 : undefined,
       };
     }
   } else {
@@ -102,7 +101,6 @@ export function evaluateOrderbookSignal(
       return {
         scoreBonus: 1,
         reason: `Tường bán ép giá (Asks x${(1 / ob.bidAskRatio).toFixed(1)}${ob.strongestAskWallPrice ? ` @${ob.strongestAskWallPrice}` : ""})`,
-        suggestedStop: ob.strongestAskWallPrice ? ob.strongestAskWallPrice * 1.001 : undefined,
       };
     }
   }

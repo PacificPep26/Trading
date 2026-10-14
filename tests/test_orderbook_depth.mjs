@@ -14,7 +14,7 @@ const guardedBook = {
 const longGuard = evaluateOrderbookSignal(1, guardedBook);
 assert.equal(longGuard.scoreBonus, 1, "Phải cộng điểm khi có tường mua lớn đỡ");
 assert.ok(longGuard.reason?.includes("Tường mua đỡ"), "Phải có lý do tường mua đỡ");
-assert.ok(longGuard.suggestedStop && longGuard.suggestedStop < 83000, "SL phải nằm sau lưng tường mua");
+assert.equal(longGuard.suggestedStop, undefined, "Không đặt SL theo tường lệnh (tường có thể bị rút)");
 
 // 2. Test trường hợp có tường bán khổng lồ cản ngay trên đầu (Ask Wall Blocking)
 const blockedBook = {

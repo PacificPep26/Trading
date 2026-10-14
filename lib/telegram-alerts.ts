@@ -17,9 +17,9 @@ import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
 import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { pickCoin } from "@/lib/overview";
-import { getDerivativesFlow, evaluateLiquidationRisk } from "@/lib/derivatives-flow";
-import { getCvdAnalysis, evaluateCvdSignal } from "@/lib/cvd-engine";
-import { getOrderbookAnalysis, evaluateOrderbookSignal } from "@/lib/orderbook-depth";
+import { getDerivativesFlow } from "@/lib/derivatives-flow";
+import { getCvdAnalysis } from "@/lib/cvd-engine";
+import { getOrderbookAnalysis } from "@/lib/orderbook-depth";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -407,20 +407,13 @@ export async function scanAndAlert(): Promise<string[]> {
           getCvdAnalysis(coin).catch(() => null),
           getOrderbookAnalysis(coin).catch(() => null),
         ]);
-        const flowLong = evaluateLiquidationRisk(1, flowData);
-        const flowShort = evaluateLiquidationRisk(-1, flowData);
-        const flow = ownD > 0 ? flowLong : flowShort;
-        const cvd = evaluateCvdSignal(ownD > 0 ? 1 : -1, cvdData);
-        const ob = evaluateOrderbookSignal(ownD > 0 ? 1 : -1, obData);
-        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1, flow, cvd, ob }, 4);
+        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1, flowData, cvdData, obData }, 4);
         const hour = Math.floor(Date.now() / 3_600_000);
         const key = p && `OV:${coin}:${p.side}:${hour}`;
         // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
         const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
         if (p && key && !recent) {
-          const aiText = p.aiPrediction ? ` · AI: ${p.aiPrediction.confidenceScore}% win` : "";
-          const isDiamond = p.score >= 5 || (p.aiPrediction && p.aiPrediction.confidenceScore >= 80);
-          const tag = isDiamond ? `💎 [KÈO ĐẸP 5/5 - ALL IN${aiText}]` : `⭐ [KÈO ĐẸP 4/5${aiText}]`;
+          const tag = p.score >= 5 ? `💎 [KÈO ĐẸP ${p.score} lớp]` : `⭐ [KÈO ĐẸP 4 lớp]`;
           const actionText = p.orderType === "LIMIT_PULLBACK" ? "Limit Chờ Hồi (Fibo 38.2%)" : "Vào Market";
           if (!recentlyAlerted(coin, p.side)) plan(tag, p.side, coin, actionText, p.entry, p.stop, p.tp, p.reasons.slice(0, 2).join(", "));
           markAlerted(coin, p.side);

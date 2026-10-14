@@ -2,7 +2,9 @@
 // Chưa backtest được công bằng (chấm điểm nhiều lớp) → chỉ báo tay + paper tự động để đo.
 import type { Candle } from "./okx.ts";
 import { analyse, swings, freshSweep, wickReversal } from "./patterns.ts";
-import { predictTradeExpectancy, type AiPrediction } from "./ai-meta-scorer.ts";
+import { evaluateLiquidationRisk, type DerivativesFlow } from "./derivatives-flow.ts";
+import { evaluateCvdSignal, type CvdAnalysis } from "./cvd-engine.ts";
+import { evaluateOrderbookSignal, type OrderbookAnalysis } from "./orderbook-depth.ts";
 
 export type OverviewPick = {
   coin: string;
@@ -14,7 +16,6 @@ export type OverviewPick = {
   tp: number;
   rr: number;
   orderType: "MARKET" | "LIMIT_PULLBACK";
-  aiPrediction?: AiPrediction;
 };
 
 function atr14(cs: Candle[]) {
@@ -36,9 +37,10 @@ export function scoreSide(
     h1: Candle[];
     m15: Candle[];
     btcH1?: Candle[];
-    flow?: { isTrap: boolean; scoreBonus: number; warningReason?: string };
-    cvd?: { scoreBonus: number; reason?: string };
-    ob?: { scoreBonus: number; reason?: string; suggestedStop?: number };
+    // dữ liệu thô: chấm theo đúng chiều đang xét (pickCoin gọi cả LONG lẫn SHORT với cùng ctx)
+    flowData?: DerivativesFlow | null;
+    cvdData?: CvdAnalysis | null;
+    obData?: OrderbookAnalysis | null;
   },
 ): { score: number; reasons: string[]; entry: number; stop: number; tp: number; rr: number; orderType: "MARKET" | "LIMIT_PULLBACK" } | null {
   const { h4, h1, m15, btcH1 } = ctx;
@@ -91,39 +93,44 @@ export function scoreSide(
   if (strong && ctx.btc === side) { score++; reasons.push(`nến 15m mạnh, vol ${(last.v / vAvg).toFixed(1)}x, BTC cùng chiều`); }
   else if (strong) reasons.push(`nến 15m mạnh vol ${(last.v / vAvg).toFixed(1)}x (BTC ngược)`);
 
+  // 6–8. Order flow: chưa backtest (xem service/scripts/cvd_filter_study.py), chỉ ±1 điểm
+  const flow = ctx.flowData ? evaluateLiquidationRisk(side, ctx.flowData) : null;
+  const cvd = ctx.cvdData ? evaluateCvdSignal(side, ctx.cvdData) : null;
+  const ob = ctx.obData ? evaluateOrderbookSignal(side, ctx.obData) : null;
+
   // 6. Dòng vốn phái sinh & Bẫy thanh lý (Derivatives Flow & Liquidation Risk)
-  if (ctx.flow) {
-    if (ctx.flow.isTrap) {
+  if (flow) {
+    if (flow.isTrap) {
       // Đám đông đang bị kẹt đòn bẩy quá dày -> nguy cơ bẫy thanh lý, trừ điểm hoặc hủy kèo bắt đáy sớm
-      score += ctx.flow.scoreBonus;
-      if (ctx.flow.warningReason) reasons.push(`⚠️ ${ctx.flow.warningReason}`);
+      score += flow.scoreBonus;
+      if (flow.warningReason) reasons.push(`⚠️ ${flow.warningReason}`);
       if (score < 4) return null; // Triệt tiêu kèo nếu rơi vào bẫy thanh lý
-    } else if (ctx.flow.scoreBonus > 0) {
-      score += ctx.flow.scoreBonus;
-      if (ctx.flow.warningReason) reasons.push(`🔥 ${ctx.flow.warningReason}`);
+    } else if (flow.scoreBonus > 0) {
+      score += flow.scoreBonus;
+      if (flow.warningReason) reasons.push(`🔥 ${flow.warningReason}`);
     }
   }
 
   // 7. Radar Hút Dầu (Cumulative Volume Delta - CVD Gom Hàng Ngầm)
-  if (ctx.cvd) {
-    if (ctx.cvd.scoreBonus > 0) {
-      score += ctx.cvd.scoreBonus;
-      if (ctx.cvd.reason) reasons.push(`🐳 ${ctx.cvd.reason}`);
-    } else if (ctx.cvd.scoreBonus < 0) {
-      score += ctx.cvd.scoreBonus;
-      if (ctx.cvd.reason) reasons.push(`⚠️ ${ctx.cvd.reason}`);
+  if (cvd) {
+    if (cvd.scoreBonus > 0) {
+      score += cvd.scoreBonus;
+      if (cvd.reason) reasons.push(`🐳 ${cvd.reason}`);
+    } else if (cvd.scoreBonus < 0) {
+      score += cvd.scoreBonus;
+      if (cvd.reason) reasons.push(`⚠️ ${cvd.reason}`);
       if (score < 4) return null; // Chặn Long nếu CVD xả ngầm
     }
   }
 
   // 8. Lực hấp dẫn Orderbook & Tường thanh khoản (Orderbook Imbalance & Limit Walls)
-  if (ctx.ob) {
-    if (ctx.ob.scoreBonus > 0) {
-      score += ctx.ob.scoreBonus;
-      if (ctx.ob.reason) reasons.push(`🧱 ${ctx.ob.reason}`);
-    } else if (ctx.ob.scoreBonus < 0) {
-      score += ctx.ob.scoreBonus;
-      if (ctx.ob.reason) reasons.push(`⚠️ ${ctx.ob.reason}`);
+  if (ob) {
+    if (ob.scoreBonus > 0) {
+      score += ob.scoreBonus;
+      if (ob.reason) reasons.push(`🧱 ${ob.reason}`);
+    } else if (ob.scoreBonus < 0) {
+      score += ob.scoreBonus;
+      if (ob.reason) reasons.push(`⚠️ ${ob.reason}`);
       if (score < 4) return null; // Chặn nếu tường cản quá lớn ngay trước mặt
     }
   }
@@ -137,13 +144,9 @@ export function scoreSide(
     : price;
   const orderType: "MARKET" | "LIMIT_PULLBACK" = isStretched ? "LIMIT_PULLBACK" : "MARKET";
 
-  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất hoặc sau lưng bức tường mua lớn, TP trước swing 1H đối diện, cần ≥ 1.8R
+  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất (không đặt theo tường lệnh: tường có thể bị rút), TP trước swing 1H đối diện, cần ≥ 1.8R
   const recent = m15.slice(-8);
-  let swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
-  // Nếu có tường thanh khoản khổng lồ bảo vệ, lùi SL ra sau lưng bức tường đó
-  if (ctx.ob?.suggestedStop) {
-    swingStop = side > 0 ? Math.min(swingStop, ctx.ob.suggestedStop) : Math.max(swingStop, ctx.ob.suggestedStop);
-  }
+  const swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
   // SL tối thiểu 1 ATR(1H): tránh bị quét râu
   const stop = side > 0 ? Math.min(swingStop, entry - a1) : Math.max(swingStop, entry + a1);
   const opp = side > 0 ? s1.highs.map((k) => h1[k].h).filter((x) => x > entry) : s1.lows.map((k) => h1[k].l).filter((x) => x < entry);
@@ -152,26 +155,7 @@ export function scoreSide(
   if (!Number.isFinite(target) || !(risk > 0) || risk / entry > 0.06 || risk / entry < 0.012) return null;
   const tp = target - side * 0.1 * a15;
   const rr = Math.abs(tp - entry) / risk;
-  // 9. AI Meta-Scorer: Dự báo xác suất thắng chiến lược
-  const lastBtc = ctx.btcH1 && ctx.btcH1.length >= 15 ? ctx.btcH1[ctx.btcH1.length - 1] : null;
-  const btcAtr = ctx.btcH1 && ctx.btcH1.length >= 15 ? atr14(ctx.btcH1) : 0;
-  const btcShockDrop = lastBtc ? (lastBtc.o - lastBtc.c) > 1.2 * btcAtr : false;
-
-  const aiPrediction = predictTradeExpectancy({
-    baseScore: score,
-    rr,
-    hasSweep: Boolean(sw),
-    isCvdAccumulating: Boolean(ctx.cvd?.scoreBonus && ctx.cvd.scoreBonus > 0),
-    isCvdDistributing: Boolean(ctx.cvd?.scoreBonus && ctx.cvd.scoreBonus < 0),
-    isOiSurging: false,
-    isCrowdedTrap: Boolean(ctx.flow?.isTrap),
-    isShortSqueezePotential: Boolean(ctx.flow?.scoreBonus && ctx.flow.scoreBonus > 0),
-    isBidWallGuarded: Boolean(ctx.ob?.scoreBonus && ctx.ob.scoreBonus > 0),
-    isAskWallBlocking: Boolean(ctx.ob?.scoreBonus && ctx.ob.scoreBonus < 0),
-    btcShockDrop,
-  });
-
-  return { score, reasons, entry, stop, tp, rr, orderType, aiPrediction };
+  return { score, reasons, entry, stop, tp, rr, orderType };
 }
 
 /** Kèo tốt nhất của coin (≥ minScore lớp, ≥ 1.5R), hoặc null. */
@@ -179,11 +163,7 @@ export function pickCoin(coin: string, ctx: Parameters<typeof scoreSide>[1], min
   const picks = ([1, -1] as const)
     .map((side) => ({ side, r: scoreSide(side, ctx) }))
     .filter((x) => x.r && x.r.score >= minScore)
-    .sort((a, b) => {
-      const confA = a.r?.aiPrediction?.confidenceScore ?? 0;
-      const confB = b.r?.aiPrediction?.confidenceScore ?? 0;
-      return confB - confA || b.r!.score - a.r!.score || b.r!.rr - a.r!.rr;
-    });
+    .sort((a, b) => b.r!.score - a.r!.score || b.r!.rr - a.r!.rr);
   const best = picks[0];
   return best ? { coin, side: best.side, ...best.r! } : null;
 }

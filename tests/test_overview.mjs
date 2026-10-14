@@ -38,4 +38,11 @@ btcShock[29] = { o: 100, h: 100.2, l: 97.0, c: 97.2, closed: true, v: 10 }; // x
 const LShock = scoreSide(1, { own: 1, btc: 1, h4, h1, m15, btcH1: btcShock });
 assert.equal(LShock, null, "BTC 1H shock xả mạnh phải chặn đứng lệnh LONG");
 
+// Order flow phải chấm theo đúng chiều đang xét: CVD gom cộng cho LONG, không cộng cho SHORT
+const acc = { coin: "X", delta1h: 1, delta4hTotal: 5, isCvdAccumulating: true, isCvdDistributing: false, ratioBuySell4h: 1.3 };
+const LC = scoreSide(1, { own: 1, btc: 1, h4, h1, m15, cvdData: acc });
+assert.equal(LC.score, L.score + 1, "CVD gom phải +1 cho LONG");
+const SC = scoreSide(-1, { own: 1, btc: 1, h4, h1, m15, cvdData: acc });
+assert.ok(!SC || !SC.reasons.some((r) => r.includes("🐳")), "CVD gom không được cộng cho SHORT");
+
 console.log("All overview tests passed!");
