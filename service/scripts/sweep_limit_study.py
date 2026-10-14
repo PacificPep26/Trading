@@ -71,7 +71,7 @@ def run(k, s, tp_mode):
                         g = side * (tp / entry - 1); kk = j; break
                 if g is None:
                     g = side * (cs[kk].c / entry - 1)
-                out.append({"year": year_of(cs[fill].t), "r": (g - T.COST) / risk, "btc": trend_at(btc, t) == side})
+                out.append({"year": year_of(cs[fill].t), "r": (g - T.COST) / risk, "btc": trend_at(btc, t) == side, "sym": name, "side": side, "risk": risk, "tp": side * (tp / entry - 1)})
                 busy = kk
     return out
 

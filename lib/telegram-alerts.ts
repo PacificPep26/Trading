@@ -408,10 +408,7 @@ export async function scanAndAlert(): Promise<string[]> {
         // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
         const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
         if (p && key && !recent) {
-          const tag = p.score >= 5 ? `💎 [KÈO ĐẸP ${p.score} lớp]` : `⭐ [KÈO ĐẸP 4 lớp]`;
-          const actionText = p.orderType === "LIMIT_PULLBACK" ? "Limit Chờ Hồi (Fibo 38.2%)" : "Vào Market";
-          if (!recentlyAlerted(coin, p.side)) plan(tag, p.side, coin, actionText, p.entry, p.stop, p.tp, p.reasons.slice(0, 2).join(", "));
-          markAlerted(coin, p.side);
+          // Tắt tin: overview_study 2025–26 phí 0 −0.02R, 2025 âm, điểm ≥5 còn tệ hơn → chỉ paper để đo tiếp
           sent.add(key);
           // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh
           const barTime = Math.floor(Date.now() / 3_600_000) * 3_600_000;
@@ -434,6 +431,16 @@ export async function scanAndAlert(): Promise<string[]> {
         const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
         for (const m of managePaper1h(coin, bars1h)) await send(m);
         for (const m of stepLimits(coin, bars1h)) await send(m);
+        // 📌 Đặt sẵn Limit bắt râu quét (đạt chuẩn fee0_shootout 2025–26: +0.07R, hơn vào ngẫu nhiên cả 2 năm). Bị xoá nhầm ở 09fdfd3
+        const own = (await getDailyData(coin)).trend;
+        const rl = own !== 0 ? restingLimit(bars1h, own) : null;
+        const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
+        if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
+          if (!recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, "đón râu quét, hiệu lực 24h");
+          markAlerted(coin, rl.side);
+          sent.add(rlKey);
+          saveDedup(sent, preSent);
+        }
       } catch (e) {
         console.error(`[MANAGE 1H] ${coin}:`, e);
       }

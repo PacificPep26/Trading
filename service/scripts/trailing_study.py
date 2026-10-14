@@ -104,7 +104,7 @@ def trades(exit_name, entry_mode="open", exit_fn=None):
                     continue
                 gross, k = exit_fn(cs, atr, f, side, entry, s["stop"])
                 net = gross - COST - FUNDING_8H * (k - i) * 4 / 8
-                out.append({"style": key, "year": year_of(cs[f].t), "r": net / risk, "t_out": cs[k].t})
+                out.append({"style": key, "year": year_of(cs[f].t), "r": net / risk, "t_out": cs[k].t, "sym": sym, "side": side, "risk": risk})
                 busy = k
                 break
     return out

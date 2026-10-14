@@ -80,7 +80,7 @@ def run():
                         g = side * (extreme / entry - 1); k = q; break
                 if g is None:
                     g = side * (m[k].c / entry - 1)
-                out.append({"year": year_of(m[j].t), "g": g, "risk": risk, "re": trades == 1, "side": side})
+                out.append({"year": year_of(m[j].t), "g": g, "risk": risk, "re": trades == 1, "side": side, "sym": name, "tp": side * (extreme / entry - 1)})
                 trades += 1
                 busy_until = k + 1
                 if g > 0:
