@@ -371,12 +371,14 @@ export async function scanAndAlert(): Promise<string[]> {
         const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed) }, 3);
         const hour = Math.floor(Date.now() / 3_600_000);
         const key = p && `OV:${coin}:${p.side}:${hour}`;
-        // cùng coin vừa báo chiều ngược trong 4 giờ → không lật kèo
-        const flipped = p && [0, 1, 2, 3].some((h) => sent.has(`OV:${coin}:${-p.side}:${hour - h}`));
-        if (p && key && !sent.has(key) && !flipped) {
+        // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
+        // (2026-10-13: NEAR/DOT LONG bị báo lại mỗi giờ khi setup còn nguyên)
+        const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
+        if (p && key && !recent) {
           picks.push(p);
           sent.add(key);
-          if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: h1c[h1c.length - 1].t }, OVERVIEW_PAPER);
+          // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh (PAPER PEPE từng "chạm SL" bằng giá trước khi vào)
+          if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, OVERVIEW_PAPER);
         }
       } catch (e) {
         console.error(`[OVERVIEW] ${coin}:`, e);
