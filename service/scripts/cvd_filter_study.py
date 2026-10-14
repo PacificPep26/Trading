@@ -12,7 +12,7 @@ import csv
 import math
 
 from service.backtest.data import DATA_DIR
-from service.scripts.live_simulation_study import FEE_TAKER_MEXC, net_r, run_full_simulation
+from service.scripts.live_simulation_study import net_r, run_full_simulation
 
 H = 3_600_000
 
@@ -52,7 +52,7 @@ def stats(rs):
 
 
 def main():
-    trades = run_full_simulation()
+    trades = [t for t in run_full_simulation() if t["year"] >= 2025]  # chủ dự án chỉ xét 2025–2026
     cache, rows = {}, []
     for tr in trades:
         if tr["sym"] not in cache:
@@ -61,18 +61,18 @@ def main():
         if f is None:
             continue
         acc, dist, ratio = f
-        rows.append((tr, live_score(tr["side"], acc, dist), ratio, net_r(tr, FEE_TAKER_MEXC)))
+        rows.append((tr, live_score(tr["side"], acc, dist), ratio, net_r(tr, 0.0)))
 
-    print(f"Lệnh có dữ liệu CVD: {len(rows)}/{len(trades)}  (2.5$/lệnh, phí taker 0.16% + trượt + funding)\n")
+    print(f"Lệnh có dữ liệu CVD: {len(rows)}/{len(trades)}  (2.5$/lệnh, phí 0 — giao dịch tay miễn phí; vẫn trừ trượt 0.04% + funding)\n")
     print("Tất cả            ", stats([r for _, _, _, r in rows]))
     for s, name in ((1, "CVD +1 (cùng chiều)"), (0, "CVD 0            "), (-1, "CVD -1 (ngược)   ")):
         print(name, stats([r for _, sc, _, r in rows if sc == s]))
     print("Bỏ lệnh CVD -1    ", stats([r for _, sc, _, r in rows if sc >= 0]))
 
-    print("\nTheo giai đoạn (+1 / -1):")
-    for lo, hi in ((2023, 2024), (2025, 2026)):
+    print("\nTheo năm (+1 / -1):")
+    for y in (2025, 2026):
         for s in (1, -1):
-            print(f"  {lo}-{hi} CVD {s:+d}", stats([r for tr, sc, _, r in rows if sc == s and lo <= tr["year"] <= hi]))
+            print(f"  {y} CVD {s:+d}", stats([r for tr, sc, _, r in rows if sc == s and tr["year"] == y]))
 
     print("\nChỉ dùng tỷ lệ mua/bán 4h (bỏ vế delta), theo chiều lệnh:")
     for lo, hi, name in ((1.15, 99, ">= 1.15"), (1.0, 1.15, "1.00-1.15"), (0.85, 1.0, "0.85-1.00"), (0, 0.85, "<= 0.85")):
