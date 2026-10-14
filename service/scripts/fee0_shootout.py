@@ -62,7 +62,7 @@ def fixed_control(trades, tf, max_bars, seed=13):
             cache[tr["sym"]] = (cs, {(y, sd): [i for i in range(len(cs) - max_bars - 1) if year_of(cs[i].t) == y
                                                and trend_at(own, cs[i].t) == sd] for y in YEARS for sd in (1, -1)})
         cs, pools = cache[tr["sym"]]
-        pool = pools[(tr["year"], tr["side"])]
+        pool = pools[(tr["year"], tr.get("trend", tr["side"]))]  # daily trend of the real trade (counter-trend legs differ from side)
         if not pool:
             continue
         i = rnd.choice(pool)
