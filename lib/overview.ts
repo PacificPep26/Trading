@@ -36,6 +36,7 @@ export function scoreSide(
     btcH1?: Candle[];
     flow?: { isTrap: boolean; scoreBonus: number; warningReason?: string };
     cvd?: { scoreBonus: number; reason?: string };
+    ob?: { scoreBonus: number; reason?: string; suggestedStop?: number };
   },
 ): { score: number; reasons: string[]; entry: number; stop: number; tp: number; rr: number; orderType: "MARKET" | "LIMIT_PULLBACK" } | null {
   const { h4, h1, m15, btcH1 } = ctx;
@@ -113,6 +114,18 @@ export function scoreSide(
     }
   }
 
+  // 8. Lực hấp dẫn Orderbook & Tường thanh khoản (Orderbook Imbalance & Limit Walls)
+  if (ctx.ob) {
+    if (ctx.ob.scoreBonus > 0) {
+      score += ctx.ob.scoreBonus;
+      if (ctx.ob.reason) reasons.push(`🧱 ${ctx.ob.reason}`);
+    } else if (ctx.ob.scoreBonus < 0) {
+      score += ctx.ob.scoreBonus;
+      if (ctx.ob.reason) reasons.push(`⚠️ ${ctx.ob.reason}`);
+      if (score < 4) return null; // Chặn nếu tường cản quá lớn ngay trước mặt
+    }
+  }
+
   // Xử lý nến phóng quá dài (cả Marubozu lẫn Pinbar râu dài)
   const range15 = last.h - last.l;
   const impulse = side > 0 ? last.c - last.l : last.h - last.c;
@@ -122,9 +135,13 @@ export function scoreSide(
     : price;
   const orderType: "MARKET" | "LIMIT_PULLBACK" = isStretched ? "LIMIT_PULLBACK" : "MARKET";
 
-  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất, TP trước swing 1H đối diện, cần ≥ 1.8R
+  // Kế hoạch: SL ngoài cực trị 8 nến 15m gần nhất hoặc sau lưng bức tường mua lớn, TP trước swing 1H đối diện, cần ≥ 1.8R
   const recent = m15.slice(-8);
-  const swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
+  let swingStop = side > 0 ? Math.min(...recent.map((x) => x.l)) - 0.1 * a15 : Math.max(...recent.map((x) => x.h)) + 0.1 * a15;
+  // Nếu có tường thanh khoản khổng lồ bảo vệ, lùi SL ra sau lưng bức tường đó
+  if (ctx.ob?.suggestedStop) {
+    swingStop = side > 0 ? Math.min(swingStop, ctx.ob.suggestedStop) : Math.max(swingStop, ctx.ob.suggestedStop);
+  }
   // SL tối thiểu 1 ATR(1H): tránh bị quét râu
   const stop = side > 0 ? Math.min(swingStop, entry - a1) : Math.max(swingStop, entry + a1);
   const opp = side > 0 ? s1.highs.map((k) => h1[k].h).filter((x) => x > entry) : s1.lows.map((k) => h1[k].l).filter((x) => x < entry);

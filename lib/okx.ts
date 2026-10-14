@@ -64,3 +64,12 @@ export async function takerVolumeContract(instId: string, period = "1H") {
   const rows = await get<string[][]>(`/rubik/stat/taker-volume-contract?instId=${instId}&period=${period}`);
   return rows.slice(0, 24).map((r) => ({ t: +r[0], buyVol: +r[1], sellVol: +r[2] }));
 }
+
+export async function orderbookDepth(instId: string, sz = 100) {
+  const [d] = await get<{ bids: string[][]; asks: string[][]; ts: string }[]>(`/market/books?instId=${instId}&sz=${sz}`);
+  return {
+    bids: d ? d.bids.map((b) => ({ price: +b[0], vol: +b[1] })) : [],
+    asks: d ? d.asks.map((a) => ({ price: +a[0], vol: +a[1] })) : [],
+    ts: d ? +d.ts : Date.now(),
+  };
+}

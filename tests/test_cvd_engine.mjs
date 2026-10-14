@@ -34,3 +34,4 @@ const shortSignal = evaluateCvdSignal(-1, distCvd);
 assert.equal(shortSignal.scoreBonus, 1, "CVD xả chủ động là lợi thế cho Short");
 
 console.log("All CVD engine tests passed successfully!");
+
