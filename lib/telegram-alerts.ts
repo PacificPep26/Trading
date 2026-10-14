@@ -469,8 +469,7 @@ export async function scanAndAlert(): Promise<string[]> {
     digest.sort((a, b) => b.rr - a.rr);
     await send(
       `📋 *[KÈO MỚI ${vnTime(Date.now())}]* ${digest.length} kèo${digest.length > 5 ? " (5 kèo R:R cao nhất)" : ""}\n` +
-      digest.slice(0, 5).map((d, i) => `${i + 1}. ${d.text}`).join("\n") +
-      `\n_Ký quỹ 10$ x10 · đặt SL/TP ngay · chọn tối đa 2–3 kèo. Chưa backtest có lời, đánh nhỏ._`
+      digest.slice(0, 5).map((d, i) => `${i + 1}. ${d.text}`).join("\n")
     );
   }
 
