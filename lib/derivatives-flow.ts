@@ -120,3 +120,4 @@ export function evaluateLiquidationRisk(
 
   return { isTrap: false, scoreBonus: 0 };
 }
+

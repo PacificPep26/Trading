@@ -59,3 +59,8 @@ export async function openInterestHistory(ccy: string, period = "1H") {
   const rows = await get<string[][]>(`/rubik/stat/contracts/open-interest-volume?ccy=${ccy}&period=${period}`);
   return rows.slice(0, 24).map((r) => ({ t: +r[0], oiUsd: +r[1], volumeUsd: +r[2] }));
 }
+
+export async function takerVolumeContract(instId: string, period = "1H") {
+  const rows = await get<string[][]>(`/rubik/stat/taker-volume-contract?instId=${instId}&period=${period}`);
+  return rows.slice(0, 24).map((r) => ({ t: +r[0], buyVol: +r[1], sellVol: +r[2] }));
+}

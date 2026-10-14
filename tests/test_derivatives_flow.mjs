@@ -55,3 +55,4 @@ assert.equal(normalResult.isTrap, false);
 assert.equal(normalResult.scoreBonus, 0);
 
 console.log("All derivatives flow tests passed successfully!");
+

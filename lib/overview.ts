@@ -35,6 +35,7 @@ export function scoreSide(
     m15: Candle[];
     btcH1?: Candle[];
     flow?: { isTrap: boolean; scoreBonus: number; warningReason?: string };
+    cvd?: { scoreBonus: number; reason?: string };
   },
 ): { score: number; reasons: string[]; entry: number; stop: number; tp: number; rr: number; orderType: "MARKET" | "LIMIT_PULLBACK" } | null {
   const { h4, h1, m15, btcH1 } = ctx;
@@ -97,6 +98,18 @@ export function scoreSide(
     } else if (ctx.flow.scoreBonus > 0) {
       score += ctx.flow.scoreBonus;
       if (ctx.flow.warningReason) reasons.push(`🔥 ${ctx.flow.warningReason}`);
+    }
+  }
+
+  // 7. Radar Hút Dầu (Cumulative Volume Delta - CVD Gom Hàng Ngầm)
+  if (ctx.cvd) {
+    if (ctx.cvd.scoreBonus > 0) {
+      score += ctx.cvd.scoreBonus;
+      if (ctx.cvd.reason) reasons.push(`🐳 ${ctx.cvd.reason}`);
+    } else if (ctx.cvd.scoreBonus < 0) {
+      score += ctx.cvd.scoreBonus;
+      if (ctx.cvd.reason) reasons.push(`⚠️ ${ctx.cvd.reason}`);
+      if (score < 4) return null; // Chặn Long nếu CVD xả ngầm
     }
   }
 
