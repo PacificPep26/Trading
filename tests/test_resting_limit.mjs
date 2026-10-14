@@ -35,6 +35,15 @@ assert.match(m[0], /huỷ/); assert.equal(loadLimits(file).find((r) => r.coin ==
 addLimit("ADA", s, file);
 stepLimits("ADA", [{ t: t0 + H, o: 101, h: 101, l: s.stop - 1, c: s.stop - 0.5, closed: true }], file);
 assert.ok(loadLimits(file).find((r) => r.coin === "ADA").r < -1);
+// đáy mới thay lệnh chờ cũ chưa khớp; lệnh đã khớp thì không thay
+const f2 = path.join(path.dirname(file), "r.json");
+addLimit("SUI", s, f2);
+assert.equal(addLimit("SUI", { ...s, limit: s.limit - 1, barTime: t0 + 5 * H }, f2), false, "mặc định giữ lệnh cũ");
+assert.equal(addLimit("SUI", { ...s, limit: s.limit - 1, barTime: t0 + 5 * H }, f2, true), true);
+const sui = loadLimits(f2).filter((r) => r.coin === "SUI");
+assert.deepEqual(sui.map((r) => r.status), ["cancelled", "pending"]); assert.equal(sui[1].limit, s.limit - 1);
+stepLimits("SUI", [{ t: t0 + 6 * H, o: 101, h: 102, l: s.limit - 2, c: 101, closed: true }], f2);
+assert.equal(addLimit("SUI", s, f2, true), false, "đang có lệnh khớp thì không đặt thêm");
 const st = limitStats(loadLimits(file));
 assert.equal(st.n, 2); assert.equal(st.wins, 1);
 console.log("All resting limit tests passed!");

@@ -90,7 +90,7 @@ for (const coin of COINS) {
     if (now < START) continue;
     const bars = h1.slice(n - 59, n + 1);
     stepLimits(coin, bars, file);
-    if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, file); }
+    if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, file, true); } // như live: đáy mới thay lệnh chờ cũ
   }
   for (const x of loadLimits(file)) if (x.status === "closed" && x.r !== undefined) B.push({ t: x.createdBar, r: x.r });
   process.stderr.write(`${coin}: 4H ${A.live.length} · 📌 ${B.length}\n`);

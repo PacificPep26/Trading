@@ -15,7 +15,7 @@ import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submi
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
-import { addLimit, stepLimits } from "@/lib/resting-limit";
+import { addLimit, stepLimits, loadLimits } from "@/lib/resting-limit";
 import { pickCoin } from "@/lib/overview";
 
 const COINS = [
@@ -436,8 +436,10 @@ export async function scanAndAlert(): Promise<string[]> {
         // chỉ LONG: SHORT 2025–26 +0.047R nhưng thua vào ngẫu nhiên (+0.070R) → không đạt
         const rl = own > 0 ? restingLimit(bars1h, 1) : null;
         const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
-        if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
-          if (!recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, "đón râu quét, hiệu lực 24h");
+        const oldRl = rl && loadLimits().find((x) => x.coin === coin && x.status === "pending");
+        if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl, undefined, true)) {
+          // lệnh thay thế luôn báo (bỏ qua chặn 6 giờ) để chủ tài khoản huỷ Limit cũ trên sàn
+          if (oldRl || !recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, oldRl ? `⚠️ huỷ Limit cũ @${f(oldRl.limit)}, đáy 1H mới` : "đón râu quét, hiệu lực 24h");
           markAlerted(coin, rl.side);
           sent.add(rlKey);
           saveDedup(sent, preSent);

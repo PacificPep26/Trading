@@ -42,9 +42,13 @@ function save(rs: RestingLimit[], file: string) {
 }
 
 /** Thêm lệnh chờ mới nếu coin chưa có lệnh chờ/đang mở. */
-export function addLimit(coin: string, s: Omit<RestingLimit, "coin" | "createdBar" | "status" | "checkedTo"> & { barTime: number }, file = FILE): boolean {
+// replacePending: đáy mới thay lệnh chờ cũ chưa khớp (live_replay_study 2026-10-14: giữ lệnh cũ +0.013R, thay bằng đáy mới +0.032R)
+export function addLimit(coin: string, s: Omit<RestingLimit, "coin" | "createdBar" | "status" | "checkedTo"> & { barTime: number }, file = FILE, replacePending = false): boolean {
   const rs = loadLimits(file);
-  if (rs.some((x) => x.coin === coin && (x.status === "pending" || x.status === "open"))) return false;
+  if (rs.some((x) => x.coin === coin && x.status === "open")) return false;
+  const old = rs.find((x) => x.coin === coin && x.status === "pending");
+  if (old && !replacePending) return false;
+  if (old) { old.status = "cancelled"; old.note = "thay bằng đáy mới"; }
   const { barTime, ...rest } = s;
   rs.push({ coin, ...rest, createdBar: barTime, status: "pending", checkedTo: barTime });
   save(rs, file);
