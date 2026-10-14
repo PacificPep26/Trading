@@ -42,11 +42,20 @@ Từ chối với mã: `INVALID_DATA` (thiếu/lỗi dữ liệu), `BOT_LOCKED` 
 - SL gắn ngay khi mở; không xác nhận được SL thì đóng vị thế. Không mở trùng coin đang giữ.
 - Tin tay ghi đòn bẩy gợi ý `x≤` = min(10, 0.8 ÷ %SL) để chạm SL mất ≤ 80% ký quỹ. Khối lượng nên tính từ số tiền chấp nhận mất mỗi lệnh ÷ %SL.
 
-## 5. Tin Telegram
+## 5. Tin Telegram (mẫu chung 2 dòng)
 
-- `📋 [KÈO MỚI hh:mm]`: gộp mọi kèo tay của lượt quét (hiện là 📌), tối đa 5 kèo R:R cao nhất. Mỗi coin + chiều tối đa 1 tin/6 giờ, trừ tin thay Limit.
-- Lệnh MEXC: `🤖` vào lệnh, `📈` dời SL trailing, `🚪` đóng khi giá qua SL trailing, `🎯/🛑 [MEXC ĐÃ ĐÓNG]` kèm lãi/lỗ thật, `🛑/🚨` lỗi SL.
-- Paper: `🧪 [PAPER LIMIT KHỚP/ĐÓNG]`, `⌛` hết hạn, `↗️` chạy tới TP trước khi khớp.
+```
+📋 KÈO MỚI 16:15
+🟢 LONG NEAR · 📌 Limit 4,933
+   SL 4,779 (−3.1%) · TP1 5,087 · TP2 5,181 · x10
+🤖 Bot đã vào 🟢 LONG SOL · 4H kim cương 118,2
+   SL 115,0 (−2.7%) · không TP, SL tự dời theo 3 ATR · ký quỹ 26$ x10
+```
+
+- Kèo tay gộp trong 1 tin `📋 KÈO MỚI` mỗi lượt quét, tối đa 5 kèo (R:R cao nhất). TP1 = 1R: chốt 50% rồi dời SL về giá vào; TP2 = mục tiêu. `x` = đòn bẩy gợi ý (≤ 10). Tin thay Limit có thêm "huỷ Limit cũ …".
+- Mỗi coin + chiều tối đa 1 tin/6 giờ, trừ tin thay Limit.
+- Lệnh MEXC: `📈` dời SL trailing, `🚪` đóng khi giá qua SL trailing, `🎯/🛑 [MEXC ĐÃ ĐÓNG]` kèm lãi/lỗ thật, `🛑/🚨` lỗi SL.
+- Paper 📌: `🧪 … paper KHỚP / ĐÓNG`, `⌛` hết 24h, `↗️` chạy tới TP trước khi khớp. Kèo đã tắt tin (Toàn cảnh, FVG, BOS, Donchian) ghi paper im lặng.
 - Webhook `@VictorHuynh_trading_bot`: gõ tên coin để xem kèo; lệnh "thống kê" so lệnh thật với backtest.
 
 ## 6. Vận hành

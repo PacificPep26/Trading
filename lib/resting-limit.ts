@@ -55,7 +55,7 @@ export function addLimit(coin: string, s: Omit<RestingLimit, "coin" | "createdBa
   return true;
 }
 
-const tag = (x: RestingLimit) => `${x.side > 0 ? "LONG" : "SHORT"} *${x.coin}*`;
+const tag = (x: RestingLimit) => `${x.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${x.coin}*`;
 
 /** Chạy các nến 1H mới đóng qua lệnh của coin. Trả tin cần gửi. */
 export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
@@ -67,17 +67,17 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
   for (const b of closed) {
     x.checkedTo = b.t;
     if (x.status === "pending") {
-      if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ Lệnh chờ ${tag(x)} @${x.limit} hết hạn, *huỷ lệnh Limit trên MEXC*.`); break; }
+      if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${x.limit}`); break; }
       // chạm Limit trước: nến chọc qua Limit thì lệnh đã khớp dù sau đó đóng thủng sâu (lỗi backtest cũ bỏ sót lệnh này)
       if (x.side > 0 ? b.l <= x.limit : b.h >= x.limit) {
         x.status = "open";
         x.entry = x.side > 0 ? Math.min(x.limit, b.o) : Math.max(x.limit, b.o);
         x.fillBar = b.t;
-        msgs.push(`🧪 *[PAPER LIMIT KHỚP]* ${tag(x)} @${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
         if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; } // cùng nến chạm SL = thua
         continue;
       }
-      if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { x.status = "cancelled"; x.note = "chạy tới TP trước"; msgs.push(`↗️ ${tag(x)}: giá chạy tới TP trước khi khớp → *huỷ lệnh Limit @${x.limit}*.`); break; }
+      if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { x.status = "cancelled"; x.note = "chạy tới TP trước"; msgs.push(`↗️ ${tag(x)} · giá chạy tới TP trước → huỷ Limit ${x.limit}`); break; }
     } else {
       if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; }
       if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { close(x, x.tp, msgs); break; }
@@ -93,7 +93,7 @@ function close(x: RestingLimit, px: number, msgs: string[]) {
   x.status = "closed";
   x.exitPrice = px;
   x.r = (x.side * (px / x.entry! - 1) - SLIP) / risk;
-  msgs.push(`🧪 *[PAPER LIMIT ĐÓNG]* ${tag(x)} vào ${x.entry} → thoát ${px} · *${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}R*`);
+  msgs.push(`🧪 ${tag(x)} · paper ĐÓNG ${x.entry} → ${px} · *${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}R*`);
 }
 
 export function limitStats(rs: RestingLimit[]) {

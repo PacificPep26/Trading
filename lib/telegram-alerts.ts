@@ -5,11 +5,11 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily, wickReversal, freshSweep, restingLimit, fvgSweepSignal } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, restingLimit, fvgSweepSignal } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
-import { isStarSetup, isLiveEligible, calculatePartialPnL, formatEntryReason, trailingStop } from "@/lib/trading-policy";
+import { isStarSetup, isLiveEligible, trailingStop } from "@/lib/trading-policy";
 import { getCapitalTier, checkTierChange } from "@/lib/capital-tier";
 import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submitMexcOrder, submitMexcTpSl, closeMexcPosition, moveStopsToBreakeven, tightenStop, getRealizedPnl } from "@/lib/mexc-client";
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
@@ -371,9 +371,12 @@ export async function scanAndAlert(): Promise<string[]> {
   const digest: { rr: number; text: string }[] = [];
   // tối đa x10 (chủ dự án 14/10: x20 với SL sát dễ bị quét cháy); SL xa thì giảm để lỗ khi chạm SL ≤ 80% ký quỹ
   const lev = (risk: number) => Math.min(10, Math.max(1, Math.floor(0.8 / risk)));
-  const plan = (tag: string, side: number, coin: string, how: string, entry: number, stop: number, tp: number, note: string) => {
-    const risk = Math.abs(entry - stop) / entry, rr = Math.abs(tp - entry) / Math.abs(entry - stop);
-    digest.push({ rr, text: `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${tag} · ${note}\n    ${how} ${f(entry)} · SL ${f(stop)} (${(risk * 100).toFixed(1)}%) · TP ${f(tp)} · *${rr.toFixed(1)}R* · x≤${lev(risk)}` });
+  // Mẫu tin chung (chủ dự án 14/10: thống nhất, ngắn nhất): dòng 1 chiều + coin + cách vào, dòng 2 SL/TP/đòn bẩy
+  const plan = (side: number, coin: string, how: string, entry: number, stop: number, tp: number, note = "") => {
+    const r = Math.abs(entry - stop), risk = r / entry, rr = Math.abs(tp - entry) / r;
+    const tp1 = entry + Math.sign(tp - entry) * r; // chốt 50% ở 1R rồi dời SL về giá vào
+    digest.push({ rr, text: `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${how} ${f(entry)}${note ? ` · ${note}` : ""}\n` +
+      `   SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · TP1 ${f(tp1)} · TP2 ${f(tp)} · x${lev(risk)}` });
   };
 
   // Toàn cảnh 5 lớp, quét mỗi 5 phút, cả LONG lẫn SHORT. Chỉ báo + paper (data/paper-overview.json).
@@ -384,23 +387,20 @@ export async function scanAndAlert(): Promise<string[]> {
           candles(`${coin}-USDT-SWAP`, "4H", 120), candles(`${coin}-USDT-SWAP`, "1H", 100), candles(`${coin}-USDT-SWAP`, "15m", 300),
         ]);
         const h1c = h1o.filter((x) => x.closed);
-        for (const m of managePaper1h(coin, h1o, OVERVIEW_PAPER)) await send(m.replace("PAPER 1H", "PAPER TOÀN CẢNH"));
+        // kèo đã tắt tin (Toàn cảnh, FVG): chỉ ghi paper im lặng, không gửi tin khớp/đóng
+        managePaper1h(coin, h1o, OVERVIEW_PAPER);
 
         // SMC: FVG H1 → hồi về vùng → 15m quét + đóng quay lại (chỉ lần đầu). Paper: data/paper-fvg.json
         // shortcut: paper quản lý SL/TP trên nến 1H (backtest dùng 15m), đủ để so chiều hướng; đổi sang 15m nếu thành ứng viên live
-        for (const m of stepLimits(coin, h1o, FVG_PAPER)) await send(m.replace("PAPER LIMIT", "PAPER FVG"));
-        for (const m of stepLimits(coin, h1o, OVERVIEW_LIMIT_PAPER)) await send(m.replace("PAPER LIMIT", "PAPER TOÀN CẢNH LIMIT"));
+        stepLimits(coin, h1o, FVG_PAPER);
+        stepLimits(coin, h1o, OVERVIEW_LIMIT_PAPER);
         const ownD = (await getDailyData(coin)).trend;
         const fv = fvgSweepSignal(h1o, m15o, ownD);
         const fvKey = fv && `FVG:${coin}:${fv.fvgTime}`;
         if (fv && fvKey && !sent.has(fvKey)) {
           sent.add(fvKey);
-          // paper luôn ghi (đo đủ mẫu), tin chỉ gửi nếu coin chưa được báo 6 giờ qua
           addLimit(coin, { side: fv.side, level: fv.entry, limit: fv.entry, stop: fv.stop, tp: fv.tp, atr: 0, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, FVG_PAPER);
-          const quiet = recentlyAlerted(coin, fv.side);
-          markAlerted(coin, fv.side);
-          // Bỏ cách đánh FVG + quét 15m (SL quá ngắn, nhiễu nến, backtest âm) -> không gửi alert lên Telegram
-          // if (!quiet) plan("🎯 FVG + quét 15m", fv.side, coin, "Vào", fv.entry, fv.stop, fv.tp, btc === fv.side ? "BTC cùng chiều" : "⚠️ BTC ngược");
+          // FVG chỉ ghi paper, không gửi tin → không markAlerted (trước đây chặn nhầm tin 📌 của coin 6 giờ)
         }
         const btcH1 = await candles("BTC-USDT-SWAP", "1H", 30).catch(() => []);
         const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1 }, 4);
@@ -440,9 +440,8 @@ export async function scanAndAlert(): Promise<string[]> {
         const oldRl = rl && loadLimits().find((x) => x.coin === coin && x.status === "pending");
         if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl, undefined, true)) {
           // lệnh thay thế luôn báo (bỏ qua chặn 6 giờ) để chủ tài khoản huỷ Limit cũ trên sàn
-          if (oldRl || !recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp,
-            // chủ dự án đánh nhanh: chốt 50% ở 1R rồi dời SL hoà vốn (2025 +0.003R, 2026 +0.076R, thắng ~53%)
-            `${oldRl ? `⚠️ huỷ Limit cũ @${f(oldRl.limit)}, đáy 1H mới` : "đón râu quét, hiệu lực 24h"} · TP1 ${f(rl.limit + rl.side * Math.abs(rl.limit - rl.stop))} chốt 50% rồi dời SL về giá vào`);
+          // TP1 = 1R chốt 50% rồi dời SL về giá vào (chủ dự án đánh nhanh; 2025 +0.003R, 2026 +0.076R, thắng ~53%)
+          if (oldRl || !recentlyAlerted(coin, rl.side)) plan(rl.side, coin, "📌 Limit", rl.limit, rl.stop, rl.tp, oldRl ? `huỷ Limit cũ ${f(oldRl.limit)}` : "");
           markAlerted(coin, rl.side);
           sent.add(rlKey);
           saveDedup(sent, preSent);
@@ -456,8 +455,7 @@ export async function scanAndAlert(): Promise<string[]> {
   if (digest.length) {
     digest.sort((a, b) => b.rr - a.rr);
     await send(
-      `📋 *[KÈO MỚI ${vnTime(Date.now())}]* ${digest.length} kèo${digest.length > 5 ? " (5 kèo R:R cao nhất)" : ""}\n` +
-      digest.slice(0, 5).map((d, i) => `${i + 1}. ${d.text}`).join("\n")
+      `📋 *KÈO MỚI ${vnTime(Date.now())}*\n` + digest.slice(0, 5).map((d) => d.text).join("\n")
     );
   }
 
@@ -604,7 +602,6 @@ export async function scanAndAlert(): Promise<string[]> {
         if (sent.has(key)) continue;
 
         const sizing = plan.sizing;
-        const pnl = calculatePartialPnL(sizing.actualRiskUsd);
 
         const isLiveConfigured = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
         const eligibleForLive = isLiveEligible(s.style, s.side, "4H", own, btc, s.volumeRatio ?? 1.0, new Date());
@@ -666,14 +663,6 @@ export async function scanAndAlert(): Promise<string[]> {
         }
 
         const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const reason = formatEntryReason({
-          style: s.style,
-          side: s.side,
-          timeframe: "4H",
-          btcDaily: btc,
-          ownDaily: own,
-          volumeRatio: s.volumeRatio,
-        });
 
         // Setup không đủ chuẩn live (BOS, pinbar, ngược trend): chỉ ghi sổ paper, không gửi thẻ Telegram
         if (effectiveDryRun) {
@@ -682,21 +671,14 @@ export async function scanAndAlert(): Promise<string[]> {
           openPaperPlan(key, decision, bars4h, currentEquity);
           break;
         }
-        const autoTag = !mexcOrder.isDryRun
-          ? `🤖 *[MEXC TỰ ĐỘNG VÀO LỆNH (KIM CƯƠNG 24/7) - ${mexcOrder.vol} HĐ]*`
-          : `📋 *[PAPER - KHÔNG ĐỦ CHUẨN LIVE]*`;
-
+        // Cùng mẫu 2 dòng với tin kèo tay
         itemsToSend.push({
           key,
           msg:
-            `${autoTag} ${sideStr} *${coin}*\n` +
-            `• *Điểm vào:* ~${f(s.entry)}\n` +
-            `• *Cắt lỗ (SL):* ${f(s.stop)} (-${(risk * 100).toFixed(2)}%)\n` +
-            (trailMode
-              ? `• *Chốt lời:* không TP cố định, SL trailing 3 ATR theo nến 4H đóng${mexcOrder.isDryRun ? " (DRY-RUN)" : ""}\n`
-              : `• *Chốt lời (TP):* TP1 ${f(plan.tp1)} (+${pnl.winTp1.toFixed(2)}$) | TP2 ${f(plan.tp2)} (+${pnl.totalWin.toFixed(2)}$)\n`) +
-            `• *Sao vô:* ${reason}\n` +
-            `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
+            `${mexcOrder.isDryRun ? "📋 Thử (chưa vào thật)" : "🤖 Bot đã vào"} ${sideStr} *${coin}* · 4H kim cương ${f(s.entry)}\n` +
+            `   SL ${f(s.stop)} (−${(risk * 100).toFixed(1)}%) · ` +
+            (trailMode ? "không TP, SL tự dời theo 3 ATR" : `TP1 ${f(plan.tp1)} · TP2 ${f(plan.tp2)}`) +
+            ` · ký quỹ ${sizing.margin}$ x${sizing.leverage}`
         });
         openPaperPlan(key, decision, bars4h, currentEquity);
         break;
