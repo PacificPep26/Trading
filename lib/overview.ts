@@ -2,9 +2,6 @@
 // Chưa backtest được công bằng (chấm điểm nhiều lớp) → chỉ báo tay + paper tự động để đo.
 import type { Candle } from "./okx.ts";
 import { analyse, swings, freshSweep, wickReversal } from "./patterns.ts";
-import { evaluateLiquidationRisk, type DerivativesFlow } from "./derivatives-flow.ts";
-import { evaluateCvdSignal, type CvdAnalysis } from "./cvd-engine.ts";
-import { evaluateOrderbookSignal, type OrderbookAnalysis } from "./orderbook-depth.ts";
 
 export type OverviewPick = {
   coin: string;
@@ -37,10 +34,6 @@ export function scoreSide(
     h1: Candle[];
     m15: Candle[];
     btcH1?: Candle[];
-    // dữ liệu thô: chấm theo đúng chiều đang xét (pickCoin gọi cả LONG lẫn SHORT với cùng ctx)
-    flowData?: DerivativesFlow | null;
-    cvdData?: CvdAnalysis | null;
-    obData?: OrderbookAnalysis | null;
   },
 ): { score: number; reasons: string[]; entry: number; stop: number; tp: number; rr: number; orderType: "MARKET" | "LIMIT_PULLBACK" } | null {
   const { h4, h1, m15, btcH1 } = ctx;
@@ -93,48 +86,6 @@ export function scoreSide(
   const strong = (side > 0 ? last.c > last.o : last.c < last.o) && vAvg > 0 && last.v >= 1.5 * vAvg;
   if (strong && ctx.btc === side) { score++; reasons.push(`nến 15m mạnh, vol ${(last.v / vAvg).toFixed(1)}x, BTC cùng chiều`); }
   else if (strong) reasons.push(`nến 15m mạnh vol ${(last.v / vAvg).toFixed(1)}x (BTC ngược)`);
-
-  // 6–8. Order flow: chưa backtest (xem service/scripts/cvd_filter_study.py), chỉ ±1 điểm
-  const flow = ctx.flowData ? evaluateLiquidationRisk(side, ctx.flowData) : null;
-  const cvd = ctx.cvdData ? evaluateCvdSignal(side, ctx.cvdData) : null;
-  const ob = ctx.obData ? evaluateOrderbookSignal(side, ctx.obData) : null;
-
-  // 6. Dòng vốn phái sinh & Bẫy thanh lý (Derivatives Flow & Liquidation Risk)
-  if (flow) {
-    if (flow.isTrap) {
-      // Đám đông đang bị kẹt đòn bẩy quá dày -> nguy cơ bẫy thanh lý, trừ điểm hoặc hủy kèo bắt đáy sớm
-      score += flow.scoreBonus;
-      if (flow.warningReason) reasons.push(`⚠️ ${flow.warningReason}`);
-      if (score < 4) return null; // Triệt tiêu kèo nếu rơi vào bẫy thanh lý
-    } else if (flow.scoreBonus > 0) {
-      score += flow.scoreBonus;
-      if (flow.warningReason) reasons.push(`🔥 ${flow.warningReason}`);
-    }
-  }
-
-  // 7. Radar Hút Dầu (Cumulative Volume Delta - CVD Gom Hàng Ngầm)
-  if (cvd) {
-    if (cvd.scoreBonus > 0) {
-      score += cvd.scoreBonus;
-      if (cvd.reason) reasons.push(`🐳 ${cvd.reason}`);
-    } else if (cvd.scoreBonus < 0) {
-      score += cvd.scoreBonus;
-      if (cvd.reason) reasons.push(`⚠️ ${cvd.reason}`);
-      if (score < 4) return null; // Chặn Long nếu CVD xả ngầm
-    }
-  }
-
-  // 8. Lực hấp dẫn Orderbook & Tường thanh khoản (Orderbook Imbalance & Limit Walls)
-  if (ob) {
-    if (ob.scoreBonus > 0) {
-      score += ob.scoreBonus;
-      if (ob.reason) reasons.push(`🧱 ${ob.reason}`);
-    } else if (ob.scoreBonus < 0) {
-      score += ob.scoreBonus;
-      if (ob.reason) reasons.push(`⚠️ ${ob.reason}`);
-      if (score < 4) return null; // Chặn nếu tường cản quá lớn ngay trước mặt
-    }
-  }
 
   // Xử lý nến phóng quá dài (cả Marubozu lẫn Pinbar râu dài)
   const range15 = last.h - last.l;
