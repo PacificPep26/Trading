@@ -4,7 +4,7 @@ Usage: python -m service.scripts.sweep_limit_study
 
 1H bars, 21 bot coins, only with the coin's daily trend (long below swing lows in an uptrend, short above swing highs in a downtrend).
 When a new 1H swing low is confirmed, rest a buy limit at swing_low - k x ATR14(1H) (k = 0.2, 0.5) for up to 24 bars
-(cancel if price first closes beyond the level by more than 1.5 ATR, i.e. a real breakdown, or if TP would already be hit).
+(cancel if price reaches TP first; a bar touching the limit always fills, even if it then closes far beyond).
 Stop: limit - s x ATR (s = 1.0, 1.5). TP: 1.8R or the swing high that preceded the low (if >= 1R). Max hold 48 bars, stop first;
 a fill bar that also touches the stop counts as a loss. Costs: maker-ish entry is not assumed, taker costs as trailing_study.
 """
@@ -50,13 +50,12 @@ def run(k, s, tp_mode):
                 fill = None
                 for j in range(start, min(start + 24, len(cs))):
                     b = cs[j]
-                    if (b.h >= tp) if side > 0 else (b.l <= tp):
-                        break  # ran away without us
-                    if side * (level - b.c) > 1.5 * a:
-                        break  # closed far beyond: real breakdown, cancel
+                    # touch first: a bar that wicks through the limit fills it even if it closes far beyond
                     if (b.l <= limit) if side > 0 else (b.h >= limit):
                         fill = j
                         break
+                    if (b.h >= tp) if side > 0 else (b.l <= tp):
+                        break  # ran away without us
                 if fill is None:
                     continue
                 entry = min(limit, cs[fill].o) if side > 0 else max(limit, cs[fill].o)

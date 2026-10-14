@@ -300,3 +300,27 @@ export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop
   }
   return null;
 }
+
+/**
+ * Đặt sẵn Limit bắt râu quét (sweep_limit_study 2026-10-14, phí 0%: +0.02R / +0.07R mỗi lệnh):
+ * swing đáy 1H vừa xác nhận ở nến đóng cuối → Limit mua dưới đáy 0.5 ATR, SL dưới Limit 1.5 ATR,
+ * TP = đỉnh swing trước đáy đó (bỏ nếu < 1R). Mirror cho SHORT trên swing đỉnh. Hiệu lực 24 nến.
+ */
+export function restingLimit(all: Candle[], side: 1 | -1): { side: 1 | -1; level: number; limit: number; stop: number; tp: number; atr: number; barTime: number } | null {
+  const cs = all.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 40) return null;
+  const { highs, lows } = swings(cs);
+  const idx = side > 0 ? lows : highs;
+  const k = idx[idx.length - 1];
+  if (k !== n - 1 - W) return null; // chỉ swing vừa xác nhận ở nến cuối
+  const atr = atrSeries(cs)[n - 1];
+  const level = side > 0 ? cs[k].l : cs[k].h;
+  const limit = level - side * 0.5 * atr;
+  const stop = limit - side * 1.5 * atr;
+  const opp = (side > 0 ? highs : lows).filter((j) => j < k);
+  if (!opp.length) return null;
+  const tp = side > 0 ? cs[opp[opp.length - 1]].h : cs[opp[opp.length - 1]].l;
+  if (side * (tp - limit) < Math.abs(limit - stop)) return null;
+  return { side, level, limit, stop, tp, atr, barTime: cs[n - 1].t };
+}

@@ -10,6 +10,7 @@ import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/
 import { loadJournal, journalStats } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
 import { loadPaper1h, paper1hStats } from "@/lib/paper-1h";
+import { loadLimits, limitStats } from "@/lib/resting-limit";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -423,6 +424,12 @@ export async function POST(req: NextRequest) {
           `• TB *${ps.avgR >= 0 ? "+" : ""}${ps.avgR.toFixed(2)}R/lệnh* (tổng ${ps.sumR >= 0 ? "+" : ""}${ps.sumR.toFixed(1)}R, sau phí)\n`
         : `• Chưa có lệnh nào đóng${ps.open ? ` (đang mở ${ps.open})` : ""}\n`;
       bt += `_Backtest 1H ≈ −0.1R/lệnh. Chỉ bật tiền thật nếu sau 2–4 tuần dương rõ._\n\n`;
+      const ls = limitStats(loadLimits());
+      bt += `📌 *PAPER ĐẶT SẴN LIMIT (bắt râu quét, phí 0%)*\n`;
+      bt += ls.n
+        ? `• ${ls.n} lệnh đã đóng, thắng ${ls.wins} (${((ls.wins / ls.n) * 100).toFixed(0)}%) · TB *${ls.avgR >= 0 ? "+" : ""}${ls.avgR.toFixed(2)}R/lệnh* (tổng ${ls.sumR.toFixed(1)}R) · đang chờ ${ls.pending}, đang mở ${ls.open}\n`
+        : `• Chưa có lệnh nào đóng (đang chờ ${ls.pending}, đang mở ${ls.open})\n`;
+      bt += `_Backtest phí 0%: +0.02R / +0.07R mỗi lệnh (mỏng). Ứng viên bật tiền thật nếu paper khớp._\n\n`;
       const po = paper1hStats(loadPaper1h(path.join(process.cwd(), "data", "paper-overview.json")));
       bt += `🧭 *PAPER TOÀN CẢNH (kèo ⭐ ≥ 4/5 lớp)*\n`;
       bt += po.n

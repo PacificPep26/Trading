@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily, wickReversal, freshSweep } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, wickReversal, freshSweep, restingLimit } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -15,6 +15,7 @@ import { getMexcAccountAsset, getMexcOpenPositions, getMexcOpenStopOrders, submi
 import { loadJournal, recordOpen, recordClose, recordTrail, openTrade } from "@/lib/trade-journal";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
+import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { pickCoin, type OverviewPick } from "@/lib/overview";
 
 const COINS = [
@@ -411,6 +412,23 @@ export async function scanAndAlert(): Promise<string[]> {
         const btcNote = (side: number) => (btc === side ? "✅ BTC cùng chiều" : "⚠️ BTC ngược chiều");
         // Đòn bẩy tối đa để SL nằm trước giá thanh lý (chừa 20% đệm)
         const maxLev = (riskPct: number) => Math.min(20, Math.max(1, Math.floor(0.8 / riskPct)));
+
+        // Đặt sẵn Limit bắt râu quét (thuận trend coin) + paper đo kết quả
+        for (const m of stepLimits(coin, bars1h)) await send(m);
+        const rl = own !== 0 ? restingLimit(bars1h, own as 1 | -1) : null;
+        const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
+        if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
+          const rlRisk = Math.abs(rl.limit - rl.stop) / rl.limit;
+          await send(
+            `📌 *[ĐẶT SẴN LIMIT]* ${rl.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* ✅ thuận trend ngày · ${btcNote(rl.side)}\n` +
+            `• ${rl.side > 0 ? "Đáy" : "Đỉnh"} 1H mới: ${f(rl.level)} → *Limit ${rl.side > 0 ? "mua" : "bán"} ${f(rl.limit)}* (đón râu quét)\n` +
+            `• *SL:* ${f(rl.stop)} (${(rlRisk * 100).toFixed(2)}%) · *TP:* ${f(rl.tp)} (${(Math.abs(rl.tp - rl.limit) / Math.abs(rl.limit - rl.stop)).toFixed(1)}R) · x tối đa ${maxLev(rlRisk)}\n` +
+            `• Hiệu lực 24h. Huỷ nếu giá chạy tới TP trước khi khớp (bot sẽ nhắc).\n` +
+            `_Backtest phí 0%: +0.02R / +0.07R mỗi lệnh (2023–24 / 2025–26), lợi thế mỏng. Bot đánh paper song song._`
+          );
+          sent.add(rlKey);
+          saveDedup(sent, preSent);
+        }
         const sw = freshSweep(bars1h);
         const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
         if (sw && swKey && !sent.has(swKey) && aligned(sw.side) && sw.vr >= 1.5) { // vol ≥ 1.5x: backtest bớt lỗ (−0.29 → −0.23R)
