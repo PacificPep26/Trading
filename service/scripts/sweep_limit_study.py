@@ -26,8 +26,8 @@ def run(k, s, tp_mode):
         cs = load(name, "1h", include_holdout=True)
         own = daily_trend(cs)
         x = build(cs)
-        busy = 0
         for side, idx in ((1, x.lows), (-1, x.highs)):
+            busy = 0  # per side: a shared value left shorts skipped after the long pass reached the end of the data
             prev_opp = x.highs if side > 0 else x.lows
             for sw in idx:
                 start = sw + W  # swing confirmed after W bars

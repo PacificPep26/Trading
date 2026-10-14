@@ -433,7 +433,8 @@ export async function scanAndAlert(): Promise<string[]> {
         for (const m of stepLimits(coin, bars1h)) await send(m);
         // 📌 Đặt sẵn Limit bắt râu quét (đạt chuẩn fee0_shootout 2025–26: +0.07R, hơn vào ngẫu nhiên cả 2 năm). Bị xoá nhầm ở 09fdfd3
         const own = (await getDailyData(coin)).trend;
-        const rl = own !== 0 ? restingLimit(bars1h, own) : null;
+        // chỉ LONG: SHORT 2025–26 +0.047R nhưng thua vào ngẫu nhiên (+0.070R) → không đạt
+        const rl = own > 0 ? restingLimit(bars1h, 1) : null;
         const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
         if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
           if (!recentlyAlerted(coin, rl.side)) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, "đón râu quét, hiệu lực 24h");
