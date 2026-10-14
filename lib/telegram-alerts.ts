@@ -395,21 +395,23 @@ export async function scanAndAlert(): Promise<string[]> {
           addLimit(coin, { side: fv.side, level: fv.entry, limit: fv.entry, stop: fv.stop, tp: fv.tp, atr: 0, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, FVG_PAPER);
           const quiet = recentlyAlerted(coin, fv.side);
           markAlerted(coin, fv.side);
-          saveDedup(sent, preSent);
-          if (!quiet) plan("🎯 FVG + quét 15m", fv.side, coin, "Vào", fv.entry, fv.stop, fv.tp, btc === fv.side ? "BTC cùng chiều" : "⚠️ BTC ngược");
+          // Bỏ cách đánh FVG + quét 15m (SL quá ngắn, nhiễu nến, backtest âm) -> không gửi alert lên Telegram
+          // if (!quiet) plan("🎯 FVG + quét 15m", fv.side, coin, "Vào", fv.entry, fv.stop, fv.tp, btc === fv.side ? "BTC cùng chiều" : "⚠️ BTC ngược");
         }
-        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed) }, 3);
+        const btcH1 = await candles("BTC-USDT-SWAP", "1H", 30).catch(() => []);
+        const p = pickCoin(coin, { own: (await getDailyData(coin)).trend, btc, h4: h4o.filter((x) => x.closed), h1: h1c, m15: m15o.filter((x) => x.closed), btcH1 }, 4);
         const hour = Math.floor(Date.now() / 3_600_000);
         const key = p && `OV:${coin}:${p.side}:${hour}`;
         // Đã báo coin này (bất kỳ chiều) trong 6 giờ → không báo lặp, không lật kèo
-        // (2026-10-13: NEAR/DOT LONG bị báo lại mỗi giờ khi setup còn nguyên)
         const recent = p && [0, 1, 2, 3, 4, 5].some((h) => sent.has(`OV:${coin}:1:${hour - h}`) || sent.has(`OV:${coin}:-1:${hour - h}`));
         if (p && key && !recent) {
-          if (!recentlyAlerted(coin, p.side)) plan(`${p.score >= 4 ? "⭐" : "🧭"} toàn cảnh ${p.score}/5`, p.side, coin, "Vào", p.entry, p.stop, p.tp, p.reasons.slice(0, 2).join(", "));
+          const tag = p.score === 5 ? "💎 [KÈO ĐẸP 5/5 - ALL IN]" : "⭐ [KÈO ĐẸP 4/5]";
+          const actionText = p.orderType === "LIMIT_PULLBACK" ? "Limit Chờ Hồi (Fibo 38.2%)" : "Vào Market";
+          if (!recentlyAlerted(coin, p.side)) plan(tag, p.side, coin, actionText, p.entry, p.stop, p.tp, p.reasons.slice(0, 2).join(", "));
           markAlerted(coin, p.side);
           sent.add(key);
-          // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh (PAPER PEPE từng "chạm SL" bằng giá trước khi vào)
-          if (p.score >= 4) openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, OVERVIEW_PAPER);
+          // barTime = nến 1H đang chạy: bỏ qua phần nến trước lúc vào lệnh
+          openPaper1h(coin, { side: p.side, entry: p.entry, stop: p.stop, barTime: Math.floor(Date.now() / 3_600_000) * 3_600_000 }, OVERVIEW_PAPER);
         }
       } catch (e) {
         console.error(`[OVERVIEW] ${coin}:`, e);
@@ -418,49 +420,15 @@ export async function scanAndAlert(): Promise<string[]> {
     saveDedup(sent, preSent);
   }
 
-  // Cảnh báo tay sau nến 1H: quét swing đỉnh/đáy rồi nến đảo chiều mạnh. Chỉ báo, không vào lệnh.
+  // Quản lý paper 1H (chạy ngầm, không gửi alert rác tay lên Telegram)
   if (new Date().getUTCMinutes() < 15) {
     for (const coin of COINS) {
       try {
         const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
         for (const m of managePaper1h(coin, bars1h)) await send(m);
-        const own = (await getDailyData(coin)).trend;
-        // Chỉ báo kèo thuận xu hướng ngày của coin (chủ dự án nới: BTC ngược chiều vẫn báo, có ghi chú)
-        const aligned = (side: number) => own === side;
-
-        // Đặt sẵn Limit bắt râu quét (thuận trend coin) + paper đo kết quả
         for (const m of stepLimits(coin, bars1h)) await send(m);
-        const rl = own !== 0 ? restingLimit(bars1h, own as 1 | -1) : null;
-        const rlKey = rl && `RL:${coin}:${rl.side}:${rl.barTime}`;
-        if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl)) {
-          // paper ghi mọi kèo (đúng luật backtest); tin chỉ khi R:R ≥ 1.5 và coin chưa được báo 6 giờ qua
-          const rlRR = Math.abs(rl.tp - rl.limit) / Math.abs(rl.limit - rl.stop);
-          const rlQuiet = rlRR < 1.5 || recentlyAlerted(coin, rl.side);
-          if (!rlQuiet) markAlerted(coin, rl.side);
-          if (!rlQuiet) plan("📌 đặt sẵn Limit", rl.side, coin, `Limit ${rl.side > 0 ? "mua" : "bán"}`, rl.limit, rl.stop, rl.tp, "đón râu quét, hiệu lực 24h");
-          sent.add(rlKey);
-          saveDedup(sent, preSent);
-        }
-        const sw = freshSweep(bars1h);
-        const swKey = sw && `SW1H:${coin}:${sw.side}:${sw.barTime}`;
-        if (sw && swKey && !sent.has(swKey) && aligned(sw.side) && sw.vr >= 1.5 && !recentlyAlerted(coin, sw.side)) { // vol ≥ 1.5x: backtest bớt lỗ (−0.29 → −0.23R)
-          markAlerted(coin, sw.side);
-          plan("⏳ quét đáy/đỉnh 1H", sw.side, coin, "Vào", sw.close, sw.stop, sw.tp, `chắc hơn: chờ nến 1H đóng ${sw.side > 0 ? "trên" : "dưới"} ${f(sw.confirmAbove)}`);
-          sent.add(swKey);
-          saveDedup(sent, preSent);
-        }
-        const w = wickReversal(bars1h);
-        if (!w || !aligned(w.side) || w.vr < 1.5 || Math.abs(w.entry - w.stop) / w.entry > 0.06) continue; // SL > 6%: như luật bot, quá xa
-        const key = `WR1H:${coin}:${w.side}:${w.barTime}`;
-        if (sent.has(key)) continue;
-        const paperOpened = openPaper1h(coin, w);
-        const wQuiet = recentlyAlerted(coin, w.side);
-        markAlerted(coin, w.side);
-        if (!wQuiet) plan(`👀 quay đầu 1H${paperOpened ? " (bot paper)" : ""}`, w.side, coin, "Vào", w.entry, w.stop, w.tp, `vol ${w.vr.toFixed(1)}x`);
-        sent.add(key);
-        saveDedup(sent, preSent);
       } catch (e) {
-        console.error(`[WR1H] ${coin}:`, e);
+        console.error(`[MANAGE 1H] ${coin}:`, e);
       }
     }
   }
