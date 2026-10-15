@@ -18,7 +18,7 @@ Next.js 16 trên Railway (`main` push là tự deploy). Quét 21 coin bằng d�
 | 📌 Limit mua 0.5 ATR dưới đáy 1H vừa xác nhận, coin tăng ngày (LONG) | `restingLimit` | `data/paper-limit.json` | +131$ / +169$ · +0.06R · 2.003 lệnh |
 | 📊 Hai đỉnh/đáy 4H thuận ngày coin + BTC, volume ≥ 2x, không TP, SL trailing 3 ATR | `analyse` + `isSwingSetupOk` (`lib/trading-policy.ts`) | `data/paper-4h.json` (`lib/swing-4h.ts`) | +46$ / +45$ · +1.26R · 29 lệnh |
 
-**15/10: chủ dự án bỏ kèo cũ — 📌 và 📊 TẮT TIN, chỉ ghi paper** (`recent_replay.mjs` 1–15/10: 📌 −105$, 📊 −2$). Tin đang gửi: 🎯 ICT, 🔨 high test 15m & 4H, 📈 Supertrend 4H, 🧲 Mồi nhử + FVG, 🔁 hồi đỉnh cũ, 👤 🚀 🕯 (SO Trading).
+**15/10: chủ dự án dọn sạch menu và bot — chỉ giữ 6 kèo ĐẠT CHUẨN** (🎯 ICT, 🔨 high test 15m & 4H, 📈 Supertrend 4H, 🧲 Mồi nhử + FVG, 🔁 hồi đỉnh cũ). Đã tắt hẳn tin và menu của 📌 Limit cũ, 📊 4H cũ, và 3 kèo SO âm (👤 🚀 🕯).
 
 **🔨 Nến high test 15m TP swing → lệnh chờ phá** (`highTestSetup(..., "swing")`, Jason Graystone, đạt chuẩn xuất sắc): 2025 +1.501$ / 2026 +295$ (tổng +1.796$, t=+3.6, control ngẫu nhiên −2.863$), sổ `data/paper-hightest-15m.json`.
 
@@ -28,7 +28,7 @@ Next.js 16 trên Railway (`main` push là tự deploy). Quét 21 coin bằng d�
 
 **🧲 Mồi nhử + FVG → Limit vùng A** (`inducementSetup`, TradingLab, đạt chuẩn mỏng): 2025 +60$ / 2026 +169$, sổ `data/paper-idm.json`, tin kèm số backtest.
 
-**Thêm 4 kèo SO Trading 1H** (`lib/so-setups.ts`, sổ `data/paper-so-*.json`): 🔁 hồi đỉnh cũ (+212$ / +195$, đạt chuẩn mỏng), 👤 vai–đầu–vai, 🚀 phá vỡ sau nén, 🕯 chòm râu — 3 kèo sau KHÔNG đạt chuẩn; chủ dự án vẫn chọn nhận tin, mỗi tin ghi số backtest để tự cân nhắc. Đừng tự xoá chúng.
+**🔁 Hồi đỉnh cũ 1H** (`lib/so-setups.ts`, sổ `data/paper-so-pullback.json`): +212$ / +195$ (tổng +407$, đạt chuẩn). 3 kèo phụ (👤 🚀 🕯) đã tắt theo yêu cầu chủ dự án.
 
 Kèm: nhắc tin Mỹ CPI/NFP/FOMC (`lib/us-events.ts`, lịch `lib/us-events.json` — cập nhật mỗi năm), theo dõi giá chủ dự án đặt (`lib/price-watch.ts`).
 

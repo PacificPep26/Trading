@@ -197,9 +197,9 @@ export async function scanAndAlert(): Promise<string[]> {
         const bars1h = bars300.slice(-100);
         stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
         for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
-        for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
+        for (const m of stepLimits(coin, bars1h, soPaper("pullback"))) await say(m);
 
-        // Kèo SO Trading (lời thoại video): tin ghi kèm số backtest 2025/2026
+        // Kèo SO Trading (lời thoại video): chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
         // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
         for (const m of stepLimits(coin, bars1h, IDM_PAPER)) await say(m);
         for (const g of inducementSetup(bars300)) {
@@ -209,7 +209,7 @@ export async function scanAndAlert(): Promise<string[]> {
           addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
           digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
         }
-        for (const so of soSetups(bars300)) {
+        for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
           const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
           if (sent.has(key)) continue;
           sent.add(key);
