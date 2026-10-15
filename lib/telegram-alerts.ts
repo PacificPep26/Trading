@@ -4,16 +4,17 @@
 // Kèm: nhắc tin Mỹ (us-events), theo dõi giá chủ tài khoản đặt (price-watch). Mỗi kèo có sổ paper để đối chiếu backtest.
 import fs from "fs";
 import path from "path";
-import { f } from "@/lib/format";
-import { getMexcOpenPositions } from "@/lib/mexc";
-import { analyse, restingLimit, ictSweepShort } from "@/lib/patterns";
-import { candles, ticker, funding, type Candle } from "@/lib/okx";
-import { isSwingSetupOk } from "@/lib/trading-policy";
-import { openSwing, stepSwing } from "@/lib/swing-4h";
-import { addLimit, stepLimits } from "@/lib/resting-limit";
-import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
-import { US_EVENTS, newsMessages } from "@/lib/us-events";
-import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "@/lib/so-setups";
+import { f } from "./format";
+import { getMexcOpenPositions } from "./mexc";
+import { analyseBtcSentinel } from "./btc-sentinel";
+import { analyse, restingLimit, ictSweepShort } from "./patterns";
+import { candles, ticker, funding, type Candle } from "./okx";
+import { isSwingSetupOk } from "./trading-policy";
+import { openSwing, stepSwing } from "./swing-4h";
+import { addLimit, stepLimits } from "./resting-limit";
+import { loadWatches, saveWatches, evaluateWatches } from "./price-watch";
+import { US_EVENTS, newsMessages } from "./us-events";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 
 export { f };
 
@@ -147,8 +148,23 @@ export async function scanAndAlert(): Promise<string[]> {
   const heldCoins = new Set(mexcPositions.map((p) => p.coin));
 
   const digest: { rank: number; text: string }[] = [];
-  const btc = await dailyTrend("BTC");
-  const btc1h: Candle[] = after4h ? await candles("BTC-USDT-SWAP", "1H", 10).catch(() => []) : [];
+  const btcDaily = await dailyTrend("BTC");
+  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 60).catch(() => []);
+  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily);
+
+  // ⚡ LA BÀN BTC: Bắt ngay cú quét thanh khoản đáy/đỉnh của BTC (ưu tiên cao nhất thị trường)
+  if (btcSentinel.sweep) {
+    const sw = btcSentinel.sweep;
+    const sweepKey = `BTC_SWEEP:${sw.side}:${sw.barTime}`;
+    if (!sent.has(sweepKey)) {
+      sent.add(sweepKey);
+      const how = sw.side > 0 ? "⚡ BTC QUÉT ĐÁY RÚT CHÂN" : "⚡ BTC QUÉT ĐỈNH RÚT RÂU";
+      digest.push({
+        rank: -1, // Ưu tiên số 1 trên cùng
+        text: planText(sw.side, "BTC", how, sw.entry, sw.stop, sw.tp, sw.note),
+      });
+    }
+  }
 
   for (const coin of COINS) {
     try {
@@ -157,12 +173,13 @@ export async function scanAndAlert(): Promise<string[]> {
       if (after15m) {
         const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 120);
         stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
-        if (!isHeld) {
+        if (!isHeld && coin !== "BTC") {
           const ownDaily = await dailyTrend(coin);
           for (const g of highTestSetup(bars15m, "swing")) {
-            // Lọc xu hướng: không short khi BTC hoặc coin đang trong sóng tăng ngày/bật đáy hỗ trợ
+            // Lọc la bàn BTC: Nếu BTC cấm short/long thì bỏ qua ngay để lọc nhiễu altcoin
+            if (g.side > 0 && !btcSentinel.allowLong) continue;
+            if (g.side < 0 && !btcSentinel.allowShort) continue;
             if (ownDaily !== 0 && g.side !== ownDaily) continue;
-            if (btc !== 0 && g.side !== btc) continue;
 
             const key = `HT15:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
@@ -179,10 +196,12 @@ export async function scanAndAlert(): Promise<string[]> {
         stepLimits(coin, bars4h, HIGHTEST_PAPER); // paper im lặng
         stepSwing(coin, bars4h, ST_PAPER); // paper im lặng
 
-        if (!isHeld) {
+        if (!isHeld && coin !== "BTC") {
           const own = await dailyTrend(coin);
           // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
           for (const g of highTestSetup(bars4h)) {
+            if (g.side > 0 && !btcSentinel.allowLong) continue;
+            if (g.side < 0 && !btcSentinel.allowShort) continue;
             const key = `HT:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
@@ -192,16 +211,18 @@ export async function scanAndAlert(): Promise<string[]> {
           // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
           const st = stFlipSetup(bars4h);
           if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
-            sent.add(`ST:${coin}:${st.barTime}`);
-            if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
-              digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
+            if ((st.side > 0 && btcSentinel.allowLong) || (st.side < 0 && btcSentinel.allowShort)) {
+              sent.add(`ST:${coin}:${st.barTime}`);
+              if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
+                digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
+            }
           }
           const a4 = analyse(bars4h);
           const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
           const fundingRate = (await funding(`${coin}-USDT-SWAP`).catch(() => null))?.rate;
           for (const s of a4.setups) {
             const key = `4H:${coin}:${s.side}:${a4.lastBarTime}`;
-            if (sent.has(key) || !isSwingSetupOk(s, { ownDaily: own, btcDaily: btc, lastBarTime: a4.lastBarTime, now, btc1h, fundingRate, livePrice: live })) continue;
+            if (sent.has(key) || !isSwingSetupOk(s, { ownDaily: own, btcDaily, lastBarTime: a4.lastBarTime, now, btc1h, fundingRate, livePrice: live })) continue;
             sent.add(key);
             const entry = live ?? s.entry;
             openSwing(coin, { side: s.side, entry, stop: s.stop, entryTime: a4.lastBarTime + 4 * H });
@@ -218,10 +239,12 @@ export async function scanAndAlert(): Promise<string[]> {
         stepLimits(coin, bars1h, soPaper("pullback")); // paper im lặng
         stepLimits(coin, bars1h, IDM_PAPER); // paper im lặng
 
-        if (!isHeld) {
+        if (!isHeld && coin !== "BTC") {
           const own = await dailyTrend(coin);
           // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
           for (const g of inducementSetup(bars300)) {
+            if (g.side > 0 && !btcSentinel.allowLong) continue;
+            if (g.side < 0 && !btcSentinel.allowShort) continue;
             const key = `IDM:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
@@ -230,6 +253,8 @@ export async function scanAndAlert(): Promise<string[]> {
           }
           // Kèo SO Trading: chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
           for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
+            if (so.side > 0 && !btcSentinel.allowLong) continue;
+            if (so.side < 0 && !btcSentinel.allowShort) continue;
             const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
@@ -242,10 +267,12 @@ export async function scanAndAlert(): Promise<string[]> {
           const ict = ictSweepShort(bars1h);
           const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
           if (ict && ictKey && !sent.has(ictKey)) {
-            sent.add(ictKey);
-            addLimit(coin, ict, ICT_PAPER);
-            digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
-            markAlerted(coin, -1);
+            if (btcSentinel.allowShort) {
+              sent.add(ictKey);
+              addLimit(coin, ict, ICT_PAPER);
+              digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
+              markAlerted(coin, -1);
+            }
           }
 
           // 📌 Limit dưới đáy 1H: CHỈ PAPER
