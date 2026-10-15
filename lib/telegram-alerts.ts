@@ -348,6 +348,11 @@ export async function scanAndAlert(): Promise<string[]> {
           for (const g of inducementSetup(bars300)) {
             if (g.side > 0 && !allowLong) continue;
             if (g.side < 0 && !allowShort) continue;
+            if (own !== 0 && g.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
+            // Bỏ nếu Limit cách giá hiện tại quá 2.5% (tránh chặn đầu xe lửa khi Altcoin pump/dump mạnh)
+            const curP = bars1h.at(-1)?.c;
+            if (curP && Math.abs(g.limit - curP) / curP > 0.025) continue;
+
             const key = `IDM:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
@@ -367,6 +372,7 @@ export async function scanAndAlert(): Promise<string[]> {
           for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
             if (so.side > 0 && !allowLong) continue;
             if (so.side < 0 && !allowShort) continue;
+            if (own !== 0 && so.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
             const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
