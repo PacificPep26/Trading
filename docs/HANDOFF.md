@@ -1,6 +1,6 @@
 # Handoff — cập nhật 2026-10-14
 
-Đọc theo thứ tự: [bot-spec.md](bot-spec.md) → [../PLAN.md](../PLAN.md) → [nhat-ky-nghien-cuu.md](nhat-ky-nghien-cuu.md) → [quy-trinh-phan-tich.md](quy-trinh-phan-tich.md). Strategy `paper-v2.4.0`.
+Đọc theo thứ tự: [bot-spec.md](bot-spec.md) → [../PLAN.md](../PLAN.md) → [so-tay-kien-thuc.md](so-tay-kien-thuc.md) (tra trước khi thử ý mới) → [nhat-ky-nghien-cuu.md](nhat-ky-nghien-cuu.md) → [quy-trinh-phan-tich.md](quy-trinh-phan-tich.md). Strategy `paper-v2.4.0`.
 
 ## Quy tắc khi sửa
 

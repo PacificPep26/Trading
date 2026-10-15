@@ -15,10 +15,17 @@ Cập nhật: 2026-10-14. Nguồn chân lý về hành vi bot; số liệu kiể
 |---|---|---|---|
 | **Hai đỉnh/đáy 4H** thuận xu hướng ngày coin + BTC, volume nến tín hiệu ≥ 2x | `analyse` → `evaluateSetup` → `isLiveEligible` | Tự vào lệnh MEXC (khi bật live), **không TP**, SL trailing 3×ATR(4H) theo giá đóng tốt nhất (`trailingStop`) | Code live: 29 lệnh, +1.22R/lệnh, 2025 +45$ / 2026 +43$ |
 | **📌 Đặt sẵn Limit dưới đáy 1H** (chỉ LONG, coin tăng ngày) | `restingLimit` + `lib/resting-limit.ts` | Tin 📌 + paper `data/paper-limit.json` | Code live: 2.005 lệnh, +0.063R (t=1.85), 2025 +145$ / 2026 +172$ |
+| **🎯 ICT quét đỉnh hôm qua → SHORT 1H** | `ictSweepShort` (`lib/patterns.ts`) | Tin 🎯 + paper `data/paper-ict.json` | Code live: 193 lệnh, +0.42R (t=3.5), 2025 +119$ / 2026 +85$ |
 | BOS 4H | `analyse` | Tin `📋 PAPER - KHÔNG ĐỦ CHUẨN LIVE` + sổ paper | Không đạt |
 | Donchian 1D | `analyseDaily` | Chỉ paper | Không đạt (≈ vào ngẫu nhiên) |
 | Toàn cảnh 5 lớp (`lib/overview.ts`) | `pickCoin` | Chỉ paper (`paper-overview.json`, Limit ở `paper-overview-limit.json`), **không gửi tin** | −0.02R/lệnh, điểm ≥ 5 còn tệ hơn |
 | FVG 1H → quét 15m | `fvgSweepSignal` | Chỉ paper (`paper-fvg.json`) | 2025 không hơn vào ngẫu nhiên |
+
+### 🎯 ICT luật chi tiết (`ictSweepShort`, video ICT quét thanh khoản)
+
+- Ngày UTC: nến 1H đầu tiên vượt đỉnh hôm qua (PDH) = quét. Trong 24 nến sau, nến đóng dưới swing đáy gần nhất (xác nhận trước lúc quét) = ChoCh.
+- FVG giảm mới nhất giữa quét và ChoCh (high[j] < low[j−2]) → Sell Limit **giữa FVG**; SL = đỉnh cao nhất từ quét tới ChoCh + 0.1 ATR; TP = đáy hôm qua (PDL); bỏ nếu TP < 1.5R.
+- Báo đúng lúc nến ChoCh vừa đóng; paper như 📌 (24 nến chờ khớp, huỷ nếu chạm TP trước, tối đa 48 nến). Chiều LONG (quét PDL) ≈ 0 → không dùng; khung 15m lỗ.
 
 ### 📌 Luật chi tiết (`lib/patterns.ts` `restingLimit`)
 

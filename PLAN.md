@@ -9,6 +9,7 @@ Giao dịch tay phí 0, chỉ xét 2025–2026. Tiêu chuẩn chốt trước kh
 | Kèo | Code live 2025 | Code live 2026 | TB/lệnh | Tần suất |
 |---|---|---|---|---|
 | **Hai đỉnh/đáy 4H** + SL trailing 3 ATR, không TP | +45$ | +43$ | +1.22R (29 lệnh, t=1.97) | ~1–2 lệnh/tháng |
+| **🎯 ICT quét đỉnh hôm qua → SHORT 1H** (Limit giữa FVG, TP đáy hôm qua) | +119$ | +85$ | +0.42R (193 lệnh, t=3.5) | ~9 kèo/tháng |
 | **📌 Limit dưới đáy 1H** (LONG, lọc volume đáy < 2.5x, đáy mới thay Limit cũ) | +145$ | +172$ | +0.063R (t=1.85) | ~95 kèo/tháng, 21 coin |
 
 **Không đạt** (đã kiểm, không báo tin): Toàn cảnh 5 lớp, FVG 1H→15m, BOS 4H, Donchian 1D, order flow CVD/OI/sổ lệnh (đã xoá), "ăn 2 đầu" short đỉnh/long hỗ trợ, bắt hồi sau rớt nền 15m (108 biến thể), 📌 SHORT, đổi TP 📌 sang R cố định.

@@ -5,7 +5,7 @@
 
 import fs from "fs";
 import path from "path";
-import { analyse, swings, analyseDaily, restingLimit, fvgSweepSignal } from "@/lib/patterns";
+import { analyse, swings, analyseDaily, restingLimit, fvgSweepSignal, ictSweepShort } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { evaluateSetup } from "@/lib/decision-engine";
 import { openPaperPlan, paperSummary, reconcilePaperPositions } from "@/lib/paper-ledger";
@@ -32,6 +32,7 @@ const OVERVIEW_PAPER = path.join(process.cwd(), "data", "paper-overview.json");
 const FVG_PAPER = path.join(process.cwd(), "data", "paper-fvg.json");
 // kèo Toàn cảnh dạng Limit chờ hồi: chỉ tính khi giá thật sự quay về khớp
 const OVERVIEW_LIMIT_PAPER = path.join(process.cwd(), "data", "paper-overview-limit.json");
+const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
 
 // Vị thế 4H hai đỉnh/đáy đang trailing SL (không TP), theo symbol MEXC → phải bền qua redeploy
 type TrailEntry = { side: 1 | -1; entryTime: number };
@@ -440,9 +441,11 @@ export async function scanAndAlert(): Promise<string[]> {
   if (new Date().getUTCMinutes() < 15) {
     for (const coin of COINS) {
       try {
-        const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60);
+        // 100 nến: kèo ICT cần trọn ngày hôm qua (và hôm kia khi quét từ hôm qua)
+        const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 100);
         for (const m of managePaper1h(coin, bars1h)) await send(m);
         for (const m of stepLimits(coin, bars1h)) await send(m);
+        for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await send(m);
         // 📌 Đặt sẵn Limit bắt râu quét (đạt chuẩn fee0_shootout 2025–26: +0.07R, hơn vào ngẫu nhiên cả 2 năm). Bị xoá nhầm ở 09fdfd3
         const own = (await getDailyData(coin)).trend;
         // chỉ LONG: SHORT 2025–26 +0.047R nhưng thua vào ngẫu nhiên (+0.070R) → không đạt
@@ -455,6 +458,16 @@ export async function scanAndAlert(): Promise<string[]> {
           if (oldRl || !recentlyAlerted(coin, rl.side)) plan(rl.side, coin, "📌 Limit", rl.limit, rl.stop, rl.tp, oldRl ? `huỷ Limit cũ ${f(oldRl.limit)}` : "");
           markAlerted(coin, rl.side);
           sent.add(rlKey);
+          saveDedup(sent, preSent);
+        }
+        // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG (ict_sweep_study + live_replay_study: 2025 +119$, 2026 +85$)
+        const ict = ictSweepShort(bars1h);
+        const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
+        if (ict && ictKey && !sent.has(ictKey)) {
+          addLimit(coin, ict, ICT_PAPER);
+          plan(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua");
+          markAlerted(coin, -1);
+          sent.add(ictKey);
           saveDedup(sent, preSent);
         }
       } catch (e) {

@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { analyse, restingLimit } from "../../lib/patterns.ts";
+import { analyse, restingLimit, ictSweepShort } from "../../lib/patterns.ts";
 import { evaluateSetup } from "../../lib/decision-engine.ts";
 import { isLiveEligible, trailingStop } from "../../lib/trading-policy.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
@@ -42,7 +42,7 @@ const lastBefore = (arr, t) => { let lo = 0, hi = arr.length - 1, k = -1; while 
 const btc1h = load("BTC"), btcTrend = dailyTrendFn(btc1h), btcIdx = new Map(btc1h.map((b, i) => [b.t, i]));
 const A = { live: [], cap60: [] }, rejects = {};
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "replay-"));
-const B = [];
+const B = [], C = [];
 
 for (const coin of COINS) {
   const h1 = load(coin), h4 = resample(h1, H4), own = coin === "BTC" ? btcTrend : dailyTrendFn(h1), fund = loadFunding(coin);
@@ -84,15 +84,20 @@ for (const coin of COINS) {
   }
 
   // B. 📌 Limit dưới đáy 1H (chỉ LONG như live)
-  const file = path.join(tmp, `${coin}.json`);
-  for (let n = 60; n < h1.length; n++) {
+  // C. 🎯 ICT quét đỉnh hôm qua → SHORT (ictSweepShort), paper riêng như live
+  const file = path.join(tmp, `${coin}.json`), fileC = path.join(tmp, `${coin}-ict.json`);
+  for (let n = 100; n < h1.length; n++) {
     const now = h1[n].t + H + 60_000;
     if (now < START) continue;
-    const bars = h1.slice(n - 59, n + 1);
+    const bars = h1.slice(n - 99, n + 1); // live lấy 100 nến 1H
     stepLimits(coin, bars, file);
+    stepLimits(coin, bars, fileC);
     if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, file, true); } // như live: đáy mới thay lệnh chờ cũ
+    const ict = ictSweepShort(bars);
+    if (ict) addLimit(coin, ict, fileC);
   }
   for (const x of loadLimits(file)) if (x.status === "closed" && x.r !== undefined) B.push({ t: x.createdBar, r: x.r });
+  for (const x of loadLimits(fileC)) if (x.status === "closed" && x.r !== undefined) C.push({ t: x.createdBar, r: x.r });
   process.stderr.write(`${coin}: 4H ${A.live.length} · 📌 ${B.length}\n`);
 }
 
@@ -103,7 +108,7 @@ function st(xs) {
   return `n=${String(n).padStart(4)}  thắng ${(rs.filter((r) => r > 0).length / n * 100).toFixed(0)}%  TB ${m >= 0 ? "+" : ""}${m.toFixed(3)}R  t=${(m / (sd / Math.sqrt(n))).toFixed(2)}  tổng ${(m * n * USD >= 0 ? "+" : "") + (m * n * USD).toFixed(0)}$`;
 }
 const yr = (y) => (x) => new Date(x.t).getUTCFullYear() === y;
-for (const [name, xs] of [["A. Hai đỉnh/đáy 4H, trailing (live, không giới hạn giờ)", A.live], ["A. Hai đỉnh/đáy 4H, trailing, tối đa 60 nến (như backtest)", A.cap60], ["B. 📌 Limit dưới đáy 1H (LONG)", B]]) {
+for (const [name, xs] of [["A. Hai đỉnh/đáy 4H, trailing (live, không giới hạn giờ)", A.live], ["A. Hai đỉnh/đáy 4H, trailing, tối đa 60 nến (như backtest)", A.cap60], ["B. 📌 Limit dưới đáy 1H (LONG)", B], ["C. 🎯 ICT quét đỉnh hôm qua → SHORT 1H", C]]) {
   console.log(name);
   for (const y of [2025, 2026]) console.log(`  ${y}: ${st(xs.filter(yr(y)))}`);
   console.log(`  25–26: ${st(xs)}`);

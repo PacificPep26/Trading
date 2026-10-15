@@ -371,3 +371,44 @@ export function fvgSweepSignal(h1All: Candle[], m15All: Candle[], dailySide: num
   }
   return null;
 }
+
+/**
+ * ICT quét đỉnh hôm qua → ChoCh → hồi về FVG → SHORT (ict_sweep_study 2026-10-15, 1H, vào giữa FVG:
+ * 2025 +0.38R, 2026 +0.49R, vào ngẫu nhiên +0.15R / −0.21R; chiều LONG ≈ 0 nên không dùng).
+ * Ngày UTC D: nến đầu tiên của D có high > PDH (đỉnh ngày D−1) = quét; trong 24 nến sau, nến ĐÓNG dưới swing đáy
+ * gần nhất đã xác nhận trước lúc quét = ChoCh; FVG giảm mới nhất giữa quét và ChoCh (high[j] < low[j−2]).
+ * Sell Limit giữa FVG, SL = đỉnh cao nhất từ lúc quét tới ChoCh + 0.1 ATR, TP = PDL; bỏ nếu TP < 1.5R.
+ * Chỉ trả kèo khi nến ChoCh là nến đóng cuối cùng (báo đúng 1 lần).
+ */
+export function ictSweepShort(all: Candle[]): { side: -1; level: number; limit: number; stop: number; tp: number; atr: number; barTime: number } | null {
+  const cs = all.filter((c) => c.closed !== false);
+  const n = cs.length, DAY = 86_400_000;
+  if (n < 40) return null;
+  const { lows } = swings(cs);
+  const atr = atrSeries(cs);
+  const dayOf = (i: number) => Math.floor(cs[i].t / DAY);
+  // ChoCh tối đa 24 nến sau quét → ngày quét là hôm nay hoặc hôm qua
+  for (const d of [dayOf(n - 1), dayOf(n - 1) - 1]) {
+    const prev = cs.filter((c) => Math.floor(c.t / DAY) === d - 1);
+    if (prev.length < 20) continue; // thiếu dữ liệu ngày trước
+    const pdh = Math.max(...prev.map((c) => c.h)), pdl = Math.min(...prev.map((c) => c.l));
+    const s = cs.findIndex((c) => Math.floor(c.t / DAY) === d && c.h > pdh);
+    if (s < 0) continue;
+    const ref = lows.filter((k) => k + W <= s).at(-1);
+    if (ref === undefined) continue;
+    let ext = cs[s].h;
+    for (let k = s + 1; k < Math.min(s + 25, n); k++) {
+      ext = Math.max(ext, cs[k].h);
+      if (cs[k].c >= cs[ref].l) continue;
+      // nến ChoCh đầu tiên; chỉ báo khi nó vừa đóng
+      if (k !== n - 1) break;
+      let j = -1;
+      for (let q = k; q >= s + 2; q--) if (cs[q].h < cs[q - 2].l) { j = q; break; }
+      if (j < 0) break;
+      const limit = (cs[j].h + cs[j - 2].l) / 2, stop = ext + 0.1 * atr[k];
+      if (pdl - limit >= 0 || limit - pdl < 1.5 * (stop - limit)) break;
+      return { side: -1, level: ext, limit, stop, tp: pdl, atr: atr[k], barTime: cs[k].t };
+    }
+  }
+  return null;
+}
