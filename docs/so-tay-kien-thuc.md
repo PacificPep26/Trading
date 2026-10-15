@@ -63,7 +63,7 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | (mới) | The Trading Channel — "The Only Price Action Trading Video" (hai đáy/đỉnh + vùng kết thúc + lực mua) | ❌ 1H −598$ / −35$; 4H ≈ 0 |
 | (mới) | Jason Graystone — "Trading for Beginners Part 1" (nến high test + lệnh chờ phá) | ✅ 4H TP 2R → **đã vào bot (🔨)**; 1H ❌ |
 | (mới) | Trading Rush — "How I Increased Win Rate" (R:R 1.5, TP dưới đỉnh cũ) | ⚖️ TP 1.5R tăng tỷ lệ thắng nhưng giảm tiền ở 🔨 và 📌; "TP dưới đỉnh cũ" đã dùng |
-| (mới) | Wysetrade — "ULTIMATE Supertrend Indicator Trading Strategy" | Cách của video (chờ hồi chạm dải + nến râu): 4H +38$ / +285$, t ≈ 1, thắng 16–18% ❌. Vào lúc đổi màu: 4H ✅ → **đã vào bot (📈)**; 1H dương nhưng 2026 thua ngẫu nhiên ❌ |
+| (mới) | Wysetrade — "ULTIMATE Supertrend Indicator Trading Strategy" | Cách của video (chờ hồi chạm dải + nến râu): 4H +38$ / +285$, t ≈ 1, thắng 16–18% ❌. Vào lúc đổi màu: 4H ✅ → **đã vào bot (📈)**; 1H dương nhưng 2026 thua ngẫu nhiên ❌. Đa khung đúng video (ngày → 1H đổi màu): +57$ / +31$, t ≈ 1, thua vào ngẫu nhiên cùng màu (+71$ / +791$) ❌ |
 | 7–38 | SO Trading (32 video) | 🔁 hồi đỉnh cũ ✅; vai–đầu–vai, phá vỡ sau nén, chòm râu ❌ nhưng vẫn báo theo yêu cầu; nhấn chìm lần hai ❌; tâm lý/kế hoạch = nguyên tắc |
 
 ## Bài học chung
