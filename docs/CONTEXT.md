@@ -1,5 +1,7 @@
 # Ngữ cảnh dự án — đọc trước khi làm gì
 
+> **Việc đang làm dở: đọc [BAN-GIAO.md](BAN-GIAO.md) trước.**
+
 Cập nhật 2026-10-15 · version `v3.0.0`. Chủ dự án: Victor, giao dịch tay USDT perpetual trên MEXC (phí 0 khi đánh tay),
 tối đa x10, thích tin nhắn ngắn, đánh nhanh (chốt 50% ở 1R rồi dời SL hoà vốn). Trao đổi bằng tiếng Việt.
 
