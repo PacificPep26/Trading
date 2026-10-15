@@ -186,20 +186,14 @@ export async function scanAndAlert(): Promise<string[]> {
   const allowLong = btcSentinel.allowLong && heldLongCount < MAX_CONCURRENT_POSITIONS;
   const allowShort = btcSentinel.allowShort && heldShortCount < MAX_CONCURRENT_POSITIONS;
 
-  // ⚡ LA BÀN BTC: Bắt ngay cú quét thanh khoản đáy/đỉnh của BTC (ưu tiên cao nhất thị trường)
+  // ⚡ LA BÀN BTC: Cập nhật La bàn thị trường (CHỈ LÀM THAM CHIẾU - KHÔNG BAO GIỜ GỌI LỆNH TRADE BTC)
+  let isNewBtcSweep = false;
   if (btcSentinel.sweep) {
     const sw = btcSentinel.sweep;
     const sweepKey = `BTC_SWEEP:${sw.side}:${sw.barTime}`;
     if (!sent.has(sweepKey)) {
       sent.add(sweepKey);
-      const how = sw.side > 0 ? "⚡ BTC QUÉT ĐÁY RÚT CHÂN" : "⚡ BTC QUÉT ĐỈNH RÚT RÂU";
-      digest.push({
-        rank: -1, // Ưu tiên số 1 trên cùng
-        coin: "BTC",
-        side: sw.side,
-        rsScore: 9999,
-        text: planText(sw.side, "BTC", how, sw.entry, sw.stop, sw.tp, sw.note),
-      });
+      isNewBtcSweep = true;
     }
   }
 
@@ -374,28 +368,31 @@ export async function scanAndAlert(): Promise<string[]> {
     }
   }
 
-  if (digest.length) {
-    // 🛡️ LỌC BẪY TƯƠNG QUAN ĐỒNG LOẠT (CORRELATED PORTFOLIO RISK):
-    // Tách riêng BTC và Altcoin. Với Altcoin, mỗi chiều chỉ giữ lại TOP 2 coin có Sức mạnh tương đối (RS) cao nhất
-    const btcItems = digest.filter((d) => d.coin === "BTC");
-    const longAltcoins = digest.filter((d) => d.coin !== "BTC" && d.side > 0).sort((a, b) => b.rsScore - a.rsScore);
-    const shortAltcoins = digest.filter((d) => d.coin !== "BTC" && d.side < 0).sort((a, b) => b.rsScore - a.rsScore);
+  // 🛡️ LỌC BẪY TƯƠNG QUAN ĐỒNG LOẠT (CORRELATED PORTFOLIO RISK):
+  // Altcoin mỗi chiều chỉ giữ lại TOP 2 coin có Sức mạnh tương đối (RS) cao nhất
+  const longAltcoins = digest.filter((d) => d.side > 0).sort((a, b) => b.rsScore - a.rsScore);
+  const shortAltcoins = digest.filter((d) => d.side < 0).sort((a, b) => b.rsScore - a.rsScore);
 
-    const topLongs = longAltcoins.slice(0, 2);
-    const topShorts = shortAltcoins.slice(0, 2);
-    const droppedCount = (longAltcoins.length - topLongs.length) + (shortAltcoins.length - topShorts.length);
+  const topLongs = longAltcoins.slice(0, 2);
+  const topShorts = shortAltcoins.slice(0, 2);
+  const droppedCount = (longAltcoins.length - topLongs.length) + (shortAltcoins.length - topShorts.length);
 
-    const finalDigest = [...btcItems, ...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
+  const finalDigest = [...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
 
+  if (finalDigest.length > 0 || isNewBtcSweep) {
     const btcCompass = btcSentinel.sweep
-      ? `🧭 *LA BÀN BTC:* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
-      : `🧭 *LA BÀN BTC:* Xu hướng ngày ${btcDaily > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcDaily < 0 ? "GIẢM ↘ (Chỉ lọc Altcoin SHORT)" : "ĐI NGANG"}\n\n`;
+      ? `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
+      : `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* Xu hướng ngày ${btcDaily > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcDaily < 0 ? "GIẢM ↘ (Chỉ lọc Altcoin SHORT)" : "ĐI NGANG"}\n\n`;
 
     const shieldNote = droppedCount > 0
-      ? `\n\n🛡️ *LÁ CHẮN TƯƠNG QUAN:* Đã chọn Top 2 Altcoin bật khỏe nhất (RS cao nhất). Bỏ qua ${droppedCount} kèo cùng chiều yếu hơn để tránh nhân 5x rủi ro khi BTC giật!`
+      ? `\n\n🛡️ *LÁ CHẮN TƯƠNG QUAN:* Đã chọn Top 2 Altcoin bật khỏe nhất (RS cao nhất). Bỏ qua ${droppedCount} kèo cùng chiều yếu hơn để tránh nhân rủi ro!`
       : "";
 
-    await say(`📋 *KÈO MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote);
+    if (finalDigest.length > 0) {
+      await say(`📋 *KÈO ALTCOIN MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote);
+    } else if (isNewBtcSweep) {
+      await say(`🧭 *CẬP NHẬT LA BÀN THỊ TRƯỜNG ${vnTime(now)}*\n` + btcCompass + `⏳ *Altcoin:* Chưa có coin nào xuất hiện nến High Test / Pullback chuẩn đạt R:R. Đang tiếp tục quét...`);
+    }
   }
   saveSent();
   return out;

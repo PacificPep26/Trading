@@ -164,6 +164,11 @@ export function analyseBtcSentinel(
     }
   }
 
+  // Tính volume trung bình 10 nến 1H gần nhất để đối chiếu xác nhận dòng tiền hấp thụ
+  const prev10 = cs.slice(Math.max(0, n - 11), n - 1);
+  const avgVol = prev10.length > 0 ? prev10.reduce((s, x) => s + (x.v || 0), 0) / prev10.length : 0;
+  const hasVolume = avgVol > 0 ? (c.v || 0) >= avgVol * 0.95 : true;
+
   let sweep: BtcSweepSignal | null = state.activeSweep;
 
   // Nếu chưa có active sweep trong cache, kiểm tra nến 1H vừa đóng
@@ -172,33 +177,52 @@ export function analyseBtcSentinel(
     const lowerWick1h = Math.min(c.o, c.c) - c.l;
     const upperWick1h = c.h - Math.max(c.o, c.c);
 
-    const sweptSwingLow1h = majorSwingLows.find((sl) => c.l < sl && c.c >= sl);
-    if ((c.l < pdl && c.c > pdl && lowerWick1h >= 0.35 * range1h) || sweptSwingLow1h) {
-      const ref = sweptSwingLow1h ?? pdl;
+    // Nến rút chân thật sự (Real Bullish Rejection):
+    // - Nến xanh (c.c >= c.o): râu dưới >= 45% biên độ
+    // - Nến đỏ (c.c < c.o): bắt buộc phải là Pinbar/Hammer râu cực dài >= 60% biên độ
+    // Tuyệt đối loại bỏ nến đỏ râu ngắn (phe bán chiếm ưu thế, không phải rút chân)
+    const isRealBullishRejection =
+      range1h >= 250 && ((c.c >= c.o && lowerWick1h >= 0.45 * range1h) || lowerWick1h >= 0.6 * range1h);
+
+    const sweptSwingLow1h = majorSwingLows.find(
+      (sl) => c.l < sl && c.c >= sl && (c.h - sl >= 200 || sl - c.l >= 100)
+    );
+    const sweptLowRef = c.l < pdl && c.c >= pdl ? pdl : sweptSwingLow1h;
+
+    if (sweptLowRef && isRealBullishRejection && hasVolume) {
       sweep = {
         side: 1,
-        refPrice: ref,
+        refPrice: sweptLowRef,
         sweepPrice: c.l,
         entry: c.c,
         stop: c.l - 50,
         tp: pdh,
         barTime: c.t,
-        note: `BTC quét đáy ${Math.round(c.l)} rút chân giữ vững cản ${Math.round(ref)} (râu ${range1h > 0 ? ((lowerWick1h / range1h) * 100).toFixed(0) : 0}%)`,
+        note: `BTC quét đáy ${Math.round(c.l)} rút chân giữ vững cản ${Math.round(sweptLowRef)} (râu ${((lowerWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
       };
     }
 
-    const sweptSwingHigh1h = majorSwingHighs.find((sh) => c.h > sh && c.c <= sh);
-    if (!sweep && ((c.h > pdh && c.c < pdh && upperWick1h >= 0.35 * range1h) || sweptSwingHigh1h)) {
-      const ref = sweptSwingHigh1h ?? pdh;
+    // Nến rút râu trên thật sự (Real Bearish Rejection):
+    // - Nến đỏ (c.c <= c.o): râu trên >= 45% biên độ
+    // - Nến xanh (c.c > c.o): bắt buộc phải là Shooting Star pinbar râu trên >= 60%
+    const isRealBearishRejection =
+      range1h >= 250 && ((c.c <= c.o && upperWick1h >= 0.45 * range1h) || upperWick1h >= 0.6 * range1h);
+
+    const sweptSwingHigh1h = majorSwingHighs.find(
+      (sh) => c.h > sh && c.c <= sh && (sh - c.l >= 200 || c.h - sh >= 100)
+    );
+    const sweptHighRef = c.h > pdh && c.c <= pdh ? pdh : sweptSwingHigh1h;
+
+    if (!sweep && sweptHighRef && isRealBearishRejection && hasVolume) {
       sweep = {
         side: -1,
-        refPrice: ref,
+        refPrice: sweptHighRef,
         sweepPrice: c.h,
         entry: c.c,
         stop: c.h + 50,
         tp: pdl,
         barTime: c.t,
-        note: `BTC quét đỉnh ${Math.round(c.h)} rút râu dưới cản ${Math.round(ref)} (râu ${range1h > 0 ? ((upperWick1h / range1h) * 100).toFixed(0) : 0}%)`,
+        note: `BTC quét đỉnh ${Math.round(c.h)} rút râu dưới cản ${Math.round(sweptHighRef)} (râu ${((upperWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
       };
     }
   }
@@ -213,8 +237,12 @@ export function analyseBtcSentinel(
 
     const r15 = lowest15m.h - lowest15m.l;
     const lw15 = Math.min(lowest15m.o, lowest15m.c) - lowest15m.l;
+    const is15mBullishPin = (lowest15m.c >= lowest15m.o && lw15 >= 0.5 * r15) || lw15 >= 0.65 * r15;
 
-    if (r15 >= 250 && lw15 >= 0.35 * r15 && currentPrice >= lowest15m.l + 300) {
+    const avgVol15 = recent15m.reduce((s, x) => s + (x.v || 0), 0) / recent15m.length;
+    const hasVol15 = avgVol15 > 0 ? (lowest15m.v || 0) >= avgVol15 * 0.95 : true;
+
+    if (r15 >= 280 && is15mBullishPin && hasVol15 && currentPrice >= lowest15m.l + 320) {
       sweep = {
         side: 1,
         refPrice: lowest15m.l,
