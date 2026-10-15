@@ -146,12 +146,45 @@ export async function scanAndAlert(): Promise<string[]> {
   // Vị thế thật đang mở trên MEXC: không quét báo tín hiệu mới cho các coin này để tránh spam trùng lệnh
   const mexcPositions = await getMexcOpenPositions().catch(() => []);
   const heldCoins = new Set(mexcPositions.map((p) => p.coin));
+  const heldLongCount = mexcPositions.filter((p) => p.side === 1).length;
+  const heldShortCount = mexcPositions.filter((p) => p.side === -1).length;
+  const MAX_CONCURRENT_POSITIONS = 2; // Tối đa 2 vị thế cùng chiều trên toàn tài khoản để tránh bẫy tương quan đồng loạt
 
-  const digest: { rank: number; text: string }[] = [];
+  type DigestItem = {
+    rank: number;
+    coin: string;
+    side: number;
+    rsScore: number;
+    text: string;
+  };
+  const digest: DigestItem[] = [];
+
   const btcDaily = await dailyTrend("BTC");
   const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
   const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
   const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m);
+
+  // 🚨 ĐIỀU KIỆN PHẾ TRUẤT LA BÀN BTC (INVALIDATION):
+  // Nếu BTC đâm thủng đáy râu quét vừa tạo -> Bắn cảnh báo khẩn cấp và thu hồi cờ Long ngay lập tức
+  if (btcSentinel.invalidation) {
+    const inv = btcSentinel.invalidation;
+    const invKey = `BTC_INV:${inv.sweepPrice}:${Math.floor(inv.time / 180_000)}`;
+    if (!sent.has(invKey)) {
+      sent.add(invKey);
+      await say(
+        `🚨 *CẢNH BÁO KHẨN CẤP: LA BÀN BTC BỊ PHẾ TRUẤT!*\n\n` +
+        `BTC vừa đâm thủng mốc quét đáy *${f(inv.sweepPrice)}* (Hiện tại: *${f(inv.breakPrice)}*).\n` +
+        `⚠️ *ĐÂY LÀ BẪY QUÉT 2 NHỊP (SECOND SWEEP) HOẶC XẢ TIẾP DIỄN.*\n\n` +
+        `👉 *HÀNH ĐỘNG KHẨN CẤP:*\n` +
+        `1. Đóng hoà vốn hoặc cắt lỗ ngay các lệnh LONG Altcoin vừa mở!\n` +
+        `2. Đã THU HỒI cờ Long trên toàn hệ thống — CẤM vào lệnh Long mới!`
+      );
+    }
+  }
+
+  // Khóa chiều nếu danh mục MEXC đã mở tối đa vị thế cùng chiều (Max Concurrent Risk)
+  const allowLong = btcSentinel.allowLong && heldLongCount < MAX_CONCURRENT_POSITIONS;
+  const allowShort = btcSentinel.allowShort && heldShortCount < MAX_CONCURRENT_POSITIONS;
 
   // ⚡ LA BÀN BTC: Bắt ngay cú quét thanh khoản đáy/đỉnh của BTC (ưu tiên cao nhất thị trường)
   if (btcSentinel.sweep) {
@@ -162,6 +195,9 @@ export async function scanAndAlert(): Promise<string[]> {
       const how = sw.side > 0 ? "⚡ BTC QUÉT ĐÁY RÚT CHÂN" : "⚡ BTC QUÉT ĐỈNH RÚT RÂU";
       digest.push({
         rank: -1, // Ưu tiên số 1 trên cùng
+        coin: "BTC",
+        side: sw.side,
+        rsScore: 9999,
         text: planText(sw.side, "BTC", how, sw.entry, sw.stop, sw.tp, sw.note),
       });
     }
@@ -177,16 +213,29 @@ export async function scanAndAlert(): Promise<string[]> {
         if (!isHeld && coin !== "BTC") {
           const ownDaily = await dailyTrend(coin);
           for (const g of highTestSetup(bars15m, "swing")) {
-            // Lọc la bàn BTC: Nếu BTC cấm short/long thì bỏ qua ngay để lọc nhiễu altcoin
-            if (g.side > 0 && !btcSentinel.allowLong) continue;
-            if (g.side < 0 && !btcSentinel.allowShort) continue;
+            // Lọc la bàn BTC & Max Concurrent Risk
+            if (g.side > 0 && !allowLong) continue;
+            if (g.side < 0 && !allowShort) continue;
             if (ownDaily !== 0 && g.side !== ownDaily) continue;
 
             const key = `HT15:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
-            digest.push({ rank: 0, text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅") });
+
+            // Điểm Sức mạnh Tương đối (RS Score): đo độ rút chân từ đáy/đỉnh của nến
+            const lastB = bars15m.at(-1);
+            const r15 = lastB ? lastB.h - lastB.l : 1;
+            const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
+            const rsScore = r15 > 0 ? (rebound / r15) * 100 : 50;
+
+            digest.push({
+              rank: 0,
+              coin,
+              side: g.side,
+              rsScore,
+              text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅"),
+            });
           }
         }
       }
@@ -201,21 +250,39 @@ export async function scanAndAlert(): Promise<string[]> {
           const own = await dailyTrend(coin);
           // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
           for (const g of highTestSetup(bars4h)) {
-            if (g.side > 0 && !btcSentinel.allowLong) continue;
-            if (g.side < 0 && !btcSentinel.allowShort) continue;
+            if (g.side > 0 && !allowLong) continue;
+            if (g.side < 0 && !allowShort) continue;
             const key = `HT:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
-            digest.push({ rank: 0, text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅") });
+
+            const lastB = bars4h.at(-1);
+            const r4 = lastB ? lastB.h - lastB.l : 1;
+            const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
+            const rsScore = r4 > 0 ? (rebound / r4) * 100 : 50;
+
+            digest.push({
+              rank: 0,
+              coin,
+              side: g.side,
+              rsScore,
+              text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅"),
+            });
           }
           // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
           const st = stFlipSetup(bars4h);
           if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
-            if ((st.side > 0 && btcSentinel.allowLong) || (st.side < 0 && btcSentinel.allowShort)) {
+            if ((st.side > 0 && allowLong) || (st.side < 0 && allowShort)) {
               sent.add(`ST:${coin}:${st.barTime}`);
               if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
-                digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
+                digest.push({
+                  rank: 0,
+                  coin,
+                  side: st.side,
+                  rsScore: 75,
+                  text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅"),
+                });
             }
           }
           const a4 = analyse(bars4h);
@@ -244,34 +311,52 @@ export async function scanAndAlert(): Promise<string[]> {
           const own = await dailyTrend(coin);
           // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
           for (const g of inducementSetup(bars300)) {
-            if (g.side > 0 && !btcSentinel.allowLong) continue;
-            if (g.side < 0 && !btcSentinel.allowShort) continue;
+            if (g.side > 0 && !allowLong) continue;
+            if (g.side < 0 && !allowShort) continue;
             const key = `IDM:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
-            digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
+            digest.push({
+              rank: 3,
+              coin,
+              side: g.side,
+              rsScore: 50,
+              text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng"),
+            });
           }
           // Kèo SO Trading: chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
           for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
-            if (so.side > 0 && !btcSentinel.allowLong) continue;
-            if (so.side < 0 && !btcSentinel.allowShort) continue;
+            if (so.side > 0 && !allowLong) continue;
+            if (so.side < 0 && !allowShort) continue;
             const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
             const lab = SO_LABEL[so.kind];
-            digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
+            digest.push({
+              rank: 3,
+              coin,
+              side: so.side,
+              rsScore: 60,
+              text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1),
+            });
           }
 
           // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
           const ict = ictSweepShort(bars1h);
           const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
           if (ict && ictKey && !sent.has(ictKey)) {
-            if (btcSentinel.allowShort) {
+            if (allowShort) {
               sent.add(ictKey);
               addLimit(coin, ict, ICT_PAPER);
-              digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
+              digest.push({
+                rank: 1,
+                coin,
+                side: -1,
+                rsScore: 70,
+                text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua"),
+              });
               markAlerted(coin, -1);
             }
           }
@@ -290,12 +375,27 @@ export async function scanAndAlert(): Promise<string[]> {
   }
 
   if (digest.length) {
-    digest.sort((a, b) => a.rank - b.rank);
+    // 🛡️ LỌC BẪY TƯƠNG QUAN ĐỒNG LOẠT (CORRELATED PORTFOLIO RISK):
+    // Tách riêng BTC và Altcoin. Với Altcoin, mỗi chiều chỉ giữ lại TOP 2 coin có Sức mạnh tương đối (RS) cao nhất
+    const btcItems = digest.filter((d) => d.coin === "BTC");
+    const longAltcoins = digest.filter((d) => d.coin !== "BTC" && d.side > 0).sort((a, b) => b.rsScore - a.rsScore);
+    const shortAltcoins = digest.filter((d) => d.coin !== "BTC" && d.side < 0).sort((a, b) => b.rsScore - a.rsScore);
+
+    const topLongs = longAltcoins.slice(0, 2);
+    const topShorts = shortAltcoins.slice(0, 2);
+    const droppedCount = (longAltcoins.length - topLongs.length) + (shortAltcoins.length - topShorts.length);
+
+    const finalDigest = [...btcItems, ...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
+
     const btcCompass = btcSentinel.sweep
       ? `🧭 *LA BÀN BTC:* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
       : `🧭 *LA BÀN BTC:* Xu hướng ngày ${btcDaily > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcDaily < 0 ? "GIẢM ↘ (Chỉ lọc Altcoin SHORT)" : "ĐI NGANG"}\n\n`;
 
-    await say(`📋 *KÈO MỚI ${vnTime(now)}*\n` + btcCompass + digest.map((d) => d.text).join("\n\n"));
+    const shieldNote = droppedCount > 0
+      ? `\n\n🛡️ *LÁ CHẮN TƯƠNG QUAN:* Đã chọn Top 2 Altcoin bật khỏe nhất (RS cao nhất). Bỏ qua ${droppedCount} kèo cùng chiều yếu hơn để tránh nhân 5x rủi ro khi BTC giật!`
+      : "";
+
+    await say(`📋 *KÈO MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote);
   }
   saveSent();
   return out;
