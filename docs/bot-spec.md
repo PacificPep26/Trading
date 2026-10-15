@@ -5,6 +5,19 @@ Cập nhật 2026-10-15. Nguồn chân lý về hành vi. Tổng quan và quy t�
 Bot **chỉ báo tin** Telegram; chủ dự án vào lệnh tay trên MEXC. Dữ liệu OKX, 21 coin (`COINS` trong `lib/telegram-alerts.ts`),
 quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đóng ngày UTC so với EMA50.
 
+## Luồng quét (workflow) — `scanAndAlert` chạy mỗi 2 phút
+
+| Bước | Khi nào (giờ VN) | Làm gì | Gửi tin? |
+|---|---|---|---|
+| 1. Tin Mỹ | mọi lượt | ≤ 60 phút trước CPI/NFP/FOMC → `⏰`; nến 5m đầu của BTC đóng → `⚡` | có |
+| 2. Theo dõi giá | mọi lượt | giá chạm mức chủ dự án đặt bằng `theo dõi …` | có |
+| 3. Kèo 4H | 15 phút đầu sau khi nến 4H đóng: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00 | 🔨 high test (+ sổ paper); 📊 hai đỉnh/đáy chỉ ghi paper | 🔨 có, 📊 không |
+| 4. Kèo 1H | 15 phút đầu mỗi giờ (xx:00–xx:15) | 🎯 ICT, 🔁 👤 🚀 🕯 SO Trading (+ sổ paper); 📌 chỉ ghi paper | có (trừ 📌) |
+| 5. Gộp tin | cuối lượt có kèo | 1 tin `📋 KÈO MỚI hh:mm`, mỗi kèo 2 dòng (chiều · coin · cách vào · giá / SL · TP1 · TP2 · đòn bẩy) | có |
+| 6. Sổ paper | mỗi lượt có nến mới đóng | khớp / đóng lệnh paper → `🧪 KHỚP`, `🧪 ĐÓNG`, `⌛` huỷ | có (trừ 📌 📊) |
+
+Mỗi kèo chỉ báo 1 lần cho mỗi nến tín hiệu (khoá chống trùng trong `data/telegram-sent.json`). Không có kèo nào đạt điều kiện → không gửi gì.
+
 ## 🎯 ICT quét đỉnh hôm qua → SHORT 1H (`ictSweepShort`)
 
 - Ngày UTC: nến 1H đầu tiên vượt đỉnh hôm qua (PDH) = quét. Trong 24 nến sau, nến **đóng** dưới swing đáy gần nhất (xác nhận trước lúc quét) = ChoCh.
