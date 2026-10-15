@@ -1,7 +1,7 @@
 # Sổ tay kiến thức giao dịch
 
 Mỗi ý tưởng (video, Gemini, chủ dự án) → luật cụ thể → backtest 2025–2026, phí 0 (giao dịch tay), 2.5$/lệnh → kết luận.
-Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). Kho phụ đề video thô: `data/knowledge.db` (191 video, `service/scripts/fetch_transcripts.py`).
+Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). Tóm tắt video chủ dự án thêm: `docs/research/`. Kho phụ đề video thô: `data/knowledge.db` (191 video, `service/scripts/fetch_transcripts.py`).
 
 **Tiêu chuẩn "dùng được"** (chốt trước khi chạy): dương riêng 2025 và 2026 · độ tin cậy t ≥ 2 · hơn vào ngẫu nhiên cùng SL/TP · code live chạy lại ra cùng số (`service/scripts/live_replay_study.mjs`).
 

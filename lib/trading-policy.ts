@@ -1,248 +1,32 @@
-/** Nguồn chân lý cho policy trading. Chuẩn hóa v2.0.0 */
-export const STRATEGY_VERSION = "paper-v2.4.0";
-export const MAX_LEVERAGE = 10;
-export const RISK_PER_TRADE = 0.10;
-export const MAX_DRAWDOWN = 0.20;
-export const MIN_STOP_DISTANCE = 0.015; // 1.5% tối thiểu (chặn micro-stop, tránh phí sàn nuốt lãi)
-export const MAX_STOP_DISTANCE = 0.060; // 6.0% tối đa (chặn mega-stop, an toàn cho isolated x10)
-export const MAX_PRICE_DRIFT = 0.0025;   // 0.25% tối đa trôi giá (chống vào trễ, đu đỉnh/đu đáy)
+// Luật kèo 4H hai đỉnh/đáy (bộ lọc + SL trailing). Bot chỉ báo tin; chủ dự án vào lệnh tay.
+// Số liệu: live_replay_study.mjs mục A — 2025 +45$, 2026 +43$ (29 lệnh, +1.22R).
+import type { Setup } from "./patterns.ts";
 
-export type StrategyStatus = "research" | "paper" | "rejected";
-export type Timeframe = "4H" | "1H" | "1D";
-export type DecisionCode =
-  | "ACCEPTED"
-  | "PENDING_CONFIRMATION"
-  | "RUNAWAY_PRICE"
-  | "STRATEGY_NOT_PAPER"
-  | "TREND_MISMATCH"
-  | "INVALID_STOP"
-  | "INVALID_DATA"
-  | "STALE_SIGNAL"
-  | "BOT_LOCKED"
-  | "LOW_VOLUME"
-  | "BTC_MOMENTUM_BLOCKED"
-  | "EXTREME_FUNDING"
-  | "FAKEOUT_WICK_TRAP";
-
-export const STRATEGY_REGISTRY = {
-  bos: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
-  double_top_bottom: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
-  pinbar_reversal: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "4H" as Timeframe },
-  bos_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
-  double_top_bottom_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
-  pinbar_reversal_1h: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1H" as Timeframe },
-  daily_trend_donchian: { version: STRATEGY_VERSION, status: "paper" as StrategyStatus, timeframe: "1D" as Timeframe },
-} as const;
-
-export interface TradeSizing {
-  notional: number;
-  leverage: number;
-  margin: number;
-  actualRiskUsd: number;
-  isCapped: boolean;
-}
-
-/** Kiểm tra điều kiện cấu trúc & xu hướng */
-export function isAllowedSetup(style: string, side: 1 | -1, tf: Timeframe, btcDaily = 0, ownDaily = 0): boolean {
-  // QUY TẮC BẢO VỆ CHỐNG BÃO (MACRO BTC FILTER):
-  // 1. Tuyệt đối KHÔNG LONG khi BTC Ngày đang là Downtrend (-1)
-  if (side > 0 && btcDaily < 0) return false;
-  // 2. Đối với SHORT: Không Short đuổi (BOS) khi BTC Ngày tăng (+1),
-  // NHƯNG CHO PHÉP SHORT TẠI ĐỈNH (Hai đỉnh - Double Top) khi coin chạm cản kiệt sức rút râu.
-  if (side < 0 && btcDaily > 0 && style !== "double_top_bottom") return false;
-
-  if (tf === "1D") {
-    if (style === "daily_trend_donchian") {
-      return side > 0 ? btcDaily > 0 : btcDaily < 0;
-    }
-    return false;
-  }
-  if (tf === "4H") {
-    if (style === "bos") {
-      if (side > 0) return !(ownDaily < 0);
-      if (side < 0) return !(ownDaily > 0);
-    }
-    if (style === "double_top_bottom" || style === "pinbar_reversal") {
-      return true;
-    }
-    return false;
-  }
-  if (tf === "1H") {
-    if (style === "double_top_bottom" || style === "pinbar_reversal" || style === "bos") {
-      return true;
-    }
-    return false;
-  }
-  return false;
-}
-
-/** Setup 1H hợp lệ để lướt sóng hoặc cảnh báo sớm */
-export function isWatchSetup(style: string, side: 1 | -1, tf: Timeframe): boolean {
-  return tf === "1H" && (style === "double_top_bottom" || style === "pinbar_reversal" || style === "bos");
-}
-
-/** Đánh dấu KÈO ĐẸP ★★★ thuận đà sóng lớn */
-export function isStarSetup(side: 1 | -1, ownDaily: number, btcDaily: number): boolean {
-  if (side > 0) {
-    return ownDaily > 0 && btcDaily > 0;
-  } else {
-    return ownDaily < 0 && btcDaily < 0;
-  }
-}
+export const STRATEGY_VERSION = "v3.0.0"; // nhãn sổ paper; đổi luật vào lệnh thì tăng
+export const TRAIL_ATR_MULT = 3; // trailing_study 2026-10-12: 2–4 ATR đều dương, chọn giữa vùng ổn định
 
 /**
- * Kiểm tra khung giờ tự động vào lệnh (16:00 chiều đến 08:00 sáng hôm sau giờ Việt Nam UTC+7).
- * Đây là khung giờ thanh khoản quốc tế bùng nổ (London + New York), tỷ lệ nến thật cao nhất.
- * Ngoài khung giờ này (08:00 - 16:00), bot chuyển sang chế độ Cảnh báo Telegram để tự bấm tay.
+ * Kèo 4H đủ chuẩn báo tin: hai đỉnh/đáy vừa kích hoạt, thuận xu hướng ngày cả coin lẫn BTC, volume nến ≥ 2x TB20,
+ * SL 1.5–6%, 2 nến BTC 1H gần nhất không chạy ngược ≥ 0.7%, |funding| ≤ 0.03%, tín hiệu ≤ 8 giờ, giá chưa trôi > 0.25%.
  */
-export function isAutoTradeTimeWindow(date: Date = new Date()): boolean {
-  // Chuyển sang giờ Việt Nam (UTC+7)
-  const vnHour = (date.getUTCHours() + 7) % 24;
-  return vnHour >= 16 || vnHour < 8;
+export function isSwingSetupOk(s: Setup, ctx: {
+  ownDaily: number; btcDaily: number; lastBarTime: number; now: number;
+  btc1h?: { o: number; c: number }[]; fundingRate?: number; livePrice?: number;
+}): boolean {
+  if (s.style !== "double_top_bottom" || s.state !== "triggered") return false;
+  if (s.side > 0 ? !(ctx.ownDaily > 0 && ctx.btcDaily > 0) : !(ctx.ownDaily < 0 && ctx.btcDaily < 0)) return false;
+  if ((s.volumeRatio ?? 1) < 2) return false;
+  if ((ctx.btc1h ?? []).slice(-2).some((b) => s.side * (b.c - b.o) / b.o <= -0.007)) return false;
+  if (ctx.fundingRate !== undefined && Number.isFinite(ctx.fundingRate) && Math.abs(ctx.fundingRate) > 0.0003) return false;
+  if (ctx.now - ctx.lastBarTime > 8 * 3_600_000 || ctx.lastBarTime > ctx.now + 5 * 60_000) return false;
+  const risk = s.side * (s.entry - s.stop) / s.entry;
+  if (!(risk >= 0.015 && risk <= 0.06)) return false;
+  if (ctx.livePrice !== undefined && Math.abs(ctx.livePrice - s.entry) / s.entry > 0.0025) return false;
+  return true;
 }
 
 /**
- * Điều kiện vào lệnh LIVE tiền thật trên MEXC:
- * 1. 1D Donchian Breakout: nến ngày thuận xu hướng BTC.
- * 2. 4H Chuẩn Kim Cương (Diamond Standard), mọi khung giờ (24/7):
- *    - Cả LONG ("bật nền") và SHORT ("rớt nền" / thủng đáy).
- *    - Volume bùng nổ: volumeRatio >= 2.0x (lọc sạch 95% bẫy thanh khoản).
- *    - Thuận xu hướng lớn: Long khi BTC & Coin Uptrend, Short khi BTC & Coin Downtrend.
- *    - Chỉ Hai đỉnh/đáy đảo chiều. BOS chỉ chạy Paper/Cảnh báo.
- */
-export function isLiveEligible(
-  style: string,
-  side: 1 | -1,
-  tf: Timeframe,
-  ownDaily: number,
-  btcDaily: number,
-  volumeRatio = 1.0,
-  date: Date = new Date()
-): boolean {
-  // Donchian 1D: backtest trend_daily_study KHÔNG ĐẠT (điểm vào ≈ ngẫu nhiên) → chỉ paper
-  if (tf === "1D") return false;
-
-  // Khung 4H: Đòi hỏi điều kiện Chuẩn Kim Cương (Diamond Standard) - Cho phép tự động vào lệnh 24/7 (mọi khung giờ)
-  if (tf === "4H") {
-    // Thuận cả coin & BTC khung ngày. Hai đỉnh ngược trend: backtest 2026-10-12 2023–24 −0.16 đến −0.26R → không live
-    if (side > 0 ? !(ownDaily > 0 && btcDaily > 0) : !(ownDaily < 0 && btcDaily < 0)) return false;
-
-    // Chuẩn Kim Cương: Volume phải bùng nổ >= 2.0x SMA20
-    if (volumeRatio < 2.0) return false;
-
-    // BOS bị loại: backtest 2025–26 vol>=2x vẫn −0.12R/lệnh sau phí; hai đỉnh/đáy vol>=2x +0.19R (n=53)
-    return style === "double_top_bottom";
-  }
-
-  return false;
-}
-
-/** Kiểm tra Funding Rate có nằm trong biên an toàn không (tránh bẫy phí và squeeze) */
-export function isFundingSafe(rate?: number): boolean {
-  if (rate === undefined || !Number.isFinite(rate)) return true;
-  // Giới hạn an toàn: |Funding| <= 0.03% (0.0003)
-  return Math.abs(rate) <= 0.0003;
-}
-
-/** Kiểm tra quán tính ngắn hạn của BTC (Intraday Momentum Spillover) */
-export function isBtcMomentumBlocked(
-  side: 1 | -1,
-  btc1hBars?: { o: number; c: number; h: number; l: number }[]
-): boolean {
-  if (!btc1hBars || btc1hBars.length === 0) return false;
-  const recent = btc1hBars.slice(-2);
-  for (const bar of recent) {
-    const movePct = (bar.c - bar.o) / bar.o;
-    // Nếu BTC đang có cây nến 1H tăng dựng đứng (+0.7%) -> CẤM SHORT
-    if (side < 0 && movePct >= 0.007) return true;
-    // Nếu BTC đang có cây nến 1H cắm đầu mạnh (-0.7%) -> CẤM LONG
-    if (side > 0 && movePct <= -0.007) return true;
-  }
-  return false;
-}
-
-/**
- * Tính toán vị thế chuẩn vốn 40$, rủi ro tối đa 10% equity (4$) tại điểm cắt lỗ.
- */
-export function calculateSizing(equity: number, stopDistancePct: number): TradeSizing {
-  if (!Number.isFinite(equity) || !Number.isFinite(stopDistancePct) || equity <= 0 || stopDistancePct <= 0) {
-    return { notional: 0, leverage: 1, margin: 0, actualRiskUsd: 0, isCapped: false };
-  }
-  const riskBudget = equity * RISK_PER_TRADE; // 4$ trên 40$
-  const maxNotional = equity * MAX_LEVERAGE;  // 400$
-  const riskSizedNotional = riskBudget / stopDistancePct;
-  const notional = Math.min(maxNotional, riskSizedNotional);
-  const margin = notional / MAX_LEVERAGE;
-  const actualRiskUsd = notional * stopDistancePct;
-
-  return {
-    notional: Math.round(notional * 10) / 10,
-    leverage: MAX_LEVERAGE,
-    margin: Math.round(margin * 10) / 10,
-    actualRiskUsd: Math.round(actualRiskUsd * 100) / 100,
-    isCapped: riskSizedNotional > maxNotional,
-  };
-}
-
-/**
- * Tính toán lợi nhuận 2 bước với cơ chế Front-Running TP Buffer:
- * - TP1 ở 0.90R (chốt 50% vị thế) = +0.45R (khớp sớm, bảo toàn vốn)
- * - TP2 ở 1.85R (chốt 50% vị thế) = +0.925R (khớp trước đáy/đỉnh cản)
- * Tổng lãi khi ăn cả 2 TP = +1.375R ($5.50 trên risk $4.0)
- */
-export function calculatePartialPnL(riskUsd: number) {
-  const winTp1 = Math.round(riskUsd * 0.45 * 100) / 100;
-  const winTp2 = Math.round(riskUsd * 0.925 * 100) / 100;
-  return { winTp1, winTp2, totalWin: Math.round((winTp1 + winTp2) * 100) / 100 };
-}
-
-export function isDrawdownLocked(equity: number, peakEquity: number): boolean {
-  if (!Number.isFinite(equity) || !Number.isFinite(peakEquity) || equity <= 0 || peakEquity <= 0) return true;
-  return 1 - equity / peakEquity >= MAX_DRAWDOWN;
-}
-
-/** Tạo chuỗi giải thích lý do vào lệnh (Sao vô) súc tích, thực chiến */
-export function formatEntryReason(params: {
-  style: string;
-  side: 1 | -1;
-  timeframe: string;
-  btcDaily?: number;
-  ownDaily?: number;
-  volumeRatio?: number;
-}): string {
-  const parts: string[] = [];
-
-  if (params.style === "bos") {
-    parts.push(params.side > 0 ? `BOS ${params.timeframe} phá cản` : `BOS ${params.timeframe} thủng hỗ trợ`);
-    parts.push("Nến thân đặc xác nhận");
-  } else if (params.style === "double_top_bottom") {
-    parts.push(params.side > 0 ? `Hai đáy ${params.timeframe} xác nhận` : `Hai đỉnh ${params.timeframe} xác nhận`);
-  } else if (params.style === "pinbar_reversal") {
-    parts.push(params.side > 0 ? `Pinbar ${params.timeframe} rút chân hỗ trợ` : `Pinbar ${params.timeframe} rút râu cản`);
-  } else {
-    parts.push(`Mô hình ${params.timeframe} đạt chuẩn`);
-  }
-
-  if (params.volumeRatio && params.volumeRatio >= 1.0) {
-    parts.push(`Volume nến x${params.volumeRatio.toFixed(1)} TB20`);
-  }
-
-  if (params.btcDaily !== undefined) {
-    if (params.btcDaily > 0 && params.side > 0) {
-      parts.push("Thuận BTC Ngày Tăng ↗");
-    } else if (params.btcDaily < 0 && params.side < 0) {
-      parts.push("Thuận BTC Ngày Giảm ↘");
-    }
-  }
-
-  return parts.join(" + ");
-}
-
-export const TRAIL_ATR_MULT = 3; // backtest trailing_study 2026-10-12: 2–4 ATR đều dương, chọn giữa vùng ổn định
-
-/**
- * SL trailing cho lệnh 4H hai đỉnh/đáy: giá đóng tốt nhất từ nến vào lệnh trừ 3×ATR14, chỉ được siết lại.
- * Chỉ dùng nến 4H đã đóng (khớp backtest: cập nhật khi nến đóng).
+ * SL trailing: giá đóng tốt nhất từ nến vào lệnh trừ 3×ATR14 (nến 4H đã đóng), chỉ được siết lại.
  */
 export function trailingStop(
   bars: { t: number; h: number; l: number; c: number; closed?: boolean }[],

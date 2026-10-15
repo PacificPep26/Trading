@@ -3,7 +3,7 @@
 // 2025–2026, phí 0 (giao dịch tay), trượt 0.02%/chiều cho lệnh Market và SL, funding 0.01%/8h. 2.5$/lệnh.
 // Chạy: node --experimental-strip-types --no-warnings service/scripts/overview_study.mjs
 import fs from "node:fs";
-import { pickCoin } from "../../lib/overview.ts";
+import { pickCoin } from "./legacy/overview.ts";
 
 const H = 3_600_000, M15 = 900_000, DAY = 86_400_000;
 const SLIP = 0.0002, FUND_8H = 0.0001, USD = 2.5, MAX_BARS = 192; // giữ tối đa 48 giờ

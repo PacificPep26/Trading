@@ -1,7 +1,85 @@
 // "Toàn cảnh": chấm điểm 5 lớp cho từng coin, cả LONG và SHORT, chọn kèo nhiều lớp đồng thuận nhất.
 // Chưa backtest được công bằng (chấm điểm nhiều lớp) → chỉ báo tay + paper tự động để đo.
-import type { Candle } from "./okx.ts";
-import { analyse, swings, freshSweep, wickReversal } from "./patterns.ts";
+// Bản lưu trữ: kèo "Toàn cảnh 5 lớp" đã loại (overview_study 2025–26 −0.02R). Chỉ để service/scripts/overview_study.mjs chạy lại được.
+import type { Candle } from "../../../lib/okx.ts";
+import { analyse, swings } from "../../../lib/patterns.ts";
+
+function atrSeries(cs: Candle[]) {
+  const out: number[] = [];
+  cs.forEach((c, i) => {
+    const p = cs[i - 1] ?? c;
+    const tr = Math.max(c.h - c.l, Math.abs(c.h - p.c), Math.abs(c.l - p.c));
+    out.push(i === 0 ? tr : (out[i - 1] * 13 + tr) / 14);
+  });
+  return out;
+}
+
+/**
+ * Nến k quét swing đáy/đỉnh gần nhất (hoặc đáy/đỉnh 24 nến): râu thủng mức rồi đóng lại bên trong, hoặc râu dài hơn thân.
+ * Trả chiều lệnh và mức bị quét; null nếu không quét.
+ */
+function sweepAt(cs: Candle[], k: number): { side: 1 | -1; level: number } | null {
+  if (k < 25) return null;
+  const p = cs[k];
+  const { highs, lows } = swings(cs.slice(0, k)); // swing đã xác nhận trước nến quét
+  const prior = cs.slice(k - 24, k);
+  const loLevels = [lows.length ? cs[lows[lows.length - 1]].l : NaN, Math.min(...prior.map((x) => x.l))];
+  const hiLevels = [highs.length ? cs[highs[highs.length - 1]].h : NaN, Math.max(...prior.map((x) => x.h))];
+  const body = Math.abs(p.c - p.o);
+  const lo = loLevels.find((L) => p.l < L && L < p.h && (p.c > L || Math.min(p.o, p.c) - p.l >= body));
+  if (lo !== undefined) return { side: 1, level: lo };
+  const hi = hiLevels.find((L) => p.h > L && L > p.l && (p.c < L || p.h - Math.max(p.o, p.c) >= body));
+  return hi !== undefined ? { side: -1, level: hi } : null;
+}
+
+/** Báo sớm: nến 1H vừa đóng là nến quét (chưa có nến xác nhận). */
+export function freshSweep(all: Candle[]): {
+  side: 1 | -1; level: number; wick: number; close: number; barTime: number;
+  stop: number; tp: number; confirmAbove: number; // confirmAbove: nến kế phải đóng vượt mức này (đỉnh/đáy nến quét)
+  vr: number; // volume nến quét / TB 20 nến trước
+} | null {
+  const cs = all.filter((c) => c.closed !== false);
+  const k = cs.length - 1, sw = sweepAt(cs, k);
+  if (!sw) return null;
+  const p = cs[k], atr = atrSeries(cs)[k];
+  const stop = sw.side > 0 ? p.l - 0.1 * atr : p.h + 0.1 * atr; // giống wickReversal
+  const vr = volRatio(cs, k);
+  return {
+    ...sw, wick: sw.side > 0 ? p.l : p.h, close: p.c, barTime: p.t,
+    stop, tp: p.c + sw.side * 1.8 * Math.abs(p.c - stop), confirmAbove: sw.side > 0 ? p.h : p.l, vr,
+  };
+}
+
+/**
+ * Cảnh báo tay (KHÔNG tự vào lệnh; backtest kiểu này ≈ −0.13R/lệnh): nến trước quét (sweepAt),
+ * nến vừa đóng thân lớn vượt nến quét theo chiều lệnh. SL ngoài râu + 0.1 ATR, TP 1.8R.
+ */
+/** Volume nến k / trung bình 20 nến trước (0 nếu thiếu dữ liệu). */
+function volRatio(cs: Candle[], k: number) {
+  const prev = cs.slice(Math.max(0, k - 20), k);
+  const avg = prev.reduce((s, x) => s + (x.v || 0), 0) / (prev.length || 1);
+  return avg > 0 ? (cs[k].v || 0) / avg : 0;
+}
+
+export function wickReversal(all: Candle[]): { side: 1 | -1; entry: number; stop: number; tp: number; level: number; barTime: number; vr: number } | null {
+  const cs = all.filter((c) => c.closed !== false);
+  if (cs.length < 30) return null;
+  const i = cs.length - 1, p = cs[i - 1], c = cs[i];
+  const sw = sweepAt(cs, i - 1);
+  if (!sw || Math.abs(c.c - c.o) < 0.6 * (c.h - c.l)) return null;
+  const atr = atrSeries(cs)[i];
+  if (sw.side > 0 && c.c > c.o && c.c > p.h) {
+    const stop = p.l - 0.1 * atr;
+    return { side: 1, entry: c.c, stop, tp: c.c + 1.8 * (c.c - stop), level: sw.level, barTime: c.t, vr: volRatio(cs, i - 1) };
+  }
+  if (sw.side < 0 && c.c < c.o && c.c < p.l) {
+    const stop = p.h + 0.1 * atr;
+    return { side: -1, entry: c.c, stop, tp: c.c - 1.8 * (stop - c.c), level: sw.level, barTime: c.t, vr: volRatio(cs, i - 1) };
+  }
+  return null;
+}
+
+
 
 export type OverviewPick = {
   coin: string;

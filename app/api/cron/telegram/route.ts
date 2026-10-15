@@ -1,6 +1,5 @@
-// Manual trigger / health check for the Telegram alerts (the server already scans every 5 minutes).
-// Optional ?secret=CRON_SECRET if CRON_SECRET is configured.
-import { scanAndAlert, preAlert, send } from "@/lib/telegram-alerts";
+// Gọi tay / kiểm tra sức khoẻ (server đã tự quét mỗi 2 phút). Có CRON_SECRET thì cần ?secret=.
+import { scanAndAlert, send } from "@/lib/telegram-alerts";
 
 export const runtime = "nodejs";
 
@@ -11,14 +10,8 @@ export async function GET(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    if (url.searchParams.get("pre") === "1" || url.searchParams.get("force_pre") === "1") {
-      const msg = await preAlert(Date.now(), true);
-      return Response.json({ status: "ok", type: "preAlert", message: msg });
-    }
     const sent = await scanAndAlert();
-    if (url.searchParams.get("test") === "1") {
-      await send(`✅ Bot hoạt động. Quét xong: ${sent.length} tín hiệu mới.`);
-    }
+    if (url.searchParams.get("test") === "1") await send(`✅ Bot hoạt động. Lượt quét gửi ${sent.length} tin.`);
     return Response.json({ status: "ok", sent: sent.length });
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : "error" }, { status: 500 });

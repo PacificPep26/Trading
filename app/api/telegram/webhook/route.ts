@@ -1,481 +1,97 @@
+// Webhook @VictorHuynh_trading_bot: hướng dẫn, thống kê 3 sổ paper, gõ tên coin xem trạng thái 3 kèo, theo dõi giá.
 import { NextRequest, NextResponse } from "next/server";
-import path from "path";
-import { candles, ticker } from "@/lib/okx";
-import { analyse, swings } from "@/lib/patterns";
-import { evaluateSetup } from "@/lib/decision-engine";
-import { paperSummary } from "@/lib/paper-ledger";
-import { calculatePartialPnL, formatEntryReason } from "@/lib/trading-policy";
-import { getCapitalTier } from "@/lib/capital-tier";
-import { getMexcAccountAsset, getMexcOpenPositions, type MexcPosition } from "@/lib/mexc-client";
-import { loadJournal, journalStats } from "@/lib/trade-journal";
-import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
-import { loadPaper1h, paper1hStats } from "@/lib/paper-1h";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
+import { loadSwings, swingStats } from "@/lib/swing-4h";
+import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
+import { COINS, ICT_PAPER, f } from "@/lib/telegram-alerts";
+import { coinSnapshot } from "@/lib/snapshot";
 
-const COINS = [
-  "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
-  "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF"
-];
+const HELP =
+  "🤖 *Bot báo 3 kèo đã kiểm chứng* (bạn tự vào lệnh, phí 0):\n" +
+  "• 🎯 ICT quét đỉnh hôm qua → SHORT 1H\n• 📌 Limit dưới đáy 1H → LONG\n• 📊 Hai đỉnh/đáy 4H, không TP, bot nhắc dời SL\n" +
+  "Tin: `TP1` = chốt 50% rồi dời SL về giá vào; `x` = đòn bẩy gợi ý (≤ 10).\n\n" +
+  "Lệnh: `thống kê` · tên coin (vd `SOL`) · `theo dõi SUI 1.041 1.029 1.085 btc 82750` · `bỏ theo dõi`";
 
-const CAPITAL = Number(process.env.ALERT_CAPITAL ?? 40);
-
-function f(v: number) {
-  return v.toLocaleString("vi-VN", { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
-}
-
-function next4hTime(now = Date.now()) {
-  const vn = new Date(now + 7 * 3_600_000);
-  const h = vn.getUTCHours(), next = (Math.floor(h / 4) + 1) * 4;
-  const target = new Date(vn);
-  target.setUTCHours(next % 24, 0, 0, 0);
-  if (next >= 24) target.setUTCDate(target.getUTCDate() + 1);
-  const ms = target.getTime() - vn.getTime();
-  const m = Math.floor(ms / 60_000);
-  return `${String(target.getUTCHours()).padStart(2, "0")}:00 (còn ~${Math.floor(m / 60)}h${m % 60}p)`;
-}
-
-const dailyCache = new Map<string, { trend: 1 | -1 | 0; exp: number }>();
-
-async function getDailyTrend(coin: string): Promise<1 | -1 | 0> {
-  const now = Date.now();
-  const cached = dailyCache.get(coin);
-  if (cached && cached.exp > now) return cached.trend;
-  try {
-    const d = (await candles(`${coin}-USDT-SWAP`, "1Dutc", 300)).filter((c) => c.closed);
-    if (d.length < 60) return 0;
-    let ema = d[0].c;
-    for (const c of d) ema += (2 / 51) * (c.c - ema);
-    const trend: 1 | -1 | 0 = d.at(-1)!.c > ema ? 1 : -1;
-    dailyCache.set(coin, { trend, exp: now + 30 * 60_000 });
-    return trend;
-  } catch {
-    return 0;
-  }
-}
-
-async function analyzeCoin(coin: string): Promise<string> {
-  try {
-    const [c4, c1, btcDaily, ownDaily, t] = await Promise.all([
-      candles(`${coin}-USDT-SWAP`, "4H", 120),
-      candles(`${coin}-USDT-SWAP`, "1H", 60),
-      getDailyTrend("BTC"),
-      getDailyTrend(coin),
-      ticker(`${coin}-USDT-SWAP`).catch(() => null),
-    ]);
-
-    const livePrice = t?.last ?? c4.at(-1)?.c ?? 0;
-    const a4 = analyse(c4);
-    const a1 = analyse(c1);
-
-    // 1. Check 4H setups
-    const paper = paperSummary(CAPITAL);
-    const accepted4h = a4.setups
-      .map((setup) => ({
-        setup,
-        decision: evaluateSetup(setup, {
-          coin,
-          timeframe: "4H",
-          btcDaily,
-          ownDaily,
-          equity: paper.equity,
-          peakEquity: paper.peakEquity,
-          lastBarTime: a4.lastBarTime,
-          livePrice,
-        }),
-      }))
-      .find((item) => item.decision.accepted && item.decision.plan);
-
-    // 2. Check 1H setups
-    const accepted1h = a1.setups
-      .map((setup) => ({
-        setup,
-        decision: evaluateSetup(setup, {
-          coin,
-          timeframe: "1H",
-          btcDaily,
-          ownDaily,
-          equity: paper.equity,
-          peakEquity: paper.peakEquity,
-          lastBarTime: a1.lastBarTime,
-          livePrice,
-        }),
-      }))
-      .find((item) => item.decision.accepted && item.decision.plan);
-
-    if (accepted4h?.decision.plan) {
-      const s = accepted4h.setup;
-      const decisionPlan = accepted4h.decision.plan;
-      const riskPct = Math.abs(s.entry - s.stop) / s.entry;
-      const sizing = decisionPlan.sizing;
-      const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-      const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-      const reason = formatEntryReason({
-        style: s.style,
-        side: s.side,
-        timeframe: "4H",
-        btcDaily,
-        ownDaily,
-        volumeRatio: s.volumeRatio,
-      });
-
-      return (
-        `🎯 *[TÍN HIỆU 4H]* ${sideStr} *${coin}*\n` +
-        `• *Điểm vào:* \`${f(s.entry)}\`\n` +
-        `• *Cắt lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n` +
-        `• *Chốt lời (TP):* TP1 \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$) | TP2 \`${f(decisionPlan.tp2)}\` (+${pnl.totalWin.toFixed(2)}$)\n` +
-        `• *Sao vô:* ${reason}\n` +
-        `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
-      );
-    } else if (accepted1h?.decision.plan) {
-      const s = accepted1h.setup;
-      const decisionPlan = accepted1h.decision.plan;
-      const riskPct = Math.abs(s.entry - s.stop) / s.entry;
-      const sizing = decisionPlan.sizing;
-      const pnl = calculatePartialPnL(sizing.actualRiskUsd);
-      const sideStr = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-      const reason1h = formatEntryReason({
-        style: s.style,
-        side: s.side,
-        timeframe: "1H",
-        btcDaily,
-        ownDaily,
-        volumeRatio: s.volumeRatio,
-      });
-
-      return (
-        `⚡ *[LƯỚT SÓNG 1H]* ${sideStr} *${coin}*\n` +
-        `• *Điểm vào:* \`${f(s.entry)}\`\n` +
-        `• *Cắt lỗ (SL):* \`${f(s.stop)}\` (-${(riskPct * 100).toFixed(2)}%)\n` +
-        `• *Chốt lời (TP):* TP1 \`${f(decisionPlan.tp1)}\` (+${pnl.winTp1.toFixed(2)}$) | TP2 \`${f(decisionPlan.tp2)}\` (+${pnl.totalWin.toFixed(2)}$)\n` +
-        `• *Sao vô:* ${reason1h}\n` +
-        `• *Ký quỹ:* ~${sizing.margin}$ (x${sizing.leverage} Isolated) · *Rủi ro 1R:* ${sizing.actualRiskUsd}$`
-      );
-    } else {
-      const btcTrendStr = btcDaily > 0 ? "TĂNG ↗" : btcDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
-      const ownTrendStr = ownDaily > 0 ? "TĂNG ↗" : ownDaily < 0 ? "GIẢM ↘" : "CHƯA RÕ";
-      return (
-        `⚪ *[${coin}] Chưa có điểm vào* (Giá live: \`${f(livePrice)}\`)\n` +
-        `• *Xu hướng:* Ngày ${ownTrendStr} · BTC Ngày ${btcTrendStr}\n` +
-        `• *Trạng thái:* Chưa có cấu trúc nến hợp lệ đạt chuẩn an toàn. Đứng ngoài bảo toàn vốn.`
-      );
-    }
-  } catch (e) {
-    console.error("analyzeCoin error", e);
-    return `❌ Không thể lấy dữ liệu phân tích ${coin} lúc này. Vui lòng thử lại sau giây lát!`;
-  }
-}
-
-async function scanWatchlist(): Promise<string> {
-  const btcDaily = await getDailyTrend("BTC");
-  const cand4h: string[] = [];
-  const paper = paperSummary(CAPITAL);
-  for (const c of COINS) {
-    try {
-      const ownDaily = await getDailyTrend(c);
-      const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
-      const a4 = analyse(c4);
-      for (const s of a4.setups) {
-        const decision = evaluateSetup(s, { coin: c, timeframe: "4H", btcDaily, ownDaily, equity: paper.equity, peakEquity: paper.peakEquity, lastBarTime: a4.lastBarTime });
-        if (!decision.accepted) continue;
-        const side = s.side > 0 ? "🟢 LONG" : "🔴 SHORT";
-        const volText = s.volumeRatio ? ` (Vol x${s.volumeRatio.toFixed(1)})` : "";
-        cand4h.push(`• *${c}* ${side} (${s.style.toUpperCase()}${volText}) ~${f(s.entry)}`);
-      }
-    } catch {}
-  }
-
-  const btcText = btcDaily > 0 ? "TĂNG ↗ (ưu tiên LONG)" : btcDaily < 0 ? "GIẢM ↘ (ưu tiên SHORT)" : "CHƯA RÕ";
-  let text = `📡 *QUÉT THỊ TRƯỜNG 21 COIN (4H)*\n`;
-  text += `• *Bối cảnh BTC Ngày:* ${btcText}\n`;
-  text += `• *Đóng nến 4H kế:* ${next4hTime()}\n\n`;
-
-  if (cand4h.length > 0) {
-    text += `📌 *Setup 4H đạt chuẩn:*\n${cand4h.join("\n")}\n\n`;
-  } else {
-    text += `⚪ *Hiện tại:* Chưa có coin nào xuất hiện điểm vào 4H đạt chuẩn. Đứng ngoài an toàn.`;
-  }
-
-  return text;
-}
-
-async function scanKeyLevels(): Promise<string> {
-  const nearHigh: string[] = [];
-  const nearLow: string[] = [];
-
-  for (const c of COINS) {
-    try {
-      const c4 = await candles(`${c}-USDT-SWAP`, "4H", 60);
-      const { highs, lows } = swings(c4);
-      if (!highs.length || !lows.length) continue;
-      const lastHigh = c4[highs.at(-1)!].h;
-      const lastLow = c4[lows.at(-1)!].l;
-      const lastPrice = c4.at(-1)!.c;
-
-      const distHighPct = (lastHigh - lastPrice) / lastPrice;
-      const distLowPct = (lastPrice - lastLow) / lastPrice;
-
-      if (distHighPct >= -0.005 && distHighPct <= 0.02) {
-        const pct = (Math.abs(distHighPct) * 100).toFixed(2);
-        nearHigh.push(`• *${c}* (\`${f(lastPrice)}\` ➔ Đỉnh \`${f(lastHigh)}\`, cách *${pct}%*)`);
-      }
-
-      if (distLowPct >= -0.005 && distLowPct <= 0.02) {
-        const pct = (Math.abs(distLowPct) * 100).toFixed(2);
-        nearLow.push(`• *${c}* (\`${f(lastPrice)}\` ➔ Đáy \`${f(lastLow)}\`, cách *${pct}%*)`);
-      }
-    } catch {}
-  }
-
-  let text = `🧭 *RADAR CANH ĐỈNH / ĐÁY (4H)*\n\n`;
-
-  if (nearHigh.length > 0) {
-    text += `🏔️ *GẦN ĐỈNH CŨ:*\n${nearHigh.join("\n")}\n\n`;
-  } else {
-    text += `🏔️ *Đỉnh cũ:* Không có coin nào cách <= 2%.\n\n`;
-  }
-
-  if (nearLow.length > 0) {
-    text += `🏖️ *GẦN ĐÁY CŨ:*\n${nearLow.join("\n")}\n`;
-  } else {
-    text += `🏖️ *Đáy cũ:* Không có coin nào cách <= 2%.\n`;
-  }
-
-  return text;
-}
-
-async function sendTelegramReply(token: string, chatId: number | string, text: string) {
+async function reply(token: string, chatId: number | string, text: string) {
   try {
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "Markdown",
-        disable_web_page_preview: true,
-        reply_markup: {
-          keyboard: [
-            [{ text: "🏦 Vốn & Lệnh" }, { text: "📊 Thống Kê" }]
-          ],
-          resize_keyboard: true,
-          is_persistent: true,
-        },
+        chat_id: chatId, text, parse_mode: "Markdown", disable_web_page_preview: true,
+        reply_markup: { keyboard: [[{ text: "📊 Thống kê" }, { text: "❓ Hướng dẫn" }]], resize_keyboard: true, is_persistent: true },
       }),
     });
   } catch (e) {
-    console.error("sendTelegramReply error", e);
+    console.error("reply error", e);
   }
+}
+
+function stats(): string {
+  const line = (name: string, s: { n: number; wins: number; avgR: number; sumR: number }, open: string) =>
+    `${name}: ${s.n} lệnh đóng · thắng ${s.n ? Math.round((s.wins / s.n) * 100) : 0}% · TB ${s.avgR >= 0 ? "+" : ""}${s.avgR.toFixed(2)}R · tổng ${(s.sumR * 2.5).toFixed(0)}$ (2.5$/lệnh) · ${open}`;
+  const lim = limitStats(loadLimits()), ict = limitStats(loadLimits(ICT_PAPER)), sw = swingStats(loadSwings());
+  return "📊 *Sổ paper* (so với backtest 2025–26)\n" +
+    line("🎯 ICT", ict, `${ict.pending} chờ, ${ict.open} mở`) + "\n   backtest +0.42R/lệnh\n" +
+    line("📌 Limit", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
+    line("📊 4H", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh";
+}
+
+async function coinStatus(coin: string): Promise<string> {
+  const s = await coinSnapshot(coin);
+  const lines = [`*${coin}* ${s.price ? f(s.price) : ""} · xu hướng ngày ${s.daily > 0 ? "TĂNG ↗" : s.daily < 0 ? "GIẢM ↘" : "?"}`];
+  if (s.ict) lines.push(`🎯 ICT ${s.ict.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.ict.limit)} · SL ${f(s.ict.stop)} · TP ${f(s.ict.tp)}`);
+  if (s.limit) lines.push(`📌 ${s.limit.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.limit.limit)} · SL ${f(s.limit.stop)} · TP ${f(s.limit.tp)}`);
+  if (s.swing) lines.push(`📊 4H ${s.swing.side > 0 ? "LONG" : "SHORT"} đang mở · vào ${f(s.swing.entry)} · SL hiện tại ${f(s.swing.stop)}`);
+  for (const p of s.pending4h) {
+    lines.push(`📊 4H ${p.side > 0 ? "hai đáy" : "hai đỉnh"} chờ đóng nến ${p.side > 0 ? "trên" : "dưới"} ${f(p.trigger)} (cách ${(Math.abs(p.distancePct) * 100).toFixed(1)}%) · SL ${f(p.stop)}`);
+  }
+  if (lines.length === 1) lines.push("Chưa có kèo nào.");
+  return lines.join("\n");
 }
 
 export async function POST(req: NextRequest) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    return NextResponse.json({ ok: false, error: "Missing bot token" }, { status: 500 });
-  }
-
+  if (!token) return NextResponse.json({ ok: false, error: "Missing bot token" }, { status: 500 });
   try {
-    const update = await req.json();
-    const message = update?.message;
-    if (!message || !message.text) {
-      return NextResponse.json({ ok: true });
-    }
-
+    const message = (await req.json())?.message;
+    if (!message?.text) return NextResponse.json({ ok: true });
     const chatId = message.chat.id;
-    const rawText = message.text.trim();
-    const lower = rawText.toLowerCase();
+    const lower = String(message.text).trim().toLowerCase();
 
-    // Verify authorized user
-    const allowedChatId = process.env.TELEGRAM_CHAT_ID;
-    if (allowedChatId && String(chatId) !== String(allowedChatId)) {
-      await sendTelegramReply(token, chatId, "⛔ Xin lỗi, đây là bot giao dịch riêng tư của Victor.");
+    const allowed = process.env.TELEGRAM_CHAT_ID;
+    if (allowed && String(chatId) !== String(allowed)) {
+      await reply(token, chatId, "⛔ Bot riêng tư.");
       return NextResponse.json({ ok: true });
     }
 
-    // 0. Theo dõi giá: "theo dõi SUI 1.041 1.029 1.085 btc 82750" / "theo dõi" (xem) / "bỏ theo dõi"
+    let text: string;
     if (lower.includes("theo dõi") || lower.includes("theo doi")) {
-      let reply: string;
       if (lower.startsWith("bỏ") || lower.startsWith("bo ")) {
         saveWatches([]);
-        reply = "🗑 Đã xoá hết danh sách theo dõi.";
+        text = "🗑 Đã xoá hết danh sách theo dõi.";
       } else {
-        const w = parseWatch(lower, COINS);
-        const ws = loadWatches();
+        const w = parseWatch(lower, COINS), ws = loadWatches();
         if (w) {
           saveWatches([...ws.filter((x) => x.coin !== w.coin), w]);
-          reply = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (SL ${w.stop}, TP ${w.tp})` +
+          text = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (SL ${w.stop}, TP ${w.tp})` +
             `${w.btcCancel ? `, huỷ nếu BTC ${w.side > 0 ? "<" : ">"} ${w.btcCancel}` : ""}. Hết hạn 23:59 hôm nay.`;
         } else if (ws.length) {
-          reply = `👁 *Đang theo dõi:*\n` + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · SL ${x.stop} · TP ${x.tp}${x.btcCancel ? ` · huỷ BTC ${x.btcCancel}` : ""}`).join("\n");
+          text = "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · SL ${x.stop} · TP ${x.tp}`).join("\n");
         } else {
-          reply = "Cú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750` (coin, giá vào, SL, TP, tuỳ chọn mức BTC huỷ). `bỏ theo dõi` để xoá.";
+          text = "Cú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750` (coin, giá vào, SL, TP, tuỳ chọn mức BTC huỷ).";
         }
       }
-      await sendTelegramReply(token, chatId, reply);
-      return NextResponse.json({ ok: true });
+    } else if (lower.includes("thống kê") || lower.includes("thong ke")) {
+      text = stats();
+    } else {
+      const coin = COINS.find((c) => new RegExp(`(^|\\b|/)${c.toLowerCase()}(\\b|$)`).test(lower));
+      text = coin ? await coinStatus(coin) : HELP;
     }
-
-    // 1. Help or Start
-    if (lower === "/start" || lower === "/help" || lower === "help" || lower === "giúp" || lower === "lenh" || lower.includes("hướng dẫn")) {
-      let welcome = `👋 *Chào Victor! Tôi là trợ lý AI Trading MEXC của bạn.*\n\n`;
-      welcome += `Hệ thống đang hoạt động ở chế độ *Tự động vào lệnh 24/7* theo Chuẩn Kim Cương:\n\n`;
-      welcome += `• [ 🏦 Vốn & Lệnh ]: số dư MEXC, lệnh đang mở\n`;
-      welcome += `• [ 📊 Thống Kê ]: lệnh thật đã đóng so với backtest\n`;
-      welcome += `• Gõ tay khi cần: \`kèo\` (setup 4H), \`canh\` (sát đỉnh/đáy), tên coin (vd \`SOL\`)\n`;
-      welcome += `• Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`) để xem phân tích chi tiết SL/TP.`;
-      await sendTelegramReply(token, chatId, welcome);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 2. Proximity Radar (Canh đỉnh cũ / đáy cũ)
-    if (
-      lower.includes("canh") ||
-      lower.includes("đỉnh") ||
-      lower.includes("dinh") ||
-      lower.includes("đáy") ||
-      lower.includes("day") ||
-      lower === "/canh" ||
-      lower === "/radar"
-    ) {
-      const radarRes = await scanKeyLevels();
-      await sendTelegramReply(token, chatId, radarRes);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 3. Scan market
-    if (
-      lower.includes("kèo") ||
-      lower.includes("keo") ||
-      lower.includes("quét") ||
-      lower.includes("quet") ||
-      lower.includes("thị trường") ||
-      lower.includes("thi truong") ||
-      lower.includes("top") ||
-      lower.includes("lọc") ||
-      lower.includes("loc") ||
-      lower === "/scan"
-    ) {
-      const scanRes = await scanWatchlist();
-      await sendTelegramReply(token, chatId, scanRes);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 3. Capital & Discipline rule & Capital Tiers
-    if (
-      lower.includes("vốn") ||
-      lower.includes("von") ||
-      lower.includes("tier") ||
-      lower.includes("sodu") ||
-      lower.includes("số dư") ||
-      lower.includes("luật") ||
-      lower.includes("luat") ||
-      lower.includes("kỷ luật")
-    ) {
-      const [asset, positions] = await Promise.all([
-        getMexcAccountAsset(CAPITAL),
-        getMexcOpenPositions().catch(() => [] as MexcPosition[]),
-      ]);
-      const activePositions = positions.filter((p) => p.holdVol > 0);
-      const tier = getCapitalTier(asset.equity);
-      let rule = `🏦 *TÀI KHOẢN & VỊ THẾ MEXC*\n\n`;
-      rule += `• *Số dư ví:* \`${asset.equity.toFixed(2)} USDT\` ${asset.isMock ? "_(Paper)_" : "_(MEXC Live)_"}\n`;
-      rule += `• *Khả dụng:* \`${asset.availableBalance.toFixed(2)} USDT\`\n`;
-      rule += `• *Cấp bậc:* *${tier.name}* (Risk 1R: \`${tier.riskPerTradeUsd}$\`)\n\n`;
-
-      if (activePositions.length > 0) {
-        rule += `📍 *VỊ THẾ ĐANG NẮM GIỮ (${activePositions.length}):*\n`;
-        for (const p of activePositions) {
-          const coinName = p.symbol.replace("_USDT", "");
-          const sideStr = p.positionType === 1 ? "🟢 LONG" : "🔴 SHORT";
-          rule += `• *${coinName}* ${sideStr}: \`${p.holdVol} HĐ\` · Entry: \`${p.openAvgPrice ? f(p.openAvgPrice) : "N/A"}\`\n`;
-        }
-      } else {
-        rule += `📍 *Vị thế đang mở:* Không có lệnh nào đang giữ (Ví trống).\n`;
-      }
-
-      rule += `\n💡 _Tự động vào lệnh 24/7 khi đạt Chuẩn Kim Cương (Vol ≥ 2.0x)._`;
-      await sendTelegramReply(token, chatId, rule);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 4. Backtest Statistics & Track Record across years
-    if (
-      lower.includes("backtest") ||
-      lower.includes("thống kê") ||
-      lower.includes("thong ke") ||
-      lower.includes("hiệu quả") ||
-      lower.includes("hieu qua") ||
-      lower.includes("lời") ||
-      lower.includes("loi") ||
-      lower === "/backtest"
-    ) {
-      const js = journalStats(loadJournal());
-      let bt = `📊 *LỆNH THẬT MEXC (bot tự vào)*\n`;
-      bt += js.n
-        ? `• ${js.n} lệnh đã đóng, thắng ${js.wins} (${((js.wins / js.n) * 100).toFixed(0)}%), đang mở ${js.open}\n` +
-          `• *Ròng sau phí:* ${js.pnlUsd >= 0 ? "+" : ""}${js.pnlUsd.toFixed(2)}$ | TB *${js.avgR >= 0 ? "+" : ""}${js.avgR.toFixed(2)}R/lệnh*\n` +
-          `• Tốt nhất ${js.bestR.toFixed(2)}R, tệ nhất ${js.worstR.toFixed(2)}R\n`
-        : `• Chưa có lệnh nào đóng${js.open ? ` (đang mở ${js.open})` : ""}\n`;
-      bt += `_So sánh có ý nghĩa sau ~30 lệnh._\n\n`;
-
-      const ps = paper1hStats(loadPaper1h());
-      bt += `🧪 *PAPER TỰ ĐỘNG 1H (tiền giả, trailing 3 ATR)*\n`;
-      bt += ps.n
-        ? `• ${ps.n} lệnh đã đóng, thắng ${ps.wins} (${((ps.wins / ps.n) * 100).toFixed(0)}%), đang mở ${ps.open}\n` +
-          `• TB *${ps.avgR >= 0 ? "+" : ""}${ps.avgR.toFixed(2)}R/lệnh* (tổng ${ps.sumR >= 0 ? "+" : ""}${ps.sumR.toFixed(1)}R, sau phí)\n`
-        : `• Chưa có lệnh nào đóng${ps.open ? ` (đang mở ${ps.open})` : ""}\n`;
-      bt += `_Backtest 1H ≈ −0.1R/lệnh. Chỉ bật tiền thật nếu sau 2–4 tuần dương rõ._\n\n`;
-      const ls = limitStats(loadLimits());
-      bt += `📌 *PAPER ĐẶT SẴN LIMIT (bắt râu quét, phí 0%)*\n`;
-      bt += ls.n
-        ? `• ${ls.n} lệnh đã đóng, thắng ${ls.wins} (${((ls.wins / ls.n) * 100).toFixed(0)}%) · TB *${ls.avgR >= 0 ? "+" : ""}${ls.avgR.toFixed(2)}R/lệnh* (tổng ${ls.sumR.toFixed(1)}R) · đang chờ ${ls.pending}, đang mở ${ls.open}\n`
-        : `• Chưa có lệnh nào đóng (đang chờ ${ls.pending}, đang mở ${ls.open})\n`;
-      bt += `_Backtest phí 0%: +0.02R / +0.07R mỗi lệnh (mỏng). Ứng viên bật tiền thật nếu paper khớp._\n\n`;
-      const fs2 = limitStats(loadLimits(path.join(process.cwd(), "data", "paper-fvg.json")));
-      bt += `🎯 *PAPER FVG + QUÉT 15m*\n`;
-      bt += fs2.n
-        ? `• ${fs2.n} lệnh đã đóng, thắng ${fs2.wins} (${((fs2.wins / fs2.n) * 100).toFixed(0)}%) · TB *${fs2.avgR >= 0 ? "+" : ""}${fs2.avgR.toFixed(2)}R/lệnh* (tổng ${fs2.sumR.toFixed(1)}R) · đang mở ${fs2.open}\n`
-        : `• Chưa có lệnh nào đóng (đang mở ${fs2.open})\n`;
-      bt += `_Backtest phí 0%: 2025 +0.09R, 2026 +0.27R. Thắng ~20%._\n\n`;
-      const po = paper1hStats(loadPaper1h(path.join(process.cwd(), "data", "paper-overview.json")));
-      bt += `🧭 *PAPER TOÀN CẢNH (kèo ⭐ ≥ 4/5 lớp)*\n`;
-      bt += po.n
-        ? `• ${po.n} lệnh đã đóng, thắng ${po.wins} (${((po.wins / po.n) * 100).toFixed(0)}%), đang mở ${po.open} · TB *${po.avgR >= 0 ? "+" : ""}${po.avgR.toFixed(2)}R/lệnh*\n\n`
-        : `• Chưa có lệnh nào đóng${po.open ? ` (đang mở ${po.open})` : ""}\n\n`;
-
-      bt += `🧪 *BACKTEST LUẬT ĐANG CHẠY (21 coin, phí 0.08%/chiều + trượt)*\n`;
-      bt += `Hai đỉnh/đáy 4H, thuận coin + BTC ngày, vol ≥ 2x, SL trailing 3 ATR:\n`;
-      bt += `• 2023–24: 69 lệnh, thắng 33%, *+0.22R/lệnh*\n`;
-      bt += `• 2025–26: 63 lệnh, thắng 43%, *+0.54R/lệnh*\n`;
-      bt += `• Đúng luật live (SL 1.5–6%, trôi giá ≤ 0.25%), 2025–nay: 29 lệnh, thắng 48%, *+1.1R/lệnh*, chuỗi thua dài nhất 7\n`;
-      bt += `• Đối chứng vào ngẫu nhiên cùng cách thoát: −0.28R / −0.14R\n\n`;
-      bt += `📄 *Chỉ chạy paper:* BOS 4H, Donchian 1D, pinbar, mọi kèo ngược trend (backtest âm hoặc ≈ 0).`;
-
-      await sendTelegramReply(token, chatId, bt);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 4. Check if a coin symbol is mentioned
-    const matchedCoin = COINS.find((c) => {
-      const regex = new RegExp(`(^|\\b|/)${c.toLowerCase()}(\\b|$)`, "i");
-      return regex.test(lower);
-    });
-
-    if (matchedCoin) {
-      const coinRes = await analyzeCoin(matchedCoin);
-      await sendTelegramReply(token, chatId, coinRes);
-      return NextResponse.json({ ok: true });
-    }
-
-    // 5. General AI fallback / conversation
-    let reply = `🤖 *Nhận được:* "${rawText}"\n\n`;
-    reply += `• Xem kèo 4H: Nhắn \`kèo\` hoặc bấm [ 🔍 Kèo 4H ]\n`;
-    reply += `• Xem tài khoản: Nhắn \`vốn\` hoặc bấm [ 🏦 Xem Vốn & Lệnh ]\n`;
-    reply += `• Soi coin: Nhắn tên coin (ví dụ: \`BTC\`, \`SOL\`, \`DOGE\`...)`;
-
-    await sendTelegramReply(token, chatId, reply);
+    await reply(token, chatId, text);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Webhook processing error", err);
+    console.error("Webhook error", err);
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });
   }
 }
@@ -483,4 +99,3 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({ ok: true, message: "Telegram webhook endpoint is active." });
 }
-
