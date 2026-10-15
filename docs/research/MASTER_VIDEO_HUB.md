@@ -17,6 +17,7 @@
 
 | Ưu tiên | Trạng thái | Nền tảng | Kênh | Tiêu đề bài học | Thời lượng | Tóm tắt quy tắc đo lường | Link xem |
 |:---:|---|:---:|:---:|---|:---:|---|:---:|
+| **#1 (MỚI)** | 🔴 ƯU TIÊN 1 (Xem ngay) | TikTok | **Yin tập trade** | [Cách nhận biết giá sideway đang tạo đáy hay phân phối (Mô hình chữ b)](#new-item-7694660547685551380) | 1:15 | Volume Profile hình chữ b ở đáy: Trạm dừng phân phối của Phe Bán. Cấm bắt đáy; Chờ thủng đáy + retest từ chối để SHORT | [Xem video](https://www.tiktok.com/@yin.tp.trade/video/7694660547685551380) |
 | **#1 (MỚI)** | 🔴 ƯU TIÊN 1 (Xem ngay) | YouTube | **TradingLab** | [How to Avoid False Breakouts (Avoid The Trap)](#new-item-2yePksvT64I) | 8:00 | Cách phân biệt Fakeout vs Breakout, Setup Hội tụ kép + Fibonacci Golden Zone (0.618 - 0.79) | [Xem video](https://www.youtube.com/watch?v=2yePksvT64I) |
 | **#1 (MỚI)** | 🔴 ƯU TIÊN 1 (Xem ngay) | YouTube | **TradingLab** | [You're Using Liquidity Wrong](#new-item-RKU7D9PxLgY) | 7:50 | Phân biệt Inducement (Bẫy mồi nhử) vs Extreme Order Block. Setup R:R 1:5 với FVG & Quét thanh khoản | [Xem video](https://www.youtube.com/watch?v=RKU7D9PxLgY) |
 | **#1 (MỚI)** | 🔴 ƯU TIÊN 1 (Xem ngay) | YouTube | **Wysetrade** | [ULTIMATE Supertrend Indicator Trading Strategy (FREE FU...](#new-item-As6Sr3OzhzE) | 17:02 | 🔴 MOOMOO: https://start.moomoo.com/0tTuWg ► Get up to $1000 ... | [Xem video](https://www.youtube.com/watch?v=As6Sr3OzhzE) |
@@ -65,6 +66,56 @@
 ---
 
 ## 📖 CHI TIẾT LỜI THOẠI & QUY TẮC CỦA TỪNG VIDEO (THEO THỨ TỰ ƯU TIÊN)
+
+
+<a id='new-item-7694660547685551380'></a>
+### #1 (MỚI THÊM). [TikTok] Cách nhận biết giá sideway đang tạo đáy hay phân phối. #trading #trad...
+
+- **Mức độ ưu tiên:** `🔴 ƯU TIÊN 1 (Mới thêm - Xem ngay)`
+- **Kênh:** **Yin tập trade** | **Nền tảng:** TikTok | **Thời lượng:** 1:15 | **Ngày thêm:** 2026-10-15
+- **Link gốc:** [https://www.tiktok.com/@yin.tp.trade/video/7694660547685551380](https://www.tiktok.com/@yin.tp.trade/video/7694660547685551380)
+
+#### 1. Tóm tắt cốt lõi & Quy tắc đo lường (Quantifiable Rules)
+> **Chủ đề:** Nhận biết Sideway ở đáy: Tạo đáy thật hay Trạm dừng phân phối tiếp diễn giảm (Mô hình Volume Profile hình chữ b).
+> 
+> **Bản chất kỹ thuật (Volume Profile):**
+> - Sau một đà giảm mạnh, giá bắt đầu đi ngang (sideway) ở đáy. Cột dọc giá giảm + Bụng ngang tích tụ khối lượng tạo thành hình **chữ "b" thường (lowercase b)**.
+> - Bụng phình = Vùng sideway có khối lượng dồn lại rất lớn (POC / High Volume Node).
+> - **Sai lầm phổ biến:** Đám đông vội vã bắt đáy trong vùng sideway khiến họ bị mắc kẹt. Thực chất đây là **TRẠM DỪNG (Pause)** của xu hướng giảm, **PHE BÁN VẪN ĐANG NẮM QUYỀN KIỂM SOÁT**.
+>
+> **3 Quy tắc giao dịch thực chiến:**
+> 1. **Quy tắc 1 (Cấm chỉ định):** `ĐỪNG BẮT ĐÁY TRONG VÙNG SIDEWAY`. Tuyệt đối không Long khi giá chưa xác nhận đảo chiều và còn nằm kẹt trong bụng chữ b.
+> 2. **Quy tắc 2 (Setup Vào lệnh SHORT):** `THỦNG ĐÁY · HỒI LÊN BỊ TỪ CHỐI = BÁN (SHORT)`. Chờ giá breakdown thủng cạnh đáy của vùng sideway chữ b, quay lại retest đáy vùng (flip thành kháng cự) và có nến từ chối (rejection wick/bearish pinbar) -> Kích hoạt lệnh BÁN (Short thuận xu hướng).
+> 3. **Quy tắc 3 (Quản trị vốn & Thoát):** `SL TRÊN ĐỈNH VÙNG · PHÁ LÊN = ĐỨNG NGOÀI`. Stop Loss đặt an toàn phía trên đỉnh của vùng sideway chữ b. Nếu giá phá vỡ lên trên đỉnh vùng -> Không FOMO mua đuổi, ĐỨNG NGOÀI bảo toàn vốn chờ cấu trúc mới.
+
+#### 2. Toàn bộ nội dung trực quan & Lời thuyết minh từ Video (Visual & Slide Transcript)
+<details open>
+<summary><b>👉 Xem toàn bộ nội dung từng phân cảnh (Slides Transcript)...</b></summary>
+
+- **Phân cảnh 1 (00:00 - 00:10) [MỞ ĐẦU]:**
+  - Tiêu đề: *SIDEWAY Ở ĐÁY · HÌNH CHỮ b*
+  - Nội dung: Phe bán đẩy giá xuống, sideway ở đáy hình chữ b khiến nhiều người bắt đáy mắc kẹt.
+- **Phân cảnh 2 (00:10 - 00:25) [HAI LOẠI SIDEWAY]:**
+  - Khi giá rơi mạnh và sideway ở đáy, chỉ có 2 kịch bản:
+    - *Loại 1:* Đáy thật ➔ Đảo chiều tăng ↗
+    - *Loại 2:* Nghỉ lấy hơi (Trạm dừng) ➔ Giảm tiếp ↘
+  - Câu hỏi đặt ra: Phe nào đang thực sự nắm quyền?
+- **Phân cảnh 3 (00:25 - 00:40) [VOLUME PROFILE]:**
+  - Khi bật Volume Profile, toàn bộ cấu trúc tạo thành hình **chữ b**:
+    - Cột dọc: Thân nến giảm dốc.
+    - Bụng phình: Vùng sideway tích tụ khối lượng giao dịch dồn lại rất lớn.
+- **Phân cảnh 4 (00:40 - 00:55) [PHE BÁN VẪN CÒN]:**
+  - Đừng ngộ nhận đây là Tạo đáy ❌. Đó là **TRẠM DỪNG** trên đường đi xuống ✔.
+  - Phe nắm quyền: **PHE BÁN**.
+- **Phân cảnh 5 (00:55 - 01:15) [CHIẾN LƯỢC GIAO DỊCH]:**
+  - Hành động: **CHỜ TÍN HIỆU (KIÊN NHẪN CHỜ ĐỢI)**.
+  - `1.` ĐỪNG BẮT ĐÁY TRONG VÙNG SIDEWAY.
+  - `2.` THỦNG ĐÁY · HỒI LÊN BỊ TỪ CHỐI = BÁN (SHORT).
+  - `3.` SL TRÊN ĐỈNH VÙNG · NẾU PHÁ LÊN = ĐỨNG NGOÀI.
+
+</details>
+
+---
 
 
 <a id='new-item-2yePksvT64I'></a>
