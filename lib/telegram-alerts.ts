@@ -8,7 +8,7 @@ import { analyse, restingLimit, ictSweepShort } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { isSwingSetupOk } from "@/lib/trading-policy";
 import { openSwing, stepSwing } from "@/lib/swing-4h";
-import { addLimit, stepLimits, loadLimits } from "@/lib/resting-limit";
+import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
 import { soSetups, SO_LABEL, highTestSetup, type SoKind } from "@/lib/so-setups";
@@ -46,9 +46,8 @@ function saveSent() {
   }
 }
 
-// Mỗi coin + chiều tối đa 1 tin kèo / 6 giờ (trừ tin thay Limit)
+// Đánh dấu coin + chiều đã báo trong giờ (giữ cho thống kê chống trùng)
 const hourNow = () => Math.floor(Date.now() / H);
-const recentlyAlerted = (coin: string, side: number) => [0, 1, 2, 3, 4, 5].some((h) => sent.has(`ANY:${coin}:${side}:${hourNow() - h}`));
 const markAlerted = (coin: string, side: number) => sent.add(`ANY:${coin}:${side}:${hourNow()}`);
 
 // Xu hướng ngày = giá đóng ngày UTC so với EMA50 (giống backtest)
@@ -144,10 +143,9 @@ export async function scanAndAlert(): Promise<string[]> {
     try {
       const own = await dailyTrend(coin);
 
-      // 📊 4H hai đỉnh/đáy: nhắc dời SL lệnh đang theo dõi, rồi tìm kèo mới
       if (after4h) {
         const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 300);
-        for (const m of stepSwing(coin, bars4h)) await say(m);
+        stepSwing(coin, bars4h); // 📊 chỉ paper im lặng (tắt tin 15/10: 14 ngày gần nhất −2.4$)
         for (const m of stepLimits(coin, bars4h, HIGHTEST_PAPER)) await say(m);
         // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
         for (const g of highTestSetup(bars4h)) {
@@ -166,15 +164,13 @@ export async function scanAndAlert(): Promise<string[]> {
           sent.add(key);
           const entry = live ?? s.entry;
           openSwing(coin, { side: s.side, entry, stop: s.stop, entryTime: a4.lastBarTime + 4 * H });
-          digest.push({ rank: 0, text: planText(s.side, coin, `📊 4H ${s.side > 0 ? "hai đáy" : "hai đỉnh"}`, entry, s.stop) });
-          markAlerted(coin, s.side);
         }
       }
 
       // 1H: 300 nến cho kèo SO Trading; 📌 và 🎯 dùng 100 nến cuối như backtest (ICT cần trọn ngày hôm qua, có khi cả hôm kia)
       const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
       const bars1h = bars300.slice(-100);
-      for (const m of stepLimits(coin, bars1h)) await say(m);
+      stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
       for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
       for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
 
@@ -198,17 +194,12 @@ export async function scanAndAlert(): Promise<string[]> {
         markAlerted(coin, -1);
       }
 
-      // 📌 Limit mua dưới đáy 1H vừa xác nhận (coin tăng ngày); đáy mới thay Limit cũ chưa khớp
+      // 📌 Limit dưới đáy 1H: CHỈ PAPER, không gửi tin (chủ dự án 15/10 bỏ kèo cũ; sổ thật 14–15/10: 14 lệnh, thắng 1, −30$;
+      // chạy lại 14 ngày: 102 lệnh −105$ — chỉ LONG nên dính SL loạt khi thị trường giảm)
       const rl = own > 0 ? restingLimit(bars1h, 1) : null;
-      const rlKey = rl && `RL:${coin}:${rl.barTime}`;
-      const oldRl = rl && loadLimits().find((x) => x.coin === coin && x.status === "pending");
-      if (rl && rlKey && !sent.has(rlKey) && addLimit(coin, rl, undefined, true)) {
-        sent.add(rlKey);
-        // tin thay Limit luôn gửi để chủ tài khoản huỷ lệnh cũ trên sàn
-        if (oldRl || !recentlyAlerted(coin, 1)) {
-          digest.push({ rank: 2, text: planText(1, coin, "📌 Limit", rl.limit, rl.stop, rl.tp, oldRl ? `huỷ Limit cũ ${f(oldRl.limit)}` : "") });
-        }
-        markAlerted(coin, 1);
+      if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
+        sent.add(`RL:${coin}:${rl.barTime}`);
+        addLimit(coin, rl, undefined, true);
       }
     } catch (e) {
       console.error(`[SCAN] ${coin}:`, e);

@@ -11,7 +11,7 @@ quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đ�
 - FVG giảm mới nhất giữa quét và ChoCh (high[j] < low[j−2]) → **Sell Limit giữa FVG**; SL = đỉnh cao nhất từ quét tới ChoCh + 0.1 ATR; TP = đáy hôm qua (PDL); bỏ nếu TP < 1.5R.
 - Báo đúng lúc nến ChoCh vừa đóng. Chiều LONG (quét PDL) ≈ 0, khung 15m lỗ → không dùng.
 
-## 📌 Limit dưới đáy 1H → LONG (`restingLimit`)
+## 📌 Limit dưới đáy 1H → LONG (`restingLimit`) — TẮT TIN 15/10, chỉ paper (14 ngày gần nhất −105$)
 
 - Đáy 1H vừa xác nhận (3 nến đóng sau đáy), coin tăng ngày; bỏ nếu nến tạo đáy volume ≥ 2.5x TB 20 nến trước.
 - Limit = đáy − 0.5 ATR; SL = Limit − 1.5 ATR; TP = đỉnh 1H trước đáy (bỏ nếu < 1R).
@@ -37,7 +37,7 @@ Cấu trúc 4H thuận chiều, nến vừa đóng chạm swing vừa bị phá 
 Chờ khớp 24 nến 1H; nến chạm Limit là khớp ở giá Limit (hoặc giá mở nếu mở vượt); huỷ nếu giá chạm TP trước khi khớp;
 nến khớp mà chạm SL = thua; không tính TP trên nến khớp; tối đa 48 nến; trượt 0.04%.
 
-## 📊 Hai đỉnh/đáy 4H, SL trailing (`isSwingSetupOk` + `lib/swing-4h.ts`)
+## 📊 Hai đỉnh/đáy 4H, SL trailing (`isSwingSetupOk` + `lib/swing-4h.ts`) — TẮT TIN 15/10, chỉ paper
 
 - Nến 4H vừa đóng qua neckline hai đỉnh/đáy (`analyse`), thuận xu hướng ngày **cả coin lẫn BTC**, volume nến ≥ 2x TB20,
   SL 1.5–6%, 2 nến BTC 1H gần nhất không chạy ngược ≥ 0.7%, |funding| ≤ 0.03%, giá chưa trôi > 0.25%.
