@@ -10,6 +10,7 @@
     "test:policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_ict.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_resting_limit.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_swing_4h.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_us_events.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_price_watch.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_so_setups.mjs"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "next": "^16.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

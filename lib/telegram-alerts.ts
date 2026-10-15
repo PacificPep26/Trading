@@ -185,6 +185,9 @@ export async function scanAndAlert(): Promise<string[]> {
     side: number;
     rsScore: number;
     text: string;
+    entry?: number;
+    stop?: number;
+    tp?: number;
   };
   const digest: DigestItem[] = [];
 
@@ -258,6 +261,9 @@ export async function scanAndAlert(): Promise<string[]> {
               coin,
               side: g.side,
               rsScore,
+              entry: g.trigger,
+              stop: g.stop,
+              tp: g.tp,
               text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅"),
             });
           }
@@ -291,6 +297,9 @@ export async function scanAndAlert(): Promise<string[]> {
               coin,
               side: g.side,
               rsScore,
+              entry: g.trigger,
+              stop: g.stop,
+              tp: g.tp,
               text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅"),
             });
           }
@@ -305,6 +314,8 @@ export async function scanAndAlert(): Promise<string[]> {
                   coin,
                   side: st.side,
                   rsScore: 75,
+                  entry: st.entry,
+                  stop: st.stop,
                   text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅"),
                 });
             }
@@ -346,6 +357,9 @@ export async function scanAndAlert(): Promise<string[]> {
               coin,
               side: g.side,
               rsScore: 50,
+              entry: g.limit,
+              stop: g.stop,
+              tp: g.tp,
               text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng"),
             });
           }
@@ -363,6 +377,9 @@ export async function scanAndAlert(): Promise<string[]> {
               coin,
               side: so.side,
               rsScore: 60,
+              entry: so.entry,
+              stop: so.stop,
+              tp: so.tp,
               text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1),
             });
           }
@@ -379,6 +396,9 @@ export async function scanAndAlert(): Promise<string[]> {
                 coin,
                 side: -1,
                 rsScore: 70,
+                entry: ict.limit,
+                stop: ict.stop,
+                tp: ict.tp,
                 text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua"),
               });
               markAlerted(coin, -1);
@@ -424,14 +444,18 @@ export async function scanAndAlert(): Promise<string[]> {
 
       let chartBuf: Buffer | null = null;
       try {
-        const topCoin = finalDigest[0].coin;
-        const tf = finalDigest[0].text.includes("15m") ? "15m" : "1H";
+        const topItem = finalDigest[0];
+        const topCoin = topItem.coin;
+        const tf = topItem.text.includes("15m") ? "15m" : "1H";
         const c = await candles(`${topCoin}-USDT-SWAP`, tf, 45);
         chartBuf = await generateCandleChartPng({
           symbol: `${topCoin}/USDT`,
           timeframe: tf,
           candles: c,
-          statusText: `TÍN HIỆU: ${finalDigest[0].side > 0 ? "LONG ↗" : "SHORT ↘"}`,
+          statusText: `TÍN HIỆU: ${topItem.side > 0 ? "LONG ↗" : "SHORT ↘"}`,
+          entry: topItem.entry,
+          stop: topItem.stop,
+          tp: topItem.tp,
         });
       } catch (e) {
         console.error("[CHART_ERR]", e);
