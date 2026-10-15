@@ -16,7 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary } from "./candle-vision";
+import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary, detectAnticipatingBox } from "./candle-vision";
 
 export { f };
 
@@ -151,7 +151,7 @@ export function planText(
   return `${line1}${line2}${line3}`;
 }
 
-export async function scanAndAlert(): Promise<string[]> {
+export async function scanAndAlert(forceAll = false): Promise<string[]> {
   const out: string[] = [];
   const say = async (m: string) => { out.push(m); await send(m); };
   const now = Date.now();
@@ -186,10 +186,10 @@ export async function scanAndAlert(): Promise<string[]> {
   }
 
   const minute = new Date(now).getUTCMinutes();
-  const after15m = minute % 15 < 3; // nến 15m vừa đóng (trong 3 phút đầu)
-  const after1h = minute < 15; // nến 1H vừa đóng
-  const after4h = after1h && new Date(now).getUTCHours() % 4 === 0; // nến 4H vừa đóng
-  if (!after15m && !after1h) {
+  const after15m = forceAll || minute % 15 < 3; // nến 15m vừa đóng (hoặc lệnh quét chủ động)
+  const after1h = forceAll || minute < 15; // nến 1H vừa đóng
+  const after4h = forceAll || (after1h && new Date(now).getUTCHours() % 4 === 0); // nến 4H vừa đóng
+  if (!after15m && !after1h && !forceAll) {
     saveSent();
     return out;
   }
@@ -253,7 +253,7 @@ export async function scanAndAlert(): Promise<string[]> {
       if (after15m) {
         const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
         stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
-        if (!isHeld && coin !== "BTC") {
+        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
           const ownDaily = await dailyTrend(coin);
           const vision15m = analyzeCandleVision(bars15m);
           const candleSum15m = formatCandleSummary("M15", bars15m, vision15m);
@@ -321,7 +321,7 @@ export async function scanAndAlert(): Promise<string[]> {
         stepLimits(coin, bars4h, HIGHTEST_PAPER); // paper im lặng
         stepSwing(coin, bars4h, ST_PAPER); // paper im lặng
 
-        if (!isHeld && coin !== "BTC") {
+        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
           const own = await dailyTrend(coin);
           const vision4h = analyzeCandleVision(bars4h);
 
@@ -395,7 +395,7 @@ export async function scanAndAlert(): Promise<string[]> {
         stepLimits(coin, bars1h, soPaper("pullback")); // paper im lặng
         stepLimits(coin, bars1h, IDM_PAPER); // paper im lặng
 
-        if (!isHeld && coin !== "BTC") {
+        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
           const own = await dailyTrend(coin);
           const vision1h = analyzeCandleVision(bars1h);
           // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (chỉ chạy paper ngầm, không spam tin Telegram vì cạnh mỏng)
@@ -543,4 +543,42 @@ export async function scanAndAlert(): Promise<string[]> {
   }
   saveSent();
   return out;
+}
+
+/**
+ * Quét các Altcoin đang trong giai đoạn nén hộp hoặc sắp kích hoạt setup (để rình trước)
+ */
+export async function scanAnticipatingAltcoins(): Promise<string> {
+  const btcDaily = await dailyTrend("BTC");
+  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
+  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 300).catch(() => []);
+  const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
+  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
+
+  const results: string[] = [];
+  const altcoins = COINS.filter((c) => c !== "BTC" && c !== "ETH");
+
+  for (const coin of altcoins) {
+    try {
+      const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 60);
+      const ant = detectAnticipatingBox(bars15m);
+      if (ant) {
+        results.push(
+          `• *${coin}* (@${f(ant.currentPrice)}): ${ant.note} (cách đỉnh ${ant.distancePct}%)`
+        );
+      }
+    } catch {}
+  }
+
+  const btcHeader = btcSentinel.sweep
+    ? `🧭 *BTC:* ${btcSentinel.sweep.note} → *CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
+    : `🧭 *BTC:* ${btcSentinel.dailyTrend > 0 ? "Xu hướng TĂNG ↗ (Ưu tiên LONG)" : btcSentinel.dailyTrend < 0 ? "Xu hướng GIẢM ↘ (CẤM LONG, Chỉ SHORT)" : "Đi ngang giằng co"}\n\n`;
+
+  const header = `📦 *ALTCOIN ĐANG NÉN HỘP (RÌNH NỔ BREAKOUT)*\n` + btcHeader;
+
+  if (results.length === 0) {
+    return header + "Hiện các Altcoin đang di chuyển tự do, chưa có coin nào tạo hộp nén tích luỹ hẹp ≤ 4.2% chuẩn Wyckoff. Hệ thống đang tiếp tục rình...";
+  }
+
+  return header + results.join("\n\n") + "\n\n💡 *Cách đánh:* Canh nến 15m nổ Volume đóng vượt đỉnh hộp để vào lệnh theo bot!";
 }

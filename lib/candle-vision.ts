@@ -210,3 +210,49 @@ export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBr
     note: `Tích luỹ nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến xanh Breakout nổ Vol ${volRatio.toFixed(1)}x`,
   };
 }
+
+export type AnticipatingSetup = {
+  coin?: string;
+  kind: "box_squeeze" | "approaching_sr";
+  boxHigh: number;
+  boxLow: number;
+  currentPrice: number;
+  distancePct: number;
+  note: string;
+};
+
+/**
+ * 🔍 QUÉT NẾN SẮP VÀO MÔ HÌNH (RÌNH TRƯỚC BREAKOUT)
+ * Tìm những Altcoin đang nén hộp chặt chẽ (biên <= 4.2%), giá sát trần hộp,
+ * volume cạn kiệt chuẩn bị bùng nổ theo kiểu TIA!
+ */
+export function detectAnticipatingBox(rawCandles: Candle[]): AnticipatingSetup | null {
+  const cs = rawCandles.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 12) return null;
+
+  const boxLength = 8;
+  const box = cs.slice(n - boxLength, n);
+  const boxHigh = Math.max(...box.map((b) => b.h));
+  const boxLow = Math.min(...box.map((b) => b.l));
+  const boxRange = boxHigh - boxLow;
+
+  // Hộp nén hẹp <= 4.2%
+  if (boxRange / boxLow > 0.042) return null;
+
+  const last = cs[n - 1];
+  // Giá đang nằm sát đỉnh hộp trong phạm vi 1.5%
+  const distToHigh = (boxHigh - last.c) / last.c;
+  if (distToHigh >= -0.005 && distToHigh <= 0.015) {
+    return {
+      kind: "box_squeeze",
+      boxHigh,
+      boxLow,
+      currentPrice: last.c,
+      distancePct: +(distToHigh * 100).toFixed(1),
+      note: `Nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), giá sát trần, chờ nến M15 nổ Vol phá ${boxHigh}`,
+    };
+  }
+  return null;
+}
+

@@ -2,22 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
 import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
-import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAPER, f, soPaper, dailyTrend } from "@/lib/telegram-alerts";
-import { ticker } from "@/lib/okx";
+import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAPER, f, soPaper, dailyTrend, scanAndAlert, scanAnticipatingAltcoins } from "@/lib/telegram-alerts";
+import { ticker, candles } from "@/lib/okx";
 import { getMexcOpenPositions } from "@/lib/mexc";
+import { analyseBtcSentinel } from "@/lib/btc-sentinel";
 
 const HELP =
-  "🤖 *Bot báo 6 kèo đã kiểm chứng* (bạn tự vào lệnh tay trên MEXC, phí 0):\n" +
-  "• 🔨 Nến high test 15m TP swing → lệnh chờ phá 45m (Jason Graystone, lãi +1.796$)\n" +
-  "• 🎯 ICT quét đỉnh hôm qua → SHORT 1H (lãi +204$)\n" +
-  "• 🧲 Mồi nhử + FVG, Limit vùng A 1H (TradingLab, lãi +229$)\n" +
-  "• 🔁 Hồi đỉnh cũ 1H → vào khi nến xác nhận đóng (SO Trading, lãi +407$)\n" +
-  "• 🔨 Nến high test 4H → lệnh chờ phá 12h (Jason Graystone, lãi +435$)\n" +
-  "• 📈 Supertrend 4H đổi màu → vào ngay, SL dời theo dải (Wysetrade, lãi +224$)\n\n" +
-  "Quy ước tin:\n" +
-  "• `TP1` = chốt 50% rồi dời SL về hoà vốn; `TP2` = đích sóng\n" +
-  "• `x` = đòn bẩy gợi ý (≤ 10)\n\n" +
-  "Lệnh nhanh: bấm phím bên dưới, gõ `tên coin` (vd `BTC`, `SOL`) hoặc `theo dõi SUI 1.041 1.029 1.085 btc 82750`.";
+  "🤖 *Bot Price Action & Candle Vision (Victor Trading)*\n" +
+  "• Chuyên săn Altcoin phí 0% / rẻ trên sàn MEXC.\n" +
+  "• BTC chỉ làm La bàn dẫn đường — Tuyệt đối không báo lệnh BTC/ETH.\n\n" +
+  "⚡ *Tính năng nhanh:*\n" +
+  "• `⚡ Quét Kèo Vào Lệnh`: Kiểm tra nến vừa đóng xem có Altcoin nào đạt điểm vào ngay.\n" +
+  "• `📦 Nến Sắp Vào Mô Hình`: Rình trước các Altcoin đang nén hộp chuẩn bị bùng nổ.\n" +
+  "• `🧭 La Bàn BTC`: Xem hướng đi và tình trạng đáy/đỉnh BTC.\n" +
+  "• `💼 Vị Thế MEXC`: Xem PNL các lệnh đang chạy trên sàn.\n" +
+  "• `👁 Đang Theo Dõi`: Xem các lệnh chờ rình cản.";
 
 async function reply(token: string, chatId: number | string, text: string) {
   try {
@@ -28,8 +27,8 @@ async function reply(token: string, chatId: number | string, text: string) {
         chat_id: chatId, text, parse_mode: "Markdown", disable_web_page_preview: true,
         reply_markup: {
           keyboard: [
-            [{ text: "💼 Vị thế thật" }, { text: "📊 Thống kê" }, { text: "👁 Đang theo dõi" }],
-            [{ text: "❓ Hướng dẫn" }, { text: "BTC" }, { text: "ETH" }, { text: "SOL" }, { text: "NEAR" }]
+            [{ text: "⚡ Quét Kèo Vào Lệnh" }, { text: "📦 Nến Sắp Vào Mô Hình" }],
+            [{ text: "🧭 La Bàn BTC" }, { text: "💼 Vị Thế MEXC" }, { text: "👁 Đang Theo Dõi" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -134,11 +133,44 @@ export async function POST(req: NextRequest) {
 
     let text: string;
     if (
-      lower === "💼 vị thế thật" ||
-      lower === "vị thế thật" ||
-      lower === "vi the that" ||
-      lower === "vị thế" ||
-      lower === "vi the" ||
+      lower.includes("quét kèo") ||
+      lower.includes("quet keo") ||
+      lower === "⚡ quét kèo vào lệnh" ||
+      lower === "/scan" ||
+      lower === "kèo" ||
+      lower === "keo"
+    ) {
+      const msgs = await scanAndAlert(true);
+      text = msgs.length > 0
+        ? msgs.join("\n\n")
+        : "⚡ *QUÉT KÈO HIỆN TẠI:*\nChưa có Altcoin nào vừa đóng nến đạt chuẩn điểm vào lệnh (R:R ≥ 1:1.5). Hệ thống tiếp tục quét tự động mỗi 15 phút!";
+    } else if (
+      lower.includes("mô hình") ||
+      lower.includes("mo hinh") ||
+      lower === "📦 nến sắp vào mô hình" ||
+      lower.includes("rình") ||
+      lower.includes("rinh")
+    ) {
+      text = await scanAnticipatingAltcoins();
+    } else if (
+      lower === "🧭 la bàn btc" ||
+      lower === "la bàn btc" ||
+      lower === "la ban btc" ||
+      lower === "la bàn" ||
+      lower === "la ban"
+    ) {
+      const btcDaily = await dailyTrend("BTC");
+      const btc1h = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
+      const btc15m = await candles("BTC-USDT-SWAP", "15m", 300).catch(() => []);
+      const sentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m);
+      text = `🧭 *LA BÀN THỊ TRƯỜNG BTC*\n\n` +
+        `• Tình trạng: ${sentinel.statusText}\n` +
+        `• Chiều lệnh Altcoin: ${sentinel.allowLong ? "🟢 CHO PHÉP LONG" : "⛔ CẤM LONG"} · ${sentinel.allowShort ? "🔴 CHO PHÉP SHORT" : "⛔ CẤM SHORT"}\n` +
+        (sentinel.sweep ? `• Chi tiết quét: ${sentinel.sweep.note}\n` : "");
+    } else if (
+      lower.includes("vị thế") ||
+      lower.includes("vi the") ||
+      lower === "💼 vị thế mexc" ||
       lower === "/positions" ||
       lower === "/pos"
     ) {
