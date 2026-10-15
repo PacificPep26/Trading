@@ -42,11 +42,6 @@ Một agent khác lấy video (lời thoại) vào `docs/research/MASTER_VIDEO_H
 viết luật đo được → backtest (thêm vào `service/scripts/video_hub_study.py` hoặc script riêng) → nhật ký + bảng "Đối chiếu MASTER_VIDEO_HUB"
 trong `docs/so-tay-kien-thuc.md` (theo số #). Chủ dự án quyết định kèo nào vào bot (có thể chọn báo cả kèo không đạt, ghi số backtest trong tin).
 
-## Thêm kiến thức (cũ)
-
-Chủ dự án bỏ tóm tắt video/ý tưởng vào `docs/research/`. Quy trình: đọc → viết thành luật đo được (vào ở đâu, SL, TP, khung) →
-script trong `service/scripts/` → kết quả vào nhật ký + 1 dòng trong sổ tay → đạt chuẩn mới nối vào bot.
-
 ## Kiểm tra trước khi push
 
 ```powershell
