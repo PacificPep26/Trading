@@ -82,6 +82,15 @@ export function evaluateWatches(
     }
     if (Number.isFinite(p) && (w.side > 0 ? p <= w.entry : p >= w.entry)) {
       if (w.side > 0 ? p <= w.stop : p >= w.stop) { msgs.push(`❌ ${label}: giá ${p} đã qua luôn SL ${w.stop}, bỏ kèo.`); continue; }
+      // Nếu giá đã đục qua điểm vào > 0.3% mà không phản ứng rút râu -> HỦY KÈO (Breakout, cấm chặn đầu)
+      if (w.side < 0 && p > w.entry * 1.003) {
+        msgs.push(`🛡️ *HUỶ KÈO:* ${label} — Giá ${p} đã đục qua cản (>0.3% đà tăng mạnh), bỏ lệnh Short.`);
+        continue;
+      }
+      if (w.side > 0 && p < w.entry * 0.997) {
+        msgs.push(`🛡️ *HUỶ KÈO:* ${label} — Giá ${p} đã đâm thủng đáy (>0.3% đà xả mạnh), bỏ lệnh Long.`);
+        continue;
+      }
       const r = Math.abs(w.entry - w.stop), rr = Math.abs(w.tp - w.entry) / r;
       msgs.push(
         `🔔 *CHẠM ĐIỂM VÀO* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}* — giá ${p}\n` +

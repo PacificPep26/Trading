@@ -16,6 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
+import { analyzeCandleVision } from "./candle-vision";
 
 export { f };
 
@@ -242,11 +243,17 @@ export async function scanAndAlert(): Promise<string[]> {
         stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
         if (!isHeld && coin !== "BTC") {
           const ownDaily = await dailyTrend(coin);
+          const vision15m = analyzeCandleVision(bars15m);
+
           for (const g of highTestSetup(bars15m, "swing")) {
             // Lọc la bàn BTC & Max Concurrent Risk
             if (g.side > 0 && !allowLong) continue;
             if (g.side < 0 && !allowShort) continue;
             if (ownDaily !== 0 && g.side !== ownDaily) continue;
+
+            // 👁️ BỘ MẮT ĐỌC NẾN: Phân tích hình thái nến & xung lực
+            if (g.side < 0 && !vision15m.isValidShortCandle) continue; // CẤM SHORT khi vừa có nến xanh bơm mạnh hoặc nến đóng xanh
+            if (g.side > 0 && !vision15m.isValidLongCandle) continue; // CẤM LONG khi vừa có nến đỏ xả mạnh hoặc nến đóng đỏ
 
             const key = `HT15:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
@@ -281,10 +288,17 @@ export async function scanAndAlert(): Promise<string[]> {
 
         if (!isHeld && coin !== "BTC") {
           const own = await dailyTrend(coin);
+          const vision4h = analyzeCandleVision(bars4h);
+
           // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
           for (const g of highTestSetup(bars4h)) {
             if (g.side > 0 && !allowLong) continue;
             if (g.side < 0 && !allowShort) continue;
+            if (own !== 0 && g.side !== own) continue;
+
+            // 👁️ BỘ MẮT ĐỌC NẾN 4H:
+            if (g.side < 0 && !vision4h.isValidShortCandle) continue;
+            if (g.side > 0 && !vision4h.isValidLongCandle) continue;
             const key = `HT:${coin}:${g.side}:${g.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
@@ -347,12 +361,12 @@ export async function scanAndAlert(): Promise<string[]> {
 
         if (!isHeld && coin !== "BTC") {
           const own = await dailyTrend(coin);
-          // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
+          const vision1h = analyzeCandleVision(bars1h);
+          // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (chỉ chạy paper ngầm, không spam tin Telegram vì cạnh mỏng)
           for (const g of inducementSetup(bars300)) {
             if (g.side > 0 && !allowLong) continue;
             if (g.side < 0 && !allowShort) continue;
-            if (own !== 0 && g.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
-            // Bỏ nếu Limit cách giá hiện tại quá 2.5% (tránh chặn đầu xe lửa khi Altcoin pump/dump mạnh)
+            if (own !== 0 && g.side !== own) continue;
             const curP = bars1h.at(-1)?.c;
             if (curP && Math.abs(g.limit - curP) / curP > 0.025) continue;
 
@@ -360,22 +374,15 @@ export async function scanAndAlert(): Promise<string[]> {
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
-            digest.push({
-              rank: 3,
-              coin,
-              side: g.side,
-              rsScore: 50,
-              entry: g.limit,
-              stop: g.stop,
-              tp: g.tp,
-              text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng"),
-            });
           }
           // Kèo SO Trading: chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
           for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
             if (so.side > 0 && !allowLong) continue;
             if (so.side < 0 && !allowShort) continue;
             if (own !== 0 && so.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
+            // 👁️ MẮT ĐỌC NẾN 1H:
+            if (so.side < 0 && !vision1h.isValidShortCandle) continue;
+            if (so.side > 0 && !vision1h.isValidLongCandle) continue;
             const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
             if (sent.has(key)) continue;
             sent.add(key);
