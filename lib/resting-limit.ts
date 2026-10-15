@@ -21,6 +21,8 @@ export type RestingLimit = {
   r?: number;
   note?: string;
   market?: boolean; // vào Market ở giá mở nến kế (không chờ Limit); được tính TP ngay trong nến đó như backtest
+  stopEntry?: boolean; // lệnh chờ PHÁ (buy/sell stop) tại `limit`: khớp khi giá vượt qua, huỷ nếu chạm SL trước hoặc quá 3 nến
+  barMs?: number; // độ dài nến của kèo (mặc định 1H): giữ tối đa 48 nến
 };
 
 const H1 = 3_600_000;
@@ -67,13 +69,26 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
   const closed = bars.filter((b) => b.closed !== false && b.t > x.checkedTo);
   for (const b of closed) {
     x.checkedTo = b.t;
+    const bar = x.barMs ?? H1;
+    if (x.status === "pending" && x.stopEntry) {
+      if (b.t > x.createdBar + 3 * bar || (x.side > 0 ? b.l <= x.stop : b.h >= x.stop)) {
+        x.status = "cancelled"; x.note = "không kích hoạt";
+        msgs.push(`⌛ ${tag(x)} · lệnh chờ phá ${x.limit} không kích hoạt → huỷ`); break;
+      }
+      if (x.side > 0 ? b.h >= x.limit : b.l <= x.limit) {
+        x.status = "open";
+        x.entry = x.side > 0 ? Math.max(x.limit, b.o) : Math.min(x.limit, b.o);
+        x.fillBar = b.t;
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+      }
+    }
     if (x.status === "pending" && x.market) {
       x.status = "open";
       x.entry = b.o;
       x.fillBar = b.t;
       msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
     }
-    if (x.status === "pending") {
+    if (x.status === "pending" && !x.stopEntry) {
       if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${x.limit}`); break; }
       // chạm Limit trước: nến chọc qua Limit thì lệnh đã khớp dù sau đó đóng thủng sâu (lỗi backtest cũ bỏ sót lệnh này)
       if (x.side > 0 ? b.l <= x.limit : b.h >= x.limit) {
@@ -85,10 +100,10 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
         continue;
       }
       if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { x.status = "cancelled"; x.note = "chạy tới TP trước"; msgs.push(`↗️ ${tag(x)} · giá chạy tới TP trước → huỷ Limit ${x.limit}`); break; }
-    } else {
+    } else if (x.status === "open") {
       if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; }
       if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { close(x, x.tp, msgs); break; }
-      if (b.t >= x.fillBar! + 47 * H1) { close(x, b.c, msgs); break; }
+      if (b.t >= x.fillBar! + 47 * bar) { close(x, b.c, msgs); break; }
     }
   }
   save(rs, file);

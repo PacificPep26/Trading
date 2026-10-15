@@ -182,7 +182,7 @@ def graystone(cs, x, own, tf, sym):
                     break  # invalidated before triggering
                 if (b.h >= trig) if side > 0 else (b.l <= trig):
                     e = max(trig, b.o) if side > 0 else min(trig, b.o)
-                    for name, tp in (("TP swing", top(hs[-1])), ("TP 2R", e + 2 * (e - stop))):
+                    for name, tp in (("TP swing", top(hs[-1])), ("TP 2R", e + 2 * (e - stop)), ("TP 1.5R (Trading Rush)", e + 1.5 * (e - stop))):
                         r = row(cs, j, side, e, stop, tp, f"Graystone high-test + lệnh chờ phá · {name}", tf, sym, own)
                         if r:
                             out.append(r)

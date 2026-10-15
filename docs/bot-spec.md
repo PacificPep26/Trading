@@ -28,6 +28,10 @@ quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đ�
 
 Cả 2 chiều; vào Market ở giá đóng (paper khớp giá mở nến kế, `market: true`); sổ `data/paper-so-<kiểu>.json`. Bản backtest Python dời SL theo đáy mới cho 🚀 — tin/paper live dùng SL cố định.
 
+## 🔨 Nến high test 4H → lệnh chờ phá (`highTestSetup`, Jason Graystone)
+
+Cấu trúc 4H thuận chiều, nến vừa đóng chạm swing vừa bị phá (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → **buy stop trên đỉnh nến / sell stop dưới đáy**, hiệu lực 3 nến 4H (huỷ nếu chạm SL trước); SL ngoài nến + 0.1 ATR; TP 2R. Cả 2 chiều. Sổ `data/paper-hightest.json`. Code live 2025 +303$ / 2026 +132$.
+
 ## Sổ paper 🎯 📌 (`lib/resting-limit.ts`)
 
 Chờ khớp 24 nến 1H; nến chạm Limit là khớp ở giá Limit (hoặc giá mở nếu mở vượt); huỷ nếu giá chạm TP trước khi khớp;

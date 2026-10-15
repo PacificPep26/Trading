@@ -105,3 +105,34 @@ export function soSetups(all: Candle[]): SoSetup[] {
   }
   return out;
 }
+
+/**
+ * 🔨 Nến "high test" (Jason Graystone, video_hub_study mục 4), khung 4H, cả 2 chiều — đạt chuẩn:
+ * 2025 +251$ / 2026 +138$ (+0.115R), vào ngẫu nhiên +161$ / −62$. Cấu trúc thuận chiều, nến vừa đóng chạm swing vừa bị phá
+ * (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → lệnh chờ PHÁ râu (buy stop trên đỉnh nến / sell stop dưới đáy) 3 nến,
+ * SL ngoài nến + 0.1 ATR, TP 2R tính từ giá chờ.
+ */
+export function highTestSetup(all: Candle[]): { side: 1 | -1; trigger: number; stop: number; tp: number; barTime: number }[] {
+  const cs = all.filter((c) => c.closed !== false);
+  const i = cs.length - 1;
+  if (i < 60) return [];
+  const a = atrSeries(cs)[i], c = cs[i];
+  const { highs, lows } = swings(cs);
+  const tr = trendOf(cs, highs, lows);
+  const out: { side: 1 | -1; trigger: number; stop: number; tp: number; barTime: number }[] = [];
+  for (const side of [1, -1] as const) {
+    if (tr !== side) continue;
+    const hs = (side > 0 ? highs : lows).slice(-3);
+    const top = (k: number) => (side > 0 ? cs[k].h : cs[k].l);
+    if (hs.length < 2 || side * (top(hs.at(-1)!) - top(hs.at(-2)!)) <= 0) continue;
+    const S = top(hs.at(-2)!);
+    if (!(side > 0 ? c.l <= S + 0.2 * a : c.h >= S - 0.2 * a)) continue;
+    const rng = c.h - c.l, body = Math.abs(c.c - c.o);
+    const wick = side > 0 ? Math.min(c.o, c.c) - c.l : c.h - Math.max(c.o, c.c);
+    if (!(rng > 0 && wick >= 2 * body && wick >= 0.6 * rng)) continue;
+    const trigger = side > 0 ? c.h : c.l, stop = side > 0 ? c.l - 0.1 * a : c.h + 0.1 * a;
+    const risk = (side * (trigger - stop)) / trigger;
+    if (risk >= 0.003 && risk <= 0.06) out.push({ side, trigger, stop, tp: trigger + 2 * (trigger - stop), barTime: c.t });
+  }
+  return out;
+}

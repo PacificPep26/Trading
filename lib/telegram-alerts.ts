@@ -11,7 +11,7 @@ import { openSwing, stepSwing } from "@/lib/swing-4h";
 import { addLimit, stepLimits, loadLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
-import { soSetups, SO_LABEL, type SoKind } from "@/lib/so-setups";
+import { soSetups, SO_LABEL, highTestSetup, type SoKind } from "@/lib/so-setups";
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -23,6 +23,7 @@ const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
 // 4 kèo SO Trading: chủ dự án chọn báo cả 4 kèm số backtest (chỉ "hồi đỉnh cũ" đạt chuẩn) — mỗi kèo 1 sổ paper
 export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
+export const HIGHTEST_PAPER = path.join(process.cwd(), "data", "paper-hightest.json");
 
 function loadSent(): string[] {
   try {
@@ -147,6 +148,15 @@ export async function scanAndAlert(): Promise<string[]> {
       if (after4h) {
         const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 300);
         for (const m of stepSwing(coin, bars4h)) await say(m);
+        for (const m of stepLimits(coin, bars4h, HIGHTEST_PAPER)) await say(m);
+        // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
+        for (const g of highTestSetup(bars4h)) {
+          const key = `HT:${coin}:${g.side}:${g.barTime}`;
+          if (sent.has(key)) continue;
+          sent.add(key);
+          addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
+          digest.push({ rank: 0, text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅") });
+        }
         const a4 = analyse(bars4h);
         const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
         const fundingRate = (await funding(`${coin}-USDT-SWAP`).catch(() => null))?.rate;

@@ -22,3 +22,21 @@ const m = stepLimits("SOL", [{ t: H, o: 112.5, h: 116.5, l: 112.2, c: 116, close
 assert.match(m[0], /KHỚP 112.5/); assert.match(m[1], /ĐÓNG/);
 assert.equal(loadLimits(file)[0].exitPrice, 116);
 console.log("All SO setups tests passed!");
+
+// 🔨 high test: hồi về đỉnh cũ 110.6 bằng nến búa (râu dưới dài) → lệnh chờ mua trên đỉnh nến
+const { highTestSetup } = await import("../lib/so-setups.ts");
+const ht = path_.map((c, i) => ({ t: i * H, o: i ? path_[i - 1] : c, h: c + 0.6, l: c - 0.6, c, v: 1, closed: true }));
+ht.push({ t: ht.length * H, o: 111.5, h: 111.8, l: 110.5, c: 111.6, v: 1, closed: true });
+const g = highTestSetup(ht);
+assert.equal(g.length, 1); assert.equal(g[0].side, 1); assert.equal(g[0].trigger, 111.8);
+assert.ok(g[0].stop < 110.5 && Math.abs((g[0].tp - 111.8) - 2 * (111.8 - g[0].stop)) < 1e-9, "SL dưới nến, TP 2R");
+// lệnh chờ phá: chạm SL trước khi phá → huỷ; phá rồi chạm TP → thắng
+const f2 = path.join(path.dirname(file), "ht.json");
+addLimit("SOL", { side: 1, level: 111.8, limit: 111.8, stop: 110.3, tp: 114.8, atr: 0, barTime: 0, stopEntry: true, barMs: 4 * H }, f2);
+stepLimits("SOL", [{ t: 4 * H, o: 111, h: 111.5, l: 110.2, c: 110.5, closed: true }], f2);
+assert.equal(loadLimits(f2)[0].status, "cancelled");
+addLimit("ETH", { side: 1, level: 111.8, limit: 111.8, stop: 110.3, tp: 114.8, atr: 0, barTime: 0, stopEntry: true, barMs: 4 * H }, f2);
+stepLimits("ETH", [{ t: 4 * H, o: 111.6, h: 112.5, l: 111.4, c: 112.2, closed: true }, { t: 8 * H, o: 112.2, h: 115, l: 112, c: 114.9, closed: true }], f2);
+const e2 = loadLimits(f2).find((r) => r.coin === "ETH");
+assert.equal(e2.entry, 111.8); assert.equal(e2.exitPrice, 114.8); assert.ok(e2.r > 1.9);
+console.log("All high test tests passed!");
