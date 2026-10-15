@@ -54,6 +54,7 @@ Từ chối với mã: `INVALID_DATA` (thiếu/lỗi dữ liệu), `BOT_LOCKED` 
 
 - Kèo tay gộp trong 1 tin `📋 KÈO MỚI` mỗi lượt quét, tối đa 5 kèo (R:R cao nhất). TP1 = 1R: chốt 50% rồi dời SL về giá vào; TP2 = mục tiêu. `x` = đòn bẩy gợi ý (≤ 10). Tin thay Limit có thêm "huỷ Limit cũ …".
 - Mỗi coin + chiều tối đa 1 tin/6 giờ, trừ tin thay Limit.
+- Tin Mỹ (`lib/us-events.ts`, lịch CPI/NFP/FOMC trong `lib/us-events.json`): `⏰ 19:30 tin CPI Mỹ (còn ~N phút)` trước ≤ 60 phút; `⚡ CPI vừa ra · BTC nến 5m đầu 🔴 −0.60% (…)` khi nến 5m đầu đóng. **Chỉ là thông tin** — vào theo nến đầu và mở long+short x30 trước tin đều lỗ trong backtest. Cập nhật lịch tin hằng năm từ BLS/Fed.
 - Lệnh MEXC: `📈` dời SL trailing, `🚪` đóng khi giá qua SL trailing, `🎯/🛑 [MEXC ĐÃ ĐÓNG]` kèm lãi/lỗ thật, `🛑/🚨` lỗi SL.
 - Paper 📌: `🧪 … paper KHỚP / ĐÓNG`, `⌛` hết 24h, `↗️` chạy tới TP trước khi khớp. Kèo đã tắt tin (Toàn cảnh, FVG, BOS, Donchian) ghi paper im lặng.
 - Webhook `@VictorHuynh_trading_bot`: gõ tên coin để xem kèo; lệnh "thống kê" so lệnh thật với backtest.

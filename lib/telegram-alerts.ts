@@ -17,6 +17,7 @@ import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { managePaper1h, openPaper1h } from "@/lib/paper-1h";
 import { addLimit, stepLimits, loadLimits } from "@/lib/resting-limit";
 import { pickCoin } from "@/lib/overview";
+import { US_EVENTS, newsMessages } from "@/lib/us-events";
 
 const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -160,6 +161,16 @@ export async function scanAndAlert(): Promise<string[]> {
     for (const sym of moved) await send(`🔒 [MEXC] ${sym}: TP1 đã khớp → dời SL về giá vào (hòa vốn).`);
   } catch (e) {
     await send(`⚠️ [MEXC] Không dời được SL về hòa vốn: ${e instanceof Error ? e.message : e}`);
+  }
+
+  // Tin Mỹ: nhắc trước 1 giờ + báo nến 5m đầu của BTC sau tin. Chỉ là thông tin (vào theo nến đầu backtest lỗ)
+  try {
+    const now = Date.now();
+    const btc5m = US_EVENTS.some((e) => now >= e.t + 5 * 60_000 && now < e.t + 30 * 60_000) ? await candles("BTC-USDT-SWAP", "5m", 12) : [];
+    for (const m of newsMessages(US_EVENTS, now, sent, btc5m)) await send(m);
+    saveDedup(sent, preSent);
+  } catch (e) {
+    console.error("[NEWS]", e);
   }
 
   const [btc, btc1h] = await Promise.all([
