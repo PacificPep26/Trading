@@ -11,7 +11,7 @@ import { openSwing, stepSwing } from "@/lib/swing-4h";
 import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
-import { soSetups, SO_LABEL, highTestSetup, type SoKind } from "@/lib/so-setups";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, type SoKind } from "@/lib/so-setups";
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -24,6 +24,7 @@ export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
 // 4 kèo SO Trading: chủ dự án chọn báo cả 4 kèm số backtest (chỉ "hồi đỉnh cũ" đạt chuẩn) — mỗi kèo 1 sổ paper
 export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 export const HIGHTEST_PAPER = path.join(process.cwd(), "data", "paper-hightest.json");
+export const ST_PAPER = path.join(process.cwd(), "data", "paper-st.json");
 
 function loadSent(): string[] {
   try {
@@ -154,6 +155,14 @@ export async function scanAndAlert(): Promise<string[]> {
           sent.add(key);
           addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
           digest.push({ rank: 0, text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅") });
+        }
+        // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
+        for (const m of stepSwing(coin, bars4h, ST_PAPER)) await say(`📈 Supertrend ${m}`);
+        const st = stFlipSetup(bars4h);
+        if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
+          sent.add(`ST:${coin}:${st.barTime}`);
+          if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
+            digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
         }
         const a4 = analyse(bars4h);
         const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;

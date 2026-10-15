@@ -11,7 +11,7 @@ import { analyse, restingLimit, ictSweepShort } from "../../lib/patterns.ts";
 import { isSwingSetupOk } from "../../lib/trading-policy.ts";
 import { openSwing, stepSwing, loadSwings } from "../../lib/swing-4h.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
-import { soSetups, SO_LABEL, highTestSetup } from "../../lib/so-setups.ts";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup } from "../../lib/so-setups.ts";
 
 const H = 3_600_000, H4 = 4 * H, DAY = 86_400_000;
 const START = Date.UTC(2025, 0, 1), USD = 2.5;
@@ -41,7 +41,7 @@ function dailyTrendFn(h1) {
 const lastBefore = (arr, t) => { let lo = 0, hi = arr.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m][0] <= t) { k = m; lo = m + 1; } else hi = m - 1; } return k; };
 
 const btc1h = load("BTC"), btcTrend = dailyTrendFn(btc1h), btcIdx = new Map(btc1h.map((b, i) => [b.t, i]));
-const A = [], E = [];
+const A = [], E = [], F = [];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "replay-"));
 const B = [], C = [], D = Object.fromEntries(Object.keys(SO_LABEL).map((k) => [k, []]));
 
@@ -61,6 +61,11 @@ for (const coin of COINS) {
     const fi = lastBefore(fund, now), fundingRate = fi >= 0 ? fund[fi][1] : undefined;
     const s = a.setups.find((x) => isSwingSetupOk(x, { ownDaily: own(now), btcDaily: btcTrend(now), lastBarTime: a.lastBarTime, now, btc1h: btcBars, fundingRate, livePrice: h4[i + 1].o }));
     if (s) openSwing(coin, { side: s.side, entry: h4[i + 1].o, stop: s.stop, entryTime: h4[i + 1].t }, fileA);
+    // F. 📈 Supertrend 4H đổi màu, SL dời theo dải
+    const fileF = path.join(tmp, `${coin}-st.json`);
+    stepSwing(coin, h4.slice(i - 299, i + 1), fileF);
+    const st = stFlipSetup(h4.slice(i - 299, i + 1));
+    if (st) openSwing(coin, { side: st.side, entry: h4[i + 1].o, stop: st.stop, entryTime: h4[i + 1].t, trail: "st" }, fileF);
     // E. 🔨 high test 4H: lệnh chờ phá, paper riêng
     const fileE = path.join(tmp, `${coin}-hightest.json`);
     stepLimits(coin, h4.slice(i - 119, i + 1), fileE);
@@ -68,6 +73,7 @@ for (const coin of COINS) {
       addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: H4 }, fileE);
     }
   }
+  for (const x of loadSwings(path.join(tmp, `${coin}-st.json`))) if (x.status === "closed") F.push({ t: x.entryTime, r: x.r });
   for (const x of loadLimits(path.join(tmp, `${coin}-hightest.json`))) if (x.status === "closed" && x.r !== undefined) E.push({ t: x.createdBar, r: x.r });
   for (const x of loadSwings(fileA)) if (x.status === "closed") A.push({ t: x.entryTime, r: x.r, held: (x.checkedTo - x.entryTime) / H + 4 });
 
@@ -104,7 +110,7 @@ function st(xs) {
   return `n=${String(n).padStart(4)}  thắng ${(rs.filter((r) => r > 0).length / n * 100).toFixed(0)}%  TB ${m >= 0 ? "+" : ""}${m.toFixed(3)}R  t=${(m / (sd / Math.sqrt(n))).toFixed(2)}  tổng ${(m * n * USD >= 0 ? "+" : "") + (m * n * USD).toFixed(0)}$`;
 }
 const yr = (y) => (x) => new Date(x.t).getUTCFullYear() === y;
-for (const [name, xs] of [["A. 📊 Hai đỉnh/đáy 4H, SL trailing 3 ATR", A], ["E. 🔨 High test 4H, lệnh chờ phá, TP 2R (Python +251$/+138$)", E], ["B. 📌 Limit dưới đáy 1H (LONG)", B], ["C. 🎯 ICT quét đỉnh hôm qua → SHORT 1H", C], ...Object.entries(D).map(([k, xs]) => [`D. ${SO_LABEL[k].name} (Python: ${SO_LABEL[k].stats})`, xs])]) {
+for (const [name, xs] of [["A. 📊 Hai đỉnh/đáy 4H, SL trailing 3 ATR", A], ["E. 🔨 High test 4H, lệnh chờ phá, TP 2R (Python +251$/+138$)", E], ["F. 📈 Supertrend 4H đổi màu, SL theo dải (Python +158$/+53$)", F], ["B. 📌 Limit dưới đáy 1H (LONG)", B], ["C. 🎯 ICT quét đỉnh hôm qua → SHORT 1H", C], ...Object.entries(D).map(([k, xs]) => [`D. ${SO_LABEL[k].name} (Python: ${SO_LABEL[k].stats})`, xs])]) {
   console.log(name);
   for (const y of [2025, 2026]) console.log(`  ${y}: ${st(xs.filter(yr(y)))}`);
   console.log(`  25–26: ${st(xs)}`);

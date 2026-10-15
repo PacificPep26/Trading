@@ -3,6 +3,7 @@
 import fs from "fs";
 import path from "path";
 import { trailingStop } from "./trading-policy.ts";
+import { supertrend } from "./so-setups.ts";
 
 export type Swing = {
   coin: string;
@@ -15,6 +16,7 @@ export type Swing = {
   status: "open" | "closed";
   exitPrice?: number;
   r?: number;
+  trail?: "atr3" | "st"; // atr3 (mặc định): giá đóng tốt nhất − 3 ATR; st: dải Supertrend − 0.3 ATR
 };
 
 const H4 = 4 * 3_600_000;
@@ -37,10 +39,10 @@ function save(ss: Swing[], file: string) {
 }
 
 /** Mở lệnh paper; false nếu coin đang có lệnh mở. */
-export function openSwing(coin: string, s: { side: 1 | -1; entry: number; stop: number; entryTime: number }, file = FILE): boolean {
+export function openSwing(coin: string, s: { side: 1 | -1; entry: number; stop: number; entryTime: number; trail?: "atr3" | "st" }, file = FILE): boolean {
   const ss = loadSwings(file);
   if (ss.some((x) => x.coin === coin && x.status === "open")) return false;
-  ss.push({ coin, side: s.side, entry: s.entry, initStop: s.stop, stop: s.stop, entryTime: s.entryTime, checkedTo: s.entryTime - H4, status: "open" });
+  ss.push({ coin, side: s.side, entry: s.entry, initStop: s.stop, stop: s.stop, entryTime: s.entryTime, checkedTo: s.entryTime - H4, status: "open", trail: s.trail });
   save(ss, file);
   return true;
 }
@@ -66,7 +68,7 @@ export function stepSwing(coin: string, bars: Bar[], file = FILE): string[] {
       msgs.push(`🚪 ${tag} · 4H chạm SL ${px} → đóng · *${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}R*`);
       break;
     }
-    const next = trailingStop(closed.slice(Math.max(0, i - 119), i + 1), x.side, x.entryTime, x.stop);
+    const next = x.trail === "st" ? stTrail(closed.slice(0, i + 1), x.side, x.stop) : trailingStop(closed.slice(Math.max(0, i - 119), i + 1), x.side, x.entryTime, x.stop);
     if (next !== x.stop) {
       msgs.push(`📈 ${tag} · dời SL ${x.stop.toPrecision(5)} → *${next.toPrecision(5)}*`);
       x.stop = next;
@@ -74,6 +76,19 @@ export function stepSwing(coin: string, bars: Bar[], file = FILE): string[] {
   }
   save(ss, file);
   return msgs;
+}
+
+/** SL theo dải Supertrend − 0.3 ATR14 (chỉ siết), như exit_trail_st trong video_hub_study.py. */
+function stTrail(bars: Bar[], side: 1 | -1, stop: number): number {
+  if (bars.length < 15) return stop;
+  const { line } = supertrend(bars.map((b) => ({ ...b, v: 0, closed: true })));
+  let atr = bars[0].h - bars[0].l;
+  for (let i = 1; i < bars.length; i++) {
+    const p = bars[i - 1].c, b = bars[i];
+    atr = (atr * 13 + Math.max(b.h - b.l, Math.abs(b.h - p), Math.abs(b.l - p))) / 14;
+  }
+  const trail = line[line.length - 1] - side * 0.3 * atr;
+  return side > 0 ? Math.max(stop, trail) : Math.min(stop, trail);
 }
 
 export function swingStats(ss: Swing[]) {

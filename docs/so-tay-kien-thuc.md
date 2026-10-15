@@ -14,6 +14,7 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | ICT quét đỉnh hôm qua → ChoCh → FVG | Video ICT | 1H, SHORT, Limit giữa FVG, SL trên râu quét, TP đáy hôm qua | +0.42R, 2025 +119$ / 2026 +85$ |
 | Đặt sẵn Limit đón râu quét đáy | Chủ dự án | 1H, LONG, Limit 0.5 ATR dưới đáy, bỏ đáy volume ≥ 2.5x | +0.063R, +145$ / +172$ |
 | 🔨 Nến "high test" ở swing vừa bị phá → lệnh chờ phá râu | Jason Graystone (YouTube) | 4H, cả 2 chiều, SL ngoài nến + 0.1 ATR, TP 2R | +0.133R, 2025 +303$ / 2026 +132$ (ngẫu nhiên +161$ / −62$) |
+| 📈 Supertrend (ATR 10, ×3) đổi màu → vào ngay, SL dời theo dải | Wysetrade (YouTube) — video lại khuyên KHÔNG vào lúc đổi màu | 4H, cả 2 chiều, SL = dải − 0.3 ATR, không TP | +0.155R, 2025 +139$ / 2026 +85$ (ngẫu nhiên cùng cách thoát −201$ / +38$) |
 | Hai đỉnh/đáy thuận xu hướng, gồng lãi | Repo | 4H, volume ≥ 2x, SL trailing 3 ATR, không TP | +1.22R, +45$ / +43$ |
 
 ## 🧪 Có dấu hiệu, chưa đủ chắc
@@ -62,6 +63,7 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | (mới) | The Trading Channel — "The Only Price Action Trading Video" (hai đáy/đỉnh + vùng kết thúc + lực mua) | ❌ 1H −598$ / −35$; 4H ≈ 0 |
 | (mới) | Jason Graystone — "Trading for Beginners Part 1" (nến high test + lệnh chờ phá) | ✅ 4H TP 2R → **đã vào bot (🔨)**; 1H ❌ |
 | (mới) | Trading Rush — "How I Increased Win Rate" (R:R 1.5, TP dưới đỉnh cũ) | ⚖️ TP 1.5R tăng tỷ lệ thắng nhưng giảm tiền ở 🔨 và 📌; "TP dưới đỉnh cũ" đã dùng |
+| (mới) | Wysetrade — "ULTIMATE Supertrend Indicator Trading Strategy" | Cách của video (chờ hồi chạm dải + nến râu): 4H +38$ / +285$, t ≈ 1, thắng 16–18% ❌. Vào lúc đổi màu: 4H ✅ → **đã vào bot (📈)**; 1H dương nhưng 2026 thua ngẫu nhiên ❌ |
 | 7–38 | SO Trading (32 video) | 🔁 hồi đỉnh cũ ✅; vai–đầu–vai, phá vỡ sau nén, chòm râu ❌ nhưng vẫn báo theo yêu cầu; nhấn chìm lần hai ❌; tâm lý/kế hoạch = nguyên tắc |
 
 ## Bài học chung

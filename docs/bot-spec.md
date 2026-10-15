@@ -11,7 +11,7 @@ quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đ�
 |---|---|---|---|
 | 1. Tin Mỹ | mọi lượt | ≤ 60 phút trước CPI/NFP/FOMC → `⏰`; nến 5m đầu của BTC đóng → `⚡` | có |
 | 2. Theo dõi giá | mọi lượt | giá chạm mức chủ dự án đặt bằng `theo dõi …` | có |
-| 3. Kèo 4H | 15 phút đầu sau khi nến 4H đóng: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00 | 🔨 high test (+ sổ paper); 📊 hai đỉnh/đáy chỉ ghi paper | 🔨 có, 📊 không |
+| 3. Kèo 4H | 15 phút đầu sau khi nến 4H đóng: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00 | 🔨 high test, 📈 Supertrend đổi màu (+ sổ paper); 📊 hai đỉnh/đáy chỉ ghi paper | 🔨 📈 có, 📊 không |
 | 4. Kèo 1H | 15 phút đầu mỗi giờ (xx:00–xx:15) | 🎯 ICT, 🔁 👤 🚀 🕯 SO Trading (+ sổ paper); 📌 chỉ ghi paper | có (trừ 📌) |
 | 5. Gộp tin | cuối lượt có kèo | 1 tin `📋 KÈO MỚI hh:mm`, mỗi kèo 2 dòng (chiều · coin · cách vào · giá / SL · TP1 · TP2 · đòn bẩy) | có |
 | 6. Sổ paper | mỗi lượt có nến mới đóng | khớp / đóng lệnh paper → `🧪 KHỚP`, `🧪 ĐÓNG`, `⌛` huỷ | có (trừ 📌 📊) |
@@ -44,6 +44,12 @@ Cả 2 chiều; vào Market ở giá đóng (paper khớp giá mở nến kế, 
 ## 🔨 Nến high test 4H → lệnh chờ phá (`highTestSetup`, Jason Graystone)
 
 Cấu trúc 4H thuận chiều, nến vừa đóng chạm swing vừa bị phá (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → **buy stop trên đỉnh nến / sell stop dưới đáy**, hiệu lực 3 nến 4H (huỷ nếu chạm SL trước); SL ngoài nến + 0.1 ATR; TP 2R. Cả 2 chiều. Sổ `data/paper-hightest.json`. Code live 2025 +303$ / 2026 +132$.
+
+## 📈 Supertrend 4H đổi màu → vào ngay (`stFlipSetup`, Wysetrade)
+
+Supertrend kiểu TradingView (ATR 10 RMA, hệ số 3) đổi màu ở nến 4H vừa đóng → vào ở giá đóng, **không TP**; SL = dải − 0.3 ATR14 (bỏ nếu SL < 0.3% hoặc > 8%).
+Sau mỗi nến 4H đóng SL dời theo dải (chỉ siết) → tin `📈 Supertrend … dời SL`; chạm SL → `🚪 đóng` kèm R. Mỗi coin 1 lệnh mở. Cả 2 chiều. Sổ `data/paper-st.json`.
+Code live 2025 +139$ / 2026 +85$. Cách video khuyên (chờ hồi chạm dải + nến râu) không đạt.
 
 ## Sổ paper 🎯 📌 (`lib/resting-limit.ts`)
 

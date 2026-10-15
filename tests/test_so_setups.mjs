@@ -40,3 +40,21 @@ stepLimits("ETH", [{ t: 4 * H, o: 111.6, h: 112.5, l: 111.4, c: 112.2, closed: t
 const e2 = loadLimits(f2).find((r) => r.coin === "ETH");
 assert.equal(e2.entry, 111.8); assert.equal(e2.exitPrice, 114.8); assert.ok(e2.r > 1.9);
 console.log("All high test tests passed!");
+// 📈 Supertrend 4H: 80 nến giảm đều rồi bật mạnh → đổi màu LONG đúng ở nến bật, SL dưới dải; nến sau không báo lại
+const { stFlipSetup, supertrend } = await import("../lib/so-setups.ts");
+const { openSwing, stepSwing, loadSwings } = await import("../lib/swing-4h.ts");
+const dn = Array.from({ length: 80 }, (_, i) => { const p = 1000 - i; return { t: i * H, o: p, h: p + 1, l: p - 1.5, c: p - 0.5, v: 1, closed: true }; });
+assert.equal(stFlipSetup(dn), null, "đang giảm, chưa đổi màu");
+dn.push({ t: 80 * H, o: 921, h: 931, l: 920, c: 930, v: 1, closed: true });
+const sf = stFlipSetup(dn);
+assert.ok(sf && sf.side === 1 && sf.stop < sf.entry && sf.entry === 930, JSON.stringify(sf));
+assert.equal(supertrend(dn).dir.at(-1), 1);
+dn.push({ t: 81 * H, o: 930, h: 934, l: 929, c: 933, v: 1, closed: true });
+assert.equal(stFlipSetup(dn), null, "chỉ báo nến đổi màu");
+// SL dời theo dải (chỉ siết lên)
+const f3 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "st-")), "st.json");
+openSwing("SOL", { side: 1, entry: 930, stop: sf.stop, entryTime: 81 * H, trail: "st" }, f3);
+for (let k = 82; k < 90; k++) dn.push({ t: k * H, o: 933 + (k - 82) * 3, h: 937 + (k - 82) * 3, l: 932 + (k - 82) * 3, c: 936 + (k - 82) * 3, v: 1, closed: true });
+assert.ok(stepSwing("SOL", dn, f3).some((m) => /dời SL/.test(m)));
+assert.ok(loadSwings(f3)[0].stop > sf.stop && loadSwings(f3)[0].status === "open");
+console.log("All supertrend tests passed!");

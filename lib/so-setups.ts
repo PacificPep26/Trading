@@ -136,3 +136,43 @@ export function highTestSetup(all: Candle[]): { side: 1 | -1; trigger: number; s
   }
   return out;
 }
+
+/** Supertrend (TradingView: dải cuối, ATR kiểu RMA). Giống supertrend() trong service/scripts/video_hub_study.py. */
+export function supertrend(cs: Candle[], period = 10, mult = 3): { line: number[]; dir: (1 | -1)[] } {
+  const line: number[] = [], dir: (1 | -1)[] = [];
+  let atr = 0, upPrev = NaN, dnPrev = NaN;
+  cs.forEach((c, i) => {
+    const tr = i === 0 ? c.h - c.l : Math.max(c.h - c.l, Math.abs(c.h - cs[i - 1].c), Math.abs(c.l - cs[i - 1].c));
+    atr = i === 0 ? tr : (atr * (period - 1) + tr) / period;
+    const mid = (c.h + c.l) / 2;
+    let up = mid - mult * atr, dn = mid + mult * atr;
+    let d: 1 | -1 = i === 0 ? 1 : dir[i - 1];
+    if (i > 0) {
+      if (cs[i - 1].c > upPrev) up = Math.max(up, upPrev);
+      if (cs[i - 1].c < dnPrev) dn = Math.min(dn, dnPrev);
+      if (d === 1 && c.c < upPrev) d = -1;
+      else if (d === -1 && c.c > dnPrev) d = 1;
+    }
+    dir.push(d);
+    line.push(d === 1 ? up : dn);
+    upPrev = up; dnPrev = dn;
+  });
+  return { line, dir };
+}
+
+/**
+ * 📈 Supertrend 4H đổi màu (Wysetrade; video bảo "đừng vào ngay khi đổi màu" nhưng số liệu cho thấy ngược lại):
+ * 2025 +158$ / 2026 +53$ (+0.14R), vào ngẫu nhiên cùng cách thoát −201$ / +38$. Nến 4H vừa đóng làm dải đổi màu → vào,
+ * SL = dải − 0.3 ATR14, KHÔNG TP, dời SL theo dải mỗi nến 4H (lib/swing-4h.ts trail "st"). Bản 1H không hơn ngẫu nhiên.
+ */
+export function stFlipSetup(all: Candle[]): { side: 1 | -1; entry: number; stop: number; barTime: number } | null {
+  const cs = all.filter((c) => c.closed !== false);
+  const i = cs.length - 1;
+  if (i < 60) return null;
+  const { line, dir } = supertrend(cs);
+  if (dir[i] === dir[i - 1]) return null;
+  const side = dir[i], c = cs[i];
+  const stop = line[i] - side * 0.3 * atrSeries(cs)[i];
+  const risk = (side * (c.c - stop)) / c.c;
+  return risk >= 0.003 && risk <= 0.08 ? { side, entry: c.c, stop, barTime: c.t } : null;
+}

@@ -7,7 +7,7 @@ import { analyse, restingLimit, ictSweepShort } from "../../lib/patterns.ts";
 import { isSwingSetupOk } from "../../lib/trading-policy.ts";
 import { openSwing, stepSwing, loadSwings } from "../../lib/swing-4h.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
-import { soSetups, SO_LABEL, highTestSetup } from "../../lib/so-setups.ts";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup } from "../../lib/so-setups.ts";
 
 const DAYS = Number(process.argv[2] ?? 14), H = 3_600_000, H4 = 4 * H, DAY = 86_400_000, USD = 2.5;
 const COINS = ["BTC","ETH","SOL","HYPE","XRP","DOGE","BNB","ADA","AVAX","LINK","DOT","LTC","SUI","ARB","OP","NEAR","APT","INJ","TIA","PEPE","WIF"];
@@ -39,7 +39,7 @@ function dailyTrendFn(h1) {
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recent-"));
 const files = { "📌 Limit": "limit", "🎯 ICT": "ict", "🔨 High test 4H": "ht", ...Object.fromEntries(Object.entries(SO_LABEL).map(([k, v]) => [v.name, `so-${k}`])) };
 const f = (coin, k) => path.join(tmp, `${coin}-${k}.json`);
-const swingTrades = [];
+const swingTrades = [], stTrades = [];
 const btc4 = await history("BTC-USDT-SWAP", "4H", 900), btcTrend = dailyTrendFn(btc4.flatMap((b) => [b]));
 
 for (const coin of COINS) {
@@ -72,9 +72,13 @@ for (const coin of COINS) {
       const s = a.setups.find((x) => isSwingSetupOk(x, { ownDaily: own(now), btcDaily: btcTrend(now), lastBarTime: a.lastBarTime, now }));
       if (s && h4[i + 1]) openSwing(coin, { side: s.side, entry: h4[i + 1].o, stop: s.stop, entryTime: h4[i + 1].t }, f(coin, "4h"));
     }
+    stepSwing(coin, win, f(coin, "st"));
+    const st = stFlipSetup(win);
+    if (st && h4[i + 1]) openSwing(coin, { side: st.side, entry: h4[i + 1].o, stop: st.stop, entryTime: h4[i + 1].t, trail: "st" }, f(coin, "st"));
     for (const g of highTestSetup(win)) addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: H4 }, f(coin, "ht"));
   }
   for (const x of loadSwings(f(coin, "4h"))) swingTrades.push({ coin, ...x });
+  for (const x of loadSwings(f(coin, "st"))) stTrades.push({ coin, ...x });
   process.stderr.write(`${coin} `);
 }
 
@@ -90,4 +94,5 @@ const report = (name, rows) => {
 console.log(`\nKết quả ${DAYS} ngày gần nhất (giá OKX, code bot hiện tại, 2.5$/lệnh)`);
 for (const [name, k] of Object.entries(files)) report(name, COINS.flatMap((c) => loadLimits(f(c, k)).map((x) => ({ ...x, coin: c }))));
 report("📊 4H hai đỉnh/đáy", swingTrades);
+report("📈 Supertrend 4H", stTrades);
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -19,7 +19,12 @@ Usage: python -m service.scripts.video_hub_study
 4. Jason Graystone "high test candle" (hub: "Trading for Beginners Part 1"): trend structure, pullback to the broken swing
    (support turned resistance), shooting star / hammer there (wick >= 2x body and >= 60% of range); stop order beyond the
    candle's low (high) valid 3 bars; SL beyond its high (low) + 0.1 ATR; TP = last opposite swing (>= 1R) or 2R.
-21 bot coins, 1H/4H for (1, 3, 4), 15m for (2); 2025–2026; fee 0; slippage 0.04%; stop first; max 48 bars; random control.
+5. Wysetrade Supertrend (ATR 10, factor 3): bias = side of the band; entry = pullback bar touching the band (within 0.25 ATR)
+   and closing on the right side with a long rejection wick (>= 50% of range); "key level" variant also needs the touch within
+   0.3 ATR of the last opposite swing; "khung lớn" variant needs the 4H (1H trades) / daily (4H trades) Supertrend agreeing.
+   SL just beyond the band − 0.3 ATR, trailed with the band every bar, no TP (exit when hit), max 120 bars.
+   Control the video warns against: enter on the colour flip with the same trailing exit.
+21 bot coins, 1H/4H for (1, 3, 4, 5), 15m for (2); 2025–2026; fee 0; slippage 0.04%; stop first; max 48 bars; random control.
 """
 from service.backtest.data import DATA_DIR, load
 from service.backtest.patterns import build, confirmed, trend
@@ -192,6 +197,85 @@ def graystone(cs, x, own, tf, sym):
     return out
 
 
+def supertrend(cs, period=10, mult=3.0):
+    """(line, direction) per bar; TradingView-style final bands with RMA ATR."""
+    n = len(cs)
+    atr, line, dirn = [0.0] * n, [0.0] * n, [1] * n
+    up_prev = dn_prev = None
+    for i, c in enumerate(cs):
+        tr = c.h - c.l if i == 0 else max(c.h - c.l, abs(c.h - cs[i - 1].c), abs(c.l - cs[i - 1].c))
+        atr[i] = tr if i == 0 else (atr[i - 1] * (period - 1) + tr) / period
+        mid = (c.h + c.l) / 2
+        up, dn = mid - mult * atr[i], mid + mult * atr[i]
+        if up_prev is not None:
+            up = max(up, up_prev) if cs[i - 1].c > up_prev else up
+            dn = min(dn, dn_prev) if cs[i - 1].c < dn_prev else dn
+            d = dirn[i - 1]
+            if d == 1 and c.c < up_prev:
+                d = -1
+            elif d == -1 and c.c > dn_prev:
+                d = 1
+            dirn[i] = d
+        line[i] = up if dirn[i] == 1 else dn
+        up_prev, dn_prev = up, dn
+    return line, dirn
+
+
+def exit_trail_st(cs, f, side, entry, stop, line, a):
+    last = min(f + 119, len(cs) - 1)
+    for j in range(f, last + 1):
+        b = cs[j]
+        if (b.l <= stop) if side > 0 else (b.h >= stop):
+            return side * ((b.o if ((b.o < stop) if side > 0 else (b.o > stop)) else stop) / entry - 1), j
+        trail = line[j] - side * 0.3 * a[j]
+        stop = max(stop, trail) if side > 0 else min(stop, trail)
+    return side * (cs[last].c / entry - 1), last
+
+
+def st_strategy(cs, x, own, tf, sym, htf_dir):
+    line, dirn = supertrend(cs)
+    out, busy = [], 0
+    for i in range(60, len(cs) - 122):
+        if year_of(cs[i].t) < 2025 or i <= busy:
+            continue
+        c, a, side = cs[i], x.atr[i], dirn[i]
+        e, f = cs[i + 1].o, i + 1
+        stop = line[i] - side * 0.3 * a
+        if side * (e - stop) <= 0:
+            continue
+        variants = []
+        if dirn[i - 1] != side:
+            variants.append("vào ngay khi đổi màu (video bảo đừng)")
+        else:
+            touch = (c.l <= line[i] + 0.25 * a and c.c > line[i]) if side > 0 else (c.h >= line[i] - 0.25 * a and c.c < line[i])
+            rng = c.h - c.l
+            wick = (min(c.o, c.c) - c.l) if side > 0 else (c.h - max(c.o, c.c))
+            if touch and rng > 0 and wick >= 0.5 * rng:
+                variants.append("chạm dải + râu từ chối")
+                lv = confirmed(x.lows if side > 0 else x.highs, i, 1)
+                if lv and abs((cs[lv[0]].l if side > 0 else cs[lv[0]].h) - (c.l if side > 0 else c.h)) <= 0.3 * a:
+                    variants.append("chạm dải + râu + vùng cản")
+                if htf_dir(c.t) == side:
+                    variants.append("chạm dải + râu + khung lớn cùng màu")
+        if not variants:
+            continue
+        g, k = exit_trail_st(cs, f, side, e, stop, line, x.atr)
+        risk = side * (e - stop) / e
+        if 0.003 <= risk <= 0.08:
+            for v in variants:
+                out.append({"name": f"Supertrend · {v}", "tf": tf, "sym": sym, "year": year_of(cs[f].t), "side": side,
+                            "risk": risk, "tp": 0, "trend": trend_at(own, cs[f].t), "r": (g - COST) / risk})
+        busy = i + 2
+    return out
+
+
+def htf_st_fn(cs_h, step):
+    _, d = supertrend(cs_h)
+    ts = [b.t + step for b in cs_h]
+    import bisect as _b
+    return lambda t: (lambda k: d[k] if k >= 0 else 0)(_b.bisect_right(ts, t) - 1)
+
+
 def asia(cs, x, own, sym):
     out, days = [], {}
     for k, b in enumerate(cs):
@@ -242,6 +326,8 @@ def main():
         rows += tae(c1, x1, own, "1h", sym) + tae(c4, x4, own, "4h", sym)
         rows += ttc_double(c1, x1, own, "1h", sym) + ttc_double(c4, x4, own, "4h", sym)
         rows += graystone(c1, x1, own, "1h", sym) + graystone(c4, x4, own, "4h", sym)
+        cd = resample(c1, 24)
+        rows += st_strategy(c1, x1, own, "1h", sym, htf_st_fn(c4, 14_400_000)) + st_strategy(c4, x4, own, "4h", sym, htf_st_fn(cd, 86_400_000))
         if (DATA_DIR / f"{sym}_15m.csv").exists():
             m = load(sym, "15m", include_holdout=True)
             rows += asia(m, build(m), own, sym)
@@ -253,7 +339,7 @@ def main():
             X.show(f"{name} · {tf}", {y: [r["r"] for r in g if r["year"] == y] for y in X.YEARS})
             for side, nm in ((1, "LONG"), (-1, "SHORT")):
                 print(f"    {nm}: " + " | ".join(f"{y} {X.T.stats([r['r'] for r in g if r['year'] == y and r['side'] == side])}" for y in X.YEARS))
-            if tf in ("1h", "15m"):
+            if tf in ("1h", "15m") and not name.startswith("Supertrend"):
                 rc = X.fixed_control([r for r in g if r["trend"] != 0], tf, MAXB)
                 X.show("  vào ngẫu nhiên", {y: [r["r"] for r in rc if r["year"] == y] for y in X.YEARS})
             print()
