@@ -65,7 +65,8 @@ function saveState(state: SentinelState) {
 export function analyseBtcSentinel(
   btcBars1h: Candle[],
   btcDailyTrend: 1 | -1 | 0,
-  btcBars15m?: Candle[]
+  btcBars15m?: Candle[],
+  btcBars4h?: Candle[]
 ): BtcSentinel {
   const cs = btcBars1h.filter((c) => c.closed !== false);
   const n = cs.length;
@@ -86,7 +87,53 @@ export function analyseBtcSentinel(
   const state = loadState();
 
   // ==========================================
-  // BƯỚC 1: KIỂM TRA ĐIỀU KIỆN PHẾ TRUẤT (INVALIDATION)
+  // BƯỚC 1: XÁC ĐỊNH CẤU TRÚC XU HƯỚNG 4H & 1H (MARKET STRUCTURE)
+  // Không chỉ nhìn Daily EMA50 (bị trễ hàng nghìn giá khi dump/pump)
+  // ==========================================
+  let ema20_1h = cs[0].c, ema50_1h = cs[0].c;
+  for (const x of cs) {
+    ema20_1h += (2 / 21) * (x.c - ema20_1h);
+    ema50_1h += (2 / 51) * (x.c - ema50_1h);
+  }
+  const trend1h: 1 | -1 | 0 =
+    currentPrice < ema20_1h && ema20_1h < ema50_1h
+      ? -1
+      : currentPrice > ema20_1h && ema20_1h > ema50_1h
+      ? 1
+      : currentPrice > ema20_1h
+      ? 1
+      : -1;
+
+  let trend4h: 1 | -1 | 0 = trend1h;
+  if (btcBars4h && btcBars4h.length >= 20) {
+    const c4 = btcBars4h.filter((x) => x.closed !== false);
+    if (c4.length >= 20) {
+      let ema20_4h = c4[0].c, ema50_4h = c4[0].c;
+      for (const x of c4) {
+        ema20_4h += (2 / 21) * (x.c - ema20_4h);
+        ema50_4h += (2 / 51) * (x.c - ema50_4h);
+      }
+      trend4h =
+        currentPrice < ema20_4h && ema20_4h < ema50_4h
+          ? -1
+          : currentPrice > ema20_4h && ema20_4h > ema50_4h
+          ? 1
+          : currentPrice > ema20_4h
+          ? 1
+          : -1;
+    }
+  }
+
+  // Cấu trúc chủ đạo: Nếu cả 4H và 1H đồng thuận giảm -> CẤM LONG ALTCOIN
+  const marketStructure: 1 | -1 | 0 =
+    trend4h === -1 && trend1h === -1
+      ? -1
+      : trend4h === 1 && trend1h === 1
+      ? 1
+      : trend4h;
+
+  // ==========================================
+  // BƯỚC 2: KIỂM TRA ĐIỀU KIỆN PHẾ TRUẤT (INVALIDATION)
   // ==========================================
   if (state.activeSweep) {
     const sw = state.activeSweep;
@@ -110,7 +157,7 @@ export function analyseBtcSentinel(
         saveState(state);
 
         return {
-          dailyTrend: btcDailyTrend,
+          dailyTrend: marketStructure,
           allowLong: false, // KHÓA TOÀN BỘ LONG NGAY LẬP TỨC
           allowShort: true, // Mở Short theo đà thủng đáy
           sweep: null,
@@ -133,7 +180,7 @@ export function analyseBtcSentinel(
         saveState(state);
 
         return {
-          dailyTrend: btcDailyTrend,
+          dailyTrend: marketStructure,
           allowLong: true,
           allowShort: false,
           sweep: null,
@@ -145,29 +192,20 @@ export function analyseBtcSentinel(
   }
 
   // ==========================================
-  // BƯỚC 2: PHÁT HIỆN CÚ QUÉT MỚI (SWEEP DETECTION)
+  // BƯỚC 3: PHÁT HIỆN CÚ QUÉT MỚI (SWEEP DETECTION)
+  // Chỉ kích hoạt tại các đáy/đỉnh MACRO THẬT SỰ kèm nến đảo chiều & Volume lớn
   // ==========================================
   const day = Math.floor(c.t / DAY);
   const prevDay = cs.filter((x) => Math.floor(x.t / DAY) === day - 1);
   const pdl = prevDay.length >= 10 ? Math.min(...prevDay.map((x) => x.l)) : Math.min(...cs.slice(Math.max(0, n - 25), n - 1).map((x) => x.l));
   const pdh = prevDay.length >= 10 ? Math.max(...prevDay.map((x) => x.h)) : Math.max(...cs.slice(Math.max(0, n - 25), n - 1).map((x) => x.h));
+  const macroLow = Math.min(...cs.map((x) => x.l));
+  const macroHigh = Math.max(...cs.map((x) => x.h));
 
-  // 1. Tìm các Swing Low/High quan trọng trong 100 nến 1H gần nhất (~ 4 ngày)
-  const majorSwingLows: number[] = [];
-  const majorSwingHighs: number[] = [];
-  for (let i = 2; i < n - 2; i++) {
-    if (cs[i].l < cs[i - 1].l && cs[i].l < cs[i - 2].l && cs[i].l < cs[i + 1].l && cs[i].l < cs[i + 2].l) {
-      majorSwingLows.push(cs[i].l);
-    }
-    if (cs[i].h > cs[i - 1].h && cs[i].h > cs[i - 2].h && cs[i].h > cs[i + 1].h && cs[i].h > cs[i + 2].h) {
-      majorSwingHighs.push(cs[i].h);
-    }
-  }
-
-  // Tính volume trung bình 10 nến 1H gần nhất để đối chiếu xác nhận dòng tiền hấp thụ
+  // Tính volume trung bình 10 nến 1H gần nhất
   const prev10 = cs.slice(Math.max(0, n - 11), n - 1);
   const avgVol = prev10.length > 0 ? prev10.reduce((s, x) => s + (x.v || 0), 0) / prev10.length : 0;
-  const hasVolume = avgVol > 0 ? (c.v || 0) >= avgVol * 0.95 : true;
+  const isVolConfirmed = avgVol > 0 ? (c.v || 0) >= avgVol * 1.15 : false;
 
   let sweep: BtcSweepSignal | null = state.activeSweep;
 
@@ -178,56 +216,53 @@ export function analyseBtcSentinel(
     const upperWick1h = c.h - Math.max(c.o, c.c);
 
     // Nến rút chân thật sự (Real Bullish Rejection):
-    // - Nến xanh (c.c >= c.o): râu dưới >= 45% biên độ
-    // - Nến đỏ (c.c < c.o): bắt buộc phải là Pinbar/Hammer râu cực dài >= 60% biên độ
-    // Tuyệt đối loại bỏ nến đỏ râu ngắn (phe bán chiếm ưu thế, không phải rút chân)
+    // - Nến xanh (c.c >= c.o): râu dưới >= 50% biên độ
+    // - Nến đỏ (c.c < c.o): bắt buộc phải là Pinbar Hammer râu cực dài >= 65% biên độ
+    // Tuyệt đối loại bỏ nến đỏ râu ngắn (phe bán áp đảo)
     const isRealBullishRejection =
-      range1h >= 250 && ((c.c >= c.o && lowerWick1h >= 0.45 * range1h) || lowerWick1h >= 0.6 * range1h);
+      range1h >= 300 && ((c.c >= c.o && lowerWick1h >= 0.5 * range1h) || lowerWick1h >= 0.65 * range1h);
 
-    const sweptSwingLow1h = majorSwingLows.find(
-      (sl) => c.l < sl && c.c >= sl && (c.h - sl >= 200 || sl - c.l >= 100)
-    );
-    const sweptLowRef = c.l < pdl && c.c >= pdl ? pdl : sweptSwingLow1h;
+    // Trong xu hướng GIẢM (Downtrend), cú quét đáy Long BẮT BUỘC phải quét thủng đáy sâu nhất Macro Low hoặc PDL
+    // Tuyệt đối không bắt các swing đáy lơ lửng ở lưng chừng sóng giảm!
+    const isMacroLowSwept = c.l <= macroLow + 20 && c.c >= macroLow;
+    const isPdlSwept = c.l < pdl && c.c >= pdl;
 
-    if (sweptLowRef && isRealBullishRejection && hasVolume) {
+    if ((isMacroLowSwept || isPdlSwept) && isRealBullishRejection && isVolConfirmed) {
+      const ref = isMacroLowSwept ? macroLow : pdl;
       sweep = {
         side: 1,
-        refPrice: sweptLowRef,
+        refPrice: ref,
         sweepPrice: c.l,
         entry: c.c,
         stop: c.l - 50,
         tp: pdh,
         barTime: c.t,
-        note: `BTC quét đáy ${Math.round(c.l)} rút chân giữ vững cản ${Math.round(sweptLowRef)} (râu ${((lowerWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
+        note: `BTC quét đáy ${Math.round(c.l)} rút chân giữ vững cản ${Math.round(ref)} (râu ${((lowerWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
       };
     }
 
     // Nến rút râu trên thật sự (Real Bearish Rejection):
-    // - Nến đỏ (c.c <= c.o): râu trên >= 45% biên độ
-    // - Nến xanh (c.c > c.o): bắt buộc phải là Shooting Star pinbar râu trên >= 60%
     const isRealBearishRejection =
-      range1h >= 250 && ((c.c <= c.o && upperWick1h >= 0.45 * range1h) || upperWick1h >= 0.6 * range1h);
+      range1h >= 300 && ((c.c <= c.o && upperWick1h >= 0.5 * range1h) || upperWick1h >= 0.65 * range1h);
+    const isMacroHighSwept = c.h >= macroHigh - 20 && c.c <= macroHigh;
+    const isPdhSwept = c.h > pdh && c.c <= pdh;
 
-    const sweptSwingHigh1h = majorSwingHighs.find(
-      (sh) => c.h > sh && c.c <= sh && (sh - c.l >= 200 || c.h - sh >= 100)
-    );
-    const sweptHighRef = c.h > pdh && c.c <= pdh ? pdh : sweptSwingHigh1h;
-
-    if (!sweep && sweptHighRef && isRealBearishRejection && hasVolume) {
+    if (!sweep && (isMacroHighSwept || isPdhSwept) && isRealBearishRejection && isVolConfirmed) {
+      const ref = isMacroHighSwept ? macroHigh : pdh;
       sweep = {
         side: -1,
-        refPrice: sweptHighRef,
+        refPrice: ref,
         sweepPrice: c.h,
         entry: c.c,
         stop: c.h + 50,
         tp: pdl,
         barTime: c.t,
-        note: `BTC quét đỉnh ${Math.round(c.h)} rút râu dưới cản ${Math.round(sweptHighRef)} (râu ${((upperWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
+        note: `BTC quét đỉnh ${Math.round(c.h)} rút râu dưới cản ${Math.round(ref)} (râu ${((upperWick1h / range1h) * 100).toFixed(0)}%, Vol ${(c.v || 0).toFixed(0)})`,
       };
     }
   }
 
-  // 2. Nếu 1H chưa kích hoạt, kiểm tra khung 15m gần nhất (trong 16 nến 15m ~ 4 giờ qua):
+  // 2. Khung 15m: Chỉ bắt quét râu đáy sâu nhất macroLow hoặc đỉnh macroHigh
   if (!sweep && closed15m.length >= 16) {
     const recent15m = closed15m.slice(-16);
     let lowest15m = recent15m[0];
@@ -237,12 +272,13 @@ export function analyseBtcSentinel(
 
     const r15 = lowest15m.h - lowest15m.l;
     const lw15 = Math.min(lowest15m.o, lowest15m.c) - lowest15m.l;
-    const is15mBullishPin = (lowest15m.c >= lowest15m.o && lw15 >= 0.5 * r15) || lw15 >= 0.65 * r15;
+    const is15mBullishPin = (lowest15m.c >= lowest15m.o && lw15 >= 0.55 * r15) || lw15 >= 0.7 * r15;
 
     const avgVol15 = recent15m.reduce((s, x) => s + (x.v || 0), 0) / recent15m.length;
-    const hasVol15 = avgVol15 > 0 ? (lowest15m.v || 0) >= avgVol15 * 0.95 : true;
+    const hasVol15 = avgVol15 > 0 ? (lowest15m.v || 0) >= avgVol15 * 1.2 : false;
 
-    if (r15 >= 280 && is15mBullishPin && hasVol15 && currentPrice >= lowest15m.l + 320) {
+    // Chỉ tính nếu đáy 15m này thực sự quét qua macroLow
+    if (lowest15m.l <= macroLow + 20 && r15 >= 300 && is15mBullishPin && hasVol15 && currentPrice >= lowest15m.l + 350) {
       sweep = {
         side: 1,
         refPrice: lowest15m.l,
@@ -262,20 +298,22 @@ export function analyseBtcSentinel(
     saveState(state);
   }
 
-  let allowLong = btcDailyTrend >= 0;
-  let allowShort = btcDailyTrend <= 0;
+  // Xu hướng quyết định chiều lệnh:
+  // Mặc định thuận theo cấu trúc 4H/1H (marketStructure)
+  let allowLong = marketStructure > 0;
+  let allowShort = marketStructure < 0;
 
   if (sweep?.side === 1) {
     allowLong = true;
-    allowShort = false; // CHẶN HẾT SHORT TRÊN TOÀN THỊ TRƯỜNG KHI BTC VỪA QUÉT ĐÁY RÚT CHÂN
+    allowShort = false; // CHẶN HẾT SHORT KHI CÓ QUÉT ĐÁY MACRO XÁC NHẬN
   } else if (sweep?.side === -1) {
-    allowLong = false; // CHẶN HẾT LONG TRÊN TOÀN THỊ TRƯỜNG KHI BTC VỪA QUÉT ĐỈNH RÚT RÂU
+    allowLong = false; // CHẶN HẾT LONG KHI CÓ QUÉT ĐỈNH MACRO XÁC NHẬN
     allowShort = true;
   }
 
   const statusText = sweep
     ? `⚡ ${sweep.note} → ${sweep.side > 0 ? "ƯU TIÊN LONG, CẤM SHORT ALTCOIN" : "ƯU TIÊN SHORT, CẤM LONG ALTCOIN"}`
-    : `BTC xu hướng ngày: ${btcDailyTrend > 0 ? "TĂNG ↗ (chặn short altcoin)" : btcDailyTrend < 0 ? "GIẢM ↘ (chặn long altcoin)" : "LƯỠNG LỰ"}`;
+    : `Cấu trúc BTC 4H/1H: ${marketStructure > 0 ? "TĂNG ↗ (chỉ lọc Long altcoin)" : marketStructure < 0 ? "GIẢM ↘ (CẤM LONG, chỉ lọc Short altcoin)" : "LƯỠNG LỰ / TRANH CHẤP"}`;
 
-  return { dailyTrend: btcDailyTrend, allowLong, allowShort, sweep, invalidation: null, statusText };
+  return { dailyTrend: marketStructure, allowLong, allowShort, sweep, invalidation: null, statusText };
 }

@@ -162,7 +162,8 @@ export async function scanAndAlert(): Promise<string[]> {
   const btcDaily = await dailyTrend("BTC");
   const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
   const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
-  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m);
+  const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
+  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
 
   // 🚨 ĐIỀU KIỆN PHẾ TRUẤT LA BÀN BTC (INVALIDATION):
   // Nếu BTC đâm thủng đáy râu quét vừa tạo -> Bắn cảnh báo khẩn cấp và thu hồi cờ Long ngay lập tức
@@ -382,7 +383,7 @@ export async function scanAndAlert(): Promise<string[]> {
   if (finalDigest.length > 0 || isNewBtcSweep) {
     const btcCompass = btcSentinel.sweep
       ? `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
-      : `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* Xu hướng ngày ${btcDaily > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcDaily < 0 ? "GIẢM ↘ (Chỉ lọc Altcoin SHORT)" : "ĐI NGANG"}\n\n`;
+      : `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* Cấu trúc 4H/1H ${btcSentinel.dailyTrend > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcSentinel.dailyTrend < 0 ? "GIẢM ↘ (CẤM LONG, Chỉ lọc Altcoin SHORT)" : "TRANH CHẤP / LƯỠNG LỰ"}\n\n`;
 
     const shieldNote = droppedCount > 0
       ? `\n\n🛡️ *LÁ CHẮN TƯƠNG QUAN:* Đã chọn Top 2 Altcoin bật khỏe nhất (RS cao nhất). Bỏ qua ${droppedCount} kèo cùng chiều yếu hơn để tránh nhân rủi ro!`
