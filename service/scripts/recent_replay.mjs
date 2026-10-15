@@ -9,7 +9,7 @@ import { openSwing, stepSwing, loadSwings } from "../../lib/swing-4h.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup } from "../../lib/so-setups.ts";
 
-const DAYS = Number(process.argv[2] ?? 14), H = 3_600_000, H4 = 4 * H, DAY = 86_400_000, USD = 2.5;
+const DAYS = Number(process.argv[2] ?? 14), H = 3_600_000, H4 = 4 * H, H15 = 15 * 60_000, DAY = 86_400_000, USD = 2.5;
 const COINS = ["BTC","ETH","SOL","HYPE","XRP","DOGE","BNB","ADA","AVAX","LINK","DOT","LTC","SUI","ARB","OP","NEAR","APT","INJ","TIA","PEPE","WIF"];
 const START = Date.now() - DAYS * DAY;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,23 +37,33 @@ function dailyTrendFn(h1) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recent-"));
-const files = { "📌 Limit": "limit", "🎯 ICT": "ict", "🔨 High test 4H": "ht", "🧲 TradingLab IDM": "idm", ...Object.fromEntries(Object.entries(SO_LABEL).map(([k, v]) => [v.name, `so-${k}`])) };
+const files = { "📌 Limit": "limit", "🎯 ICT": "ict", "🔨 High test 4H": "ht", "🔨 High test 15m": "ht15", "🧲 TradingLab IDM": "idm", ...Object.fromEntries(Object.entries(SO_LABEL).map(([k, v]) => [v.name, `so-${k}`])) };
 const f = (coin, k) => path.join(tmp, `${coin}-${k}.json`);
 const swingTrades = [], stTrades = [];
 const btc4 = await history("BTC-USDT-SWAP", "4H", 900), btcTrend = dailyTrendFn(btc4.flatMap((b) => [b]));
 
 for (const coin of COINS) {
   const inst = `${coin}-USDT-SWAP`;
+  const h15 = await history(inst, "15m", 120 + DAYS * 96 + 96);
   const h1 = await history(inst, "1H", 300 + DAYS * 24 + 24);
   const h4 = await history(inst, "4H", 300 + DAYS * 6 + 6);
   // xu hướng ngày cần ≥ 60 ngày: dựng từ nến 4H (900 nến ≈ 150 ngày)
   const h4long = coin === "BTC" ? btc4 : await history(inst, "4H", 900);
   const own = dailyTrendFn(h4long);
+  for (let n = 120; n < h15.length; n++) {
+    const now = h15[n].t + H15 + 60_000;
+    if (now < START) continue;
+    const bars = h15.slice(n - 119, n + 1);
+    stepLimits(coin, bars, f(coin, "ht15"));
+    for (const g of highTestSetup(bars, "swing")) {
+      addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: H15 }, f(coin, "ht15"));
+    }
+  }
   for (let n = 300; n < h1.length; n++) {
     const now = h1[n].t + H + 60_000;
     if (now < START) continue;
     const bars = h1.slice(n - 99, n + 1);
-    for (const k of Object.values(files)) stepLimits(coin, k === "ht" ? [] : bars, f(coin, k));
+    for (const k of Object.values(files)) stepLimits(coin, (k === "ht" || k === "ht15") ? [] : bars, f(coin, k));
     if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, f(coin, "limit"), true); }
     const ict = ictSweepShort(bars);
     if (ict) addLimit(coin, ict, f(coin, "ict"));

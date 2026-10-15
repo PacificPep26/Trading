@@ -14,6 +14,7 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | ICT quét đỉnh hôm qua → ChoCh → FVG | Video ICT | 1H, SHORT, Limit giữa FVG, SL trên râu quét, TP đáy hôm qua | +0.42R, 2025 +119$ / 2026 +85$ |
 | Đặt sẵn Limit đón râu quét đáy | Chủ dự án | 1H, LONG, Limit 0.5 ATR dưới đáy, bỏ đáy volume ≥ 2.5x | +0.063R, +145$ / +172$ |
 | 🔨 Nến "high test" ở swing vừa bị phá → lệnh chờ phá râu | Jason Graystone (YouTube) | 4H, cả 2 chiều, SL ngoài nến + 0.1 ATR, TP 2R | +0.133R, 2025 +303$ / 2026 +132$ (ngẫu nhiên +161$ / −62$) |
+| 🔨 Nến "high test" 15m → lệnh chờ phá râu, TP swing | Jason Graystone (YouTube) | 15m, cả 2 chiều, SL ngoài nến + 0.1 ATR, TP swing đỉnh/đáy gần nhất (≥ 1R) | +0.05R, 2025 +1.501$ / 2026 +295$ (tổng +1.796$, ngẫu nhiên −2.863$) |
 | 📈 Supertrend (ATR 10, ×3) đổi màu → vào ngay, SL dời theo dải | Wysetrade (YouTube) — video lại khuyên KHÔNG vào lúc đổi màu | 4H, cả 2 chiều, SL = dải − 0.3 ATR, không TP | +0.155R, 2025 +139$ / 2026 +85$ (ngẫu nhiên cùng cách thoát −201$ / +38$) |
 | 🧲 Mồi nhử + FVG → Limit vùng A (Order Block cực trị) | TradingLab (YouTube) | 1H, cả 2 chiều, Limit đáy/đỉnh nến A, SL ngoài nến A + 0.1 ATR, TP đáy/đỉnh thấp nhất từ A | +0.092R, 2025 +60$ / 2026 +169$ (mỏng) |
 | Hai đỉnh/đáy thuận xu hướng, gồng lãi | Repo | 4H, volume ≥ 2x, SL trailing 3 ATR, không TP | +1.22R, +45$ / +43$ |
@@ -31,6 +32,9 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 
 | Ý tưởng | Nguồn | Vì sao bỏ |
 |---|---|---|
+| The Trading Channel hai đỉnh/hai đáy 15m | YouTube | Tổng 2025–2026: -$3.233 ❌ |
+| Rayner Teo T.A.E 15m | YouTube | Tổng 2025–2026: -$4.547 ❌ |
+| TradingLab mồi nhử + FVG 15m | YouTube | 2025 +$345 / 2026 -$147 ❌ (chỉ hiệu quả 1H) |
 | Phá vỡ vùng nhiều đỉnh sau độ nén | SO Trading video 4, 7 | Quá hiếm (19 lệnh/21 tháng), 2026 −15$ |
 | Chòm râu (≥ 3 nến râu dài cùng vùng) / nhấn chìm lần hai | SO Trading video 25 (lời thoại) | Chòm râu ≈ ngẫu nhiên; nhấn chìm lần hai âm cả 2 năm (1H −689$ / −450$) |
 | Phá vỡ đáy cao dần nén sát vùng đỉnh (theo lời thoại) | SO Trading video 4, 7 | Quá hiếm, âm cả 2 năm |

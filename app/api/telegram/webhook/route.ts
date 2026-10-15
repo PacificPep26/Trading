@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
 import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
-import { COINS, ICT_PAPER, HIGHTEST_PAPER, ST_PAPER, IDM_PAPER, f, soPaper } from "@/lib/telegram-alerts";
+import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAPER, f, soPaper } from "@/lib/telegram-alerts";
 import { SO_LABEL, type SoKind } from "@/lib/so-setups";
 import { coinSnapshot } from "@/lib/snapshot";
 
@@ -11,6 +11,7 @@ const HELP =
   "🤖 *Bot báo kèo học từ video* (bạn tự vào lệnh, phí 0):\n" +
   "• 🎯 ICT quét đỉnh hôm qua → SHORT 1H\n" +
   "• 🔨 Nến high test 4H → lệnh chờ phá (Jason Graystone, đạt chuẩn)\n" +
+  "• 🔨 Nến high test 15m TP swing → lệnh chờ phá 45m (Jason Graystone, đạt chuẩn)\n" +
   "• 📈 Supertrend 4H đổi màu → vào ngay, không TP, bot nhắc dời SL theo dải (Wysetrade, đạt chuẩn)\n" +
   "• 🧲 Mồi nhử + FVG, Limit vùng A 1H (TradingLab, đạt chuẩn mỏng)\n" +
   "• SO Trading 1H, tin kèm số backtest (chỉ 🔁 đạt chuẩn): 🔁 hồi đỉnh cũ · 👤 vai–đầu–vai · 🚀 phá vỡ sau nén · 🕯 chòm râu\n" +
@@ -41,6 +42,7 @@ function stats(): string {
     line("📌 Limit (tắt tin)", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
     line("📊 4H (tắt tin)", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh\n" +
     line("🔨 High test 4H", limitStats(loadLimits(HIGHTEST_PAPER)), "lệnh chờ phá") + "\n   backtest +0.13R/lệnh\n" +
+    line("🔨 High test 15m", limitStats(loadLimits(HIGHTEST_15M_PAPER)), "lệnh chờ phá") + "\n   backtest +0.05R/lệnh (+1.796$)\n" +
     line("📈 Supertrend 4H", st, `${st.open} mở`) + "\n   backtest +0.16R/lệnh\n" +
     line("🧲 Mồi nhử + FVG 1H", idm, `${idm.pending} chờ, ${idm.open} mở`) + "\n   backtest +0.09R/lệnh (mỏng)\n" +
     (Object.keys(SO_LABEL) as SoKind[]).map((k) => {

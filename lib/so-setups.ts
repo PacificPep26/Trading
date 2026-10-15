@@ -112,7 +112,7 @@ export function soSetups(all: Candle[]): SoSetup[] {
  * (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → lệnh chờ PHÁ râu (buy stop trên đỉnh nến / sell stop dưới đáy) 3 nến,
  * SL ngoài nến + 0.1 ATR, TP 2R tính từ giá chờ.
  */
-export function highTestSetup(all: Candle[]): { side: 1 | -1; trigger: number; stop: number; tp: number; barTime: number }[] {
+export function highTestSetup(all: Candle[], tpMode: "2r" | "swing" = "2r"): { side: 1 | -1; trigger: number; stop: number; tp: number; barTime: number }[] {
   const cs = all.filter((c) => c.closed !== false);
   const i = cs.length - 1;
   if (i < 60) return [];
@@ -132,7 +132,10 @@ export function highTestSetup(all: Candle[]): { side: 1 | -1; trigger: number; s
     if (!(rng > 0 && wick >= 2 * body && wick >= 0.6 * rng)) continue;
     const trigger = side > 0 ? c.h : c.l, stop = side > 0 ? c.l - 0.1 * a : c.h + 0.1 * a;
     const risk = (side * (trigger - stop)) / trigger;
-    if (risk >= 0.003 && risk <= 0.06) out.push({ side, trigger, stop, tp: trigger + 2 * (trigger - stop), barTime: c.t });
+    const tp = tpMode === "swing" ? top(hs.at(-1)!) : trigger + 2 * (trigger - stop);
+    if (risk >= 0.003 && risk <= 0.06 && (tpMode === "2r" || side * (tp - trigger) >= side * (trigger - stop))) {
+      out.push({ side, trigger, stop, tp, barTime: c.t });
+    }
   }
   return out;
 }

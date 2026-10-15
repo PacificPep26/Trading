@@ -30,6 +30,10 @@ ht.push({ t: ht.length * H, o: 111.5, h: 111.8, l: 110.5, c: 111.6, v: 1, closed
 const g = highTestSetup(ht);
 assert.equal(g.length, 1); assert.equal(g[0].side, 1); assert.equal(g[0].trigger, 111.8);
 assert.ok(g[0].stop < 110.5 && Math.abs((g[0].tp - 111.8) - 2 * (111.8 - g[0].stop)) < 1e-9, "SL dưới nến, TP 2R");
+const gSwing = highTestSetup(ht, "swing");
+assert.equal(gSwing.length, 1); assert.equal(gSwing[0].side, 1); assert.equal(gSwing[0].trigger, 111.8);
+assert.equal(gSwing[0].tp, 115.6, "TP swing = đỉnh gần nhất (115.6)");
+assert.ok(gSwing[0].tp - gSwing[0].trigger >= gSwing[0].trigger - gSwing[0].stop, "TP swing R >= 1");
 // lệnh chờ phá: chạm SL trước khi phá → huỷ; phá rồi chạm TP → thắng
 const f2 = path.join(path.dirname(file), "ht.json");
 addLimit("SOL", { side: 1, level: 111.8, limit: 111.8, stop: 110.3, tp: 114.8, atr: 0, barTime: 0, stopEntry: true, barMs: 4 * H }, f2);

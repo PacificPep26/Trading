@@ -24,6 +24,7 @@ export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
 // 4 kèo SO Trading: chủ dự án chọn báo cả 4 kèm số backtest (chỉ "hồi đỉnh cũ" đạt chuẩn) — mỗi kèo 1 sổ paper
 export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 export const HIGHTEST_PAPER = path.join(process.cwd(), "data", "paper-hightest.json");
+export const HIGHTEST_15M_PAPER = path.join(process.cwd(), "data", "paper-hightest-15m.json");
 export const ST_PAPER = path.join(process.cwd(), "data", "paper-st.json");
 export const IDM_PAPER = path.join(process.cwd(), "data", "paper-idm.json");
 
@@ -130,20 +131,33 @@ export async function scanAndAlert(): Promise<string[]> {
   }
 
   const minute = new Date(now).getUTCMinutes();
+  const after15m = minute % 15 < 3; // nến 15m vừa đóng (trong 3 phút đầu)
   const after1h = minute < 15; // nến 1H vừa đóng
   const after4h = after1h && new Date(now).getUTCHours() % 4 === 0; // nến 4H vừa đóng
-  if (!after1h) {
+  if (!after15m && !after1h) {
     saveSent();
     return out;
   }
 
   const digest: { rank: number; text: string }[] = [];
-  const btc = await dailyTrend("BTC");
+  const btc = after4h ? await dailyTrend("BTC") : 0;
   const btc1h: Candle[] = after4h ? await candles("BTC-USDT-SWAP", "1H", 10).catch(() => []) : [];
 
   for (const coin of COINS) {
     try {
-      const own = await dailyTrend(coin);
+      const own = after1h || after4h ? await dailyTrend(coin) : 0;
+
+      if (after15m) {
+        const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 120);
+        for (const m of stepLimits(coin, bars15m, HIGHTEST_15M_PAPER)) await say(m);
+        for (const g of highTestSetup(bars15m, "swing")) {
+          const key = `HT15:${coin}:${g.side}:${g.barTime}`;
+          if (sent.has(key)) continue;
+          sent.add(key);
+          addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
+          digest.push({ rank: 0, text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅") });
+        }
+      }
 
       if (after4h) {
         const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 300);
@@ -177,48 +191,50 @@ export async function scanAndAlert(): Promise<string[]> {
         }
       }
 
-      // 1H: 300 nến cho kèo SO Trading; 📌 và 🎯 dùng 100 nến cuối như backtest (ICT cần trọn ngày hôm qua, có khi cả hôm kia)
-      const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
-      const bars1h = bars300.slice(-100);
-      stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
-      for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
-      for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
+      if (after1h) {
+        // 1H: 300 nến cho kèo SO Trading; 📌 và 🎯 dùng 100 nến cuối như backtest (ICT cần trọn ngày hôm qua, có khi cả hôm kia)
+        const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
+        const bars1h = bars300.slice(-100);
+        stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
+        for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
+        for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
 
-      // Kèo SO Trading (lời thoại video): tin ghi kèm số backtest 2025/2026
-      // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
-      for (const m of stepLimits(coin, bars1h, IDM_PAPER)) await say(m);
-      for (const g of inducementSetup(bars300)) {
-        const key = `IDM:${coin}:${g.side}:${g.barTime}`;
-        if (sent.has(key)) continue;
-        sent.add(key);
-        addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
-        digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
-      }
-      for (const so of soSetups(bars300)) {
-        const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
-        if (sent.has(key)) continue;
-        sent.add(key);
-        addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
-        const lab = SO_LABEL[so.kind];
-        digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
-      }
+        // Kèo SO Trading (lời thoại video): tin ghi kèm số backtest 2025/2026
+        // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
+        for (const m of stepLimits(coin, bars1h, IDM_PAPER)) await say(m);
+        for (const g of inducementSetup(bars300)) {
+          const key = `IDM:${coin}:${g.side}:${g.barTime}`;
+          if (sent.has(key)) continue;
+          sent.add(key);
+          addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
+          digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
+        }
+        for (const so of soSetups(bars300)) {
+          const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
+          if (sent.has(key)) continue;
+          sent.add(key);
+          addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
+          const lab = SO_LABEL[so.kind];
+          digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
+        }
 
-      // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
-      const ict = ictSweepShort(bars1h);
-      const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
-      if (ict && ictKey && !sent.has(ictKey)) {
-        sent.add(ictKey);
-        addLimit(coin, ict, ICT_PAPER);
-        digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
-        markAlerted(coin, -1);
-      }
+        // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
+        const ict = ictSweepShort(bars1h);
+        const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
+        if (ict && ictKey && !sent.has(ictKey)) {
+          sent.add(ictKey);
+          addLimit(coin, ict, ICT_PAPER);
+          digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
+          markAlerted(coin, -1);
+        }
 
-      // 📌 Limit dưới đáy 1H: CHỈ PAPER, không gửi tin (chủ dự án 15/10 bỏ kèo cũ; sổ thật 14–15/10: 14 lệnh, thắng 1, −30$;
-      // chạy lại 14 ngày: 102 lệnh −105$ — chỉ LONG nên dính SL loạt khi thị trường giảm)
-      const rl = own > 0 ? restingLimit(bars1h, 1) : null;
-      if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
-        sent.add(`RL:${coin}:${rl.barTime}`);
-        addLimit(coin, rl, undefined, true);
+        // 📌 Limit dưới đáy 1H: CHỈ PAPER, không gửi tin (chủ dự án 15/10 bỏ kèo cũ; sổ thật 14–15/10: 14 lệnh, thắng 1, −30$;
+        // chạy lại 14 ngày: 102 lệnh −105$ — chỉ LONG nên dính SL loạt khi thị trường giảm)
+        const rl = own > 0 ? restingLimit(bars1h, 1) : null;
+        if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
+          sent.add(`RL:${coin}:${rl.barTime}`);
+          addLimit(coin, rl, undefined, true);
+        }
       }
     } catch (e) {
       console.error(`[SCAN] ${coin}:`, e);

@@ -11,10 +11,11 @@ quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đ�
 |---|---|---|---|
 | 1. Tin Mỹ | mọi lượt | ≤ 60 phút trước CPI/NFP/FOMC → `⏰`; nến 5m đầu của BTC đóng → `⚡` | có |
 | 2. Theo dõi giá | mọi lượt | giá chạm mức chủ dự án đặt bằng `theo dõi …` | có |
-| 3. Kèo 4H | 15 phút đầu sau khi nến 4H đóng: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00 | 🔨 high test, 📈 Supertrend đổi màu (+ sổ paper); 📊 hai đỉnh/đáy chỉ ghi paper | 🔨 📈 có, 📊 không |
-| 4. Kèo 1H | 15 phút đầu mỗi giờ (xx:00–xx:15) | 🎯 ICT, 🧲 TradingLab IDM, 🔁 👤 🚀 🕯 SO Trading (+ sổ paper); 📌 chỉ ghi paper | có (trừ 📌) |
-| 5. Gộp tin | cuối lượt có kèo | 1 tin `📋 KÈO MỚI hh:mm`, mỗi kèo 2 dòng (chiều · coin · cách vào · giá / SL · TP1 · TP2 · đòn bẩy) | có |
-| 6. Sổ paper | mỗi lượt có nến mới đóng | khớp / đóng lệnh paper → `🧪 KHỚP`, `🧪 ĐÓNG`, `⌛` huỷ | có (trừ 📌 📊) |
+| 3. Kèo 15m | 3 phút đầu sau mỗi nến 15m đóng (:00, :15, :30, :45) | 🔨 15m high test TP swing (+ sổ paper) | có |
+| 4. Kèo 4H | 15 phút đầu sau khi nến 4H đóng: 03:00, 07:00, 11:00, 15:00, 19:00, 23:00 | 🔨 high test 4H, 📈 Supertrend đổi màu (+ sổ paper); 📊 hai đỉnh/đáy chỉ ghi paper | 🔨 📈 có, 📊 không |
+| 5. Kèo 1H | 15 phút đầu mỗi giờ (xx:00–xx:15) | 🎯 ICT, 🧲 TradingLab IDM, 🔁 👤 🚀 🕯 SO Trading (+ sổ paper); 📌 chỉ ghi paper | có (trừ 📌) |
+| 6. Gộp tin | cuối lượt có kèo | 1 tin `📋 KÈO MỚI hh:mm`, mỗi kèo 2 dòng (chiều · coin · cách vào · giá / SL · TP1 · TP2 · đòn bẩy) | có |
+| 7. Sổ paper | mỗi lượt có nến mới đóng | khớp / đóng lệnh paper → `🧪 KHỚP`, `🧪 ĐÓNG`, `⌛` huỷ | có (trừ 📌 📊) |
 
 Mỗi kèo chỉ báo 1 lần cho mỗi nến tín hiệu (khoá chống trùng trong `data/telegram-sent.json`). Không có kèo nào đạt điều kiện → không gửi gì.
 
@@ -44,6 +45,11 @@ Cả 2 chiều; vào Market ở giá đóng (paper khớp giá mở nến kế, 
 ## 🔨 Nến high test 4H → lệnh chờ phá (`highTestSetup`, Jason Graystone)
 
 Cấu trúc 4H thuận chiều, nến vừa đóng chạm swing vừa bị phá (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → **buy stop trên đỉnh nến / sell stop dưới đáy**, hiệu lực 3 nến 4H (huỷ nếu chạm SL trước); SL ngoài nến + 0.1 ATR; TP 2R. Cả 2 chiều. Sổ `data/paper-hightest.json`. Code live 2025 +303$ / 2026 +132$.
+
+## 🔨 Nến high test 15m TP swing → lệnh chờ phá (`highTestSetup(..., "swing")`, Jason Graystone)
+
+Cấu trúc 15m thuận chiều, nến vừa đóng chạm swing vừa bị phá (≤ 0.2 ATR), râu từ chối ≥ 2 thân và ≥ 60% nến → **buy stop trên đỉnh nến / sell stop dưới đáy**, hiệu lực 3 nến 15m (45 phút, huỷ nếu chạm SL trước); SL ngoài nến + 0.1 ATR; TP = đỉnh/đáy swing gần nhất (yêu cầu R:R ≥ 1). Cả 2 chiều. Sổ `data/paper-hightest-15m.json`. Backtest 2025 +1.501$ / 2026 +295$ (tổng +1.796$, n=14.804, t=+3.6, control ngẫu nhiên −2.863$).
+
 
 ## 📈 Supertrend 4H đổi màu → vào ngay (`stFlipSetup`, Wysetrade)
 

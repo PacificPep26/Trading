@@ -13,11 +13,14 @@ Next.js 16 trên Railway (`main` push là tự deploy). Quét 21 coin bằng d�
 | Kèo | Code | Paper | Code live chạy lại 2025 / 2026 (2.5$/lệnh, phí 0) |
 |---|---|---|---|
 | 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua (1H, SHORT) | `ictSweepShort` (`lib/patterns.ts`) | `data/paper-ict.json` | +119$ / +85$ · +0.42R · 193 lệnh |
+| 🔨 High test 15m TP swing (Jason Graystone, buy/sell stop 3 nến, cả 2 chiều) | `highTestSetup(bars, "swing")` (`lib/so-setups.ts`) | `data/paper-hightest-15m.json` | +1.501$ / +295$ · +0.05R · 14.804 lệnh (t=+3.6) |
 | 🧲 Mồi nhử + FVG → Limit vùng A (1H, cả 2 chiều, TradingLab) | `inducementSetup` (`lib/so-setups.ts`) | `data/paper-idm.json` | +60$ / +169$ · +0.09R · 1.000 lệnh (mỏng) |
 | 📌 Limit mua 0.5 ATR dưới đáy 1H vừa xác nhận, coin tăng ngày (LONG) | `restingLimit` | `data/paper-limit.json` | +131$ / +169$ · +0.06R · 2.003 lệnh |
 | 📊 Hai đỉnh/đáy 4H thuận ngày coin + BTC, volume ≥ 2x, không TP, SL trailing 3 ATR | `analyse` + `isSwingSetupOk` (`lib/trading-policy.ts`) | `data/paper-4h.json` (`lib/swing-4h.ts`) | +46$ / +45$ · +1.26R · 29 lệnh |
 
-**15/10: chủ dự án bỏ kèo cũ — 📌 và 📊 TẮT TIN, chỉ ghi paper** (`recent_replay.mjs` 1–15/10: 📌 −105$, 📊 −2$). Tin đang gửi: 🎯 ICT, 🔨 high test, 📈 Supertrend 4H, 🧲 Mồi nhử + FVG, 🔁 hồi đỉnh cũ, 👤 🚀 🕯 (SO Trading).
+**15/10: chủ dự án bỏ kèo cũ — 📌 và 📊 TẮT TIN, chỉ ghi paper** (`recent_replay.mjs` 1–15/10: 📌 −105$, 📊 −2$). Tin đang gửi: 🎯 ICT, 🔨 high test 15m & 4H, 📈 Supertrend 4H, 🧲 Mồi nhử + FVG, 🔁 hồi đỉnh cũ, 👤 🚀 🕯 (SO Trading).
+
+**🔨 Nến high test 15m TP swing → lệnh chờ phá** (`highTestSetup(..., "swing")`, Jason Graystone, đạt chuẩn xuất sắc): 2025 +1.501$ / 2026 +295$ (tổng +1.796$, t=+3.6, control ngẫu nhiên −2.863$), sổ `data/paper-hightest-15m.json`.
 
 **🔨 Nến high test 4H → lệnh chờ phá** (`highTestSetup`, Jason Graystone, đạt chuẩn): 2025 +303$ / 2026 +132$, sổ `data/paper-hightest.json`.
 

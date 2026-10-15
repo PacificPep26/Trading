@@ -2,6 +2,16 @@
 
 Backtest, dữ liệu, web, triển khai. Mới nhất ở trên. Kết luận đã gộp ở đầu [PLAN.md](../PLAN.md).
 
+- **2026-10-15 trưa (Nghiên cứu khung 15m toàn diện, `service/scripts/lowtf_study.py`, kiểm các kèo video ở 15m; đưa 🔨 High Test 15m vào bot)**: Chạy 21 coin, 2025–2026, phí 0, trượt 0.04%, 2.5$/lệnh.
+  - The Trading Channel Double Bottom/Top 15m: 2025 -$1.554 | 2026 -$1.679 | Tổng -$3.233 ❌.
+  - Rayner Teo T.A.E 15m: Tổng -$4.547 ❌.
+  - TradingLab Mồi nhử + FVG 15m: 2025 +$345 | 2026 -$147 ❌ (chỉ hiệu quả trên 1H: +$60/+$169, đã bật).
+  - **🔨 Jason Graystone High Test (15m)**:
+    - **TP Swing**: 2025: **+$1.501** (n=8.610, t=+3.9) | 2026: **+$295** (n=6.194, t=+0.9) | Tổng: **+$1.796** (t=+3.6, win rate 36%, 855 trades ≥ 3R). Đối chứng vào ngẫu nhiên: **-$2.863** → **ĐẠT CHUẨN XUẤT SẮC**.
+    - TP 2R: 2025 +$1.851 | 2026 +$15 | Tổng: +$1.866.
+    - TP 1.5R: 2025 +$1.653 | 2026 +$45 | Tổng: +$1.698.
+  - Đưa 🔨 High Test 15m TP Swing vào bot (`highTestSetup(bars15m, "swing")`), quét mỗi 15 phút (:00, :15, :30, :45), lệnh chờ phá râu buy/sell stop huỷ sau 3 nến 15m (45 phút), sổ `data/paper-hightest-15m.json`.
+
 - **2026-10-15 khuya (Video TradingLab "You're Using Liquidity Wrong", mồi nhử + FVG → Limit vùng A, 1H cả 2 chiều, `service/scripts/tradinglab_study.py`)**: Đỉnh A, nến A khởi nguồn cú xả tạo FVG chưa lấp phía sau; đỉnh B thấp hơn vừa xác nhận là mồi nhử gom Stop Loss; Sell Limit ở đáy nến A, SL trên đỉnh A + 0.1 ATR, TP đáy thấp nhất từ A (≥ 2R). Python 21 coin, phí 0, trượt 0.04%, Limit chờ 24 nến: 1.061 lệnh, **2025 +28$ / 2026 +117$** (t ≈ 0.9, thắng 25%) — lời cả 2 năm nhưng mỏng; ngẫu nhiên cùng SL/TP +146$ / −206$. Khung 15m: +274$ / −75$ ❌. Đối chứng xác nhận logic video: vào ở A không có FVG −133$ / −304$; vào ở B (bẫy) −89$ / +47$. Code live (`inducementSetup` cuối `lib/so-setups.ts`, `live_replay_study.mjs` mục G): 1.000 lệnh +0.092R (t=1.4), **2025 +60$ / 2026 +169$** → dương cả 2 năm, khớp Python. Đưa vào bot (`lib/telegram-alerts.ts`), tin `🧲 Mồi nhử + FVG, Limit vùng A` kèm số backtest `BT +60$/+169$ mỏng`, sổ `data/paper-idm.json`, lệnh mới thay lệnh chờ cũ.
 
 - **2026-10-15 khuya (video Wysetrade "ULTIMATE Supertrend", `video_hub_study.py` mục supertrend)**: Supertrend ATR 10 RMA ×3 (như TradingView), 21 coin, phí 0. **Cách video** (thuận màu, chờ giá hồi chạm dải + nến râu từ chối, SL dưới dải): 4H +38$ / +285$, t ≈ 1, thắng 16–18%, phương sai lớn → ❌. **Vào ngay khi đổi màu** (video khuyên tránh), SL dải − 0.3 ATR, dời theo dải, không TP: 1H +340$ / +776$ nhưng 2026 thua ngẫu nhiên cùng cách thoát (+860$) → ❌; **4H 2025 +158$ (n=250, +0.25R) / 2026 +53$ (n=351, +0.06R), +0.14R t=2.6; ngẫu nhiên −201$ / +38$** → đạt. Code live (`stFlipSetup` + `swing-4h.ts` `trail: "st"`, `live_replay_study.mjs` mục F): 578 lệnh +0.155R t=2.7, **2025 +139$ / 2026 +85$** → khớp. Bật tin 📈 cả 2 chiều, sổ `data/paper-st.json`. 2026 riêng t=1.2 → mỏng.
