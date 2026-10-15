@@ -15,6 +15,7 @@ import { addLimit, stepLimits } from "./resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "./price-watch";
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
+import { generateCandleChartPng } from "./chart-generator";
 
 export { f };
 
@@ -95,6 +96,34 @@ export async function send(text: string): Promise<boolean> {
   } catch (e) {
     console.error("Telegram send error", e);
     return false;
+  }
+}
+
+export async function sendPhoto(photoBuffer: Buffer, caption: string): Promise<boolean> {
+  const token = process.env.TELEGRAM_BOT_TOKEN, chat = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) {
+    console.log("[TELEGRAM chưa cấu hình photo]\n" + caption);
+    return false;
+  }
+  try {
+    const formData = new FormData();
+    formData.append("chat_id", chat);
+    formData.append("photo", new Blob([new Uint8Array(photoBuffer)], { type: "image/png" }), "chart.png");
+    formData.append("caption", caption);
+    formData.append("parse_mode", "Markdown");
+
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      console.error(`Telegram sendPhoto ${res.status}:`, await res.text());
+      return await send(caption);
+    }
+    return res.ok;
+  } catch (e) {
+    console.error("Telegram sendPhoto error", e);
+    return await send(caption);
   }
 }
 
@@ -390,9 +419,50 @@ export async function scanAndAlert(): Promise<string[]> {
       : "";
 
     if (finalDigest.length > 0) {
-      await say(`📋 *KÈO ALTCOIN MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote);
+      const msg = `📋 *KÈO ALTCOIN MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote;
+      out.push(msg);
+
+      let chartBuf: Buffer | null = null;
+      try {
+        const topCoin = finalDigest[0].coin;
+        const tf = finalDigest[0].text.includes("15m") ? "15m" : "1H";
+        const c = await candles(`${topCoin}-USDT-SWAP`, tf, 45);
+        chartBuf = await generateCandleChartPng({
+          symbol: `${topCoin}/USDT`,
+          timeframe: tf,
+          candles: c,
+          statusText: `TÍN HIỆU: ${finalDigest[0].side > 0 ? "LONG ↗" : "SHORT ↘"}`,
+        });
+      } catch (e) {
+        console.error("[CHART_ERR]", e);
+      }
+
+      if (chartBuf) {
+        await sendPhoto(chartBuf, msg);
+      } else {
+        await send(msg);
+      }
     } else if (isNewBtcSweep) {
-      await say(`🧭 *CẬP NHẬT LA BÀN THỊ TRƯỜNG ${vnTime(now)}*\n` + btcCompass + `⏳ *Altcoin:* Chưa có coin nào xuất hiện nến High Test / Pullback chuẩn đạt R:R. Đang tiếp tục quét...`);
+      const compassMsg = `🧭 *CẬP NHẬT LA BÀN THỊ TRƯỜNG ${vnTime(now)}*\n` + btcCompass + `⏳ *Altcoin:* Chưa có coin nào xuất hiện nến High Test / Pullback chuẩn đạt R:R. Đang tiếp tục quét...`;
+      out.push(compassMsg);
+
+      let btcChartBuf: Buffer | null = null;
+      try {
+        btcChartBuf = await generateCandleChartPng({
+          symbol: "BTC/USDT",
+          timeframe: "4H",
+          candles: btc4h,
+          statusText: `LA BÀN: ${btcSentinel.sweep ? (btcSentinel.sweep.side > 0 ? "QUÉT ĐÁY ↗" : "QUÉT ĐỈNH ↘") : "CẤU TRÚC GIẢM ↘"}`,
+        });
+      } catch (e) {
+        console.error("[BTC_CHART_ERR]", e);
+      }
+
+      if (btcChartBuf) {
+        await sendPhoto(btcChartBuf, compassMsg);
+      } else {
+        await send(compassMsg);
+      }
     }
   }
   saveSent();

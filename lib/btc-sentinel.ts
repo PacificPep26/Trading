@@ -86,7 +86,19 @@ export function analyseBtcSentinel(
   const currentPrice = closed15m.at(-1)?.c ?? c.c;
   const state = loadState();
 
-  // ==========================================
+  // Dọn dẹp triệt để bất kỳ cờ quét đáy lỗi cũ nào trong cache (như cú quét râu 42% ở 80,823 lúc 18:00)
+  if (state.activeSweep) {
+    const sw = state.activeSweep;
+    const macroLowCheck = Math.min(...cs.map((x) => x.l));
+    if (
+      (sw.side === 1 && sw.sweepPrice > macroLowCheck + 50) ||
+      sw.note.includes("42%") ||
+      sw.note.includes("80961")
+    ) {
+      state.activeSweep = null;
+      saveState(state);
+    }
+  }
   // BƯỚC 1: XÁC ĐỊNH CẤU TRÚC XU HƯỚNG 4H & 1H (MARKET STRUCTURE)
   // Không chỉ nhìn Daily EMA50 (bị trễ hàng nghìn giá khi dump/pump)
   // ==========================================
