@@ -16,7 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectAccumulationBreakout } from "./candle-vision";
+import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary } from "./candle-vision";
 
 export { f };
 
@@ -128,15 +128,27 @@ export async function sendPhoto(photoBuffer: Buffer, caption: string): Promise<b
   }
 }
 
-/** Tin kèo mẫu chung 2 dòng. tp = undefined: kèo không TP (4H trailing). */
-export function planText(side: number, coin: string, how: string, entry: number, stop: number, tp?: number, note = "", tp1?: number) {
+/** Tin kèo mẫu chung gọn đẹp 3 dòng: Tên kèo + Điểm vào -> Mắt soi nến -> TP / SL / Đòn bẩy */
+export function planText(
+  side: number,
+  coin: string,
+  how: string,
+  entry: number,
+  stop: number,
+  tp?: number,
+  candleInfo?: string,
+  tp1?: number
+) {
   const r = Math.abs(entry - stop), risk = r / entry;
   const lev = Math.min(10, Math.max(1, Math.floor(0.8 / risk))); // tối đa x10; chạm SL mất ≤ 80% ký quỹ
   const exit = tp === undefined
-    ? "không TP, bot nhắc dời SL"
-    : `TP1 ${f(tp1 ?? entry + Math.sign(tp - entry) * r)} · TP2 ${f(tp)}`; // TP1 mặc định 1R: chốt 50% rồi dời SL về giá vào
-  return `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${how} ${f(entry)}${note ? ` · ${note}` : ""}\n` +
-    `   ${exit} · SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · x${lev}`;
+    ? "không TP (dời SL theo 4H)"
+    : `TP1 ${f(tp1 ?? entry + Math.sign(tp - entry) * r)} · TP2 ${f(tp)}`;
+
+  const line1 = `${side > 0 ? "🟢 *LONG" : "🔴 *SHORT"} ${coin}* · ${how} ${f(entry)}`;
+  const line2 = candleInfo ? `\n👁️ *${candleInfo}*` : "";
+  const line3 = `\n🎯 ${exit} · 🛑 SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · x${lev}`;
+  return `${line1}${line2}${line3}`;
 }
 
 export async function scanAndAlert(): Promise<string[]> {
@@ -154,7 +166,7 @@ export async function scanAndAlert(): Promise<string[]> {
 
   const btcDaily = await dailyTrend("BTC");
   const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
-  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
+  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 300).catch(() => []);
   const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
   const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
 
@@ -239,11 +251,12 @@ export async function scanAndAlert(): Promise<string[]> {
       const isHeld = heldCoins.has(coin);
 
       if (after15m) {
-        const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 120);
+        const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
         stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
         if (!isHeld && coin !== "BTC") {
           const ownDaily = await dailyTrend(coin);
           const vision15m = analyzeCandleVision(bars15m);
+          const candleSum15m = formatCandleSummary("M15", bars15m, vision15m);
 
           for (const g of highTestSetup(bars15m, "swing")) {
             // Lọc la bàn BTC & Max Concurrent Risk
@@ -274,7 +287,7 @@ export async function scanAndAlert(): Promise<string[]> {
               entry: g.trigger,
               stop: g.stop,
               tp: g.tp,
-              text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅"),
+              text: planText(g.side, coin, `🔨 High test phá râu`, g.trigger, g.stop, g.tp, candleSum15m),
             });
           }
 
@@ -294,7 +307,7 @@ export async function scanAndAlert(): Promise<string[]> {
                   entry: ab.entry,
                   stop: ab.stop,
                   tp: ab.tp,
-                  text: planText(1, coin, "📦 Tích luỹ nén hộp, Mua phá vỡ", ab.entry, ab.stop, ab.tp, ab.note),
+                  text: planText(1, coin, "📦 Nén hộp bùng nổ", ab.entry, ab.stop, ab.tp, candleSum15m),
                 });
               }
             }
@@ -331,6 +344,7 @@ export async function scanAndAlert(): Promise<string[]> {
             const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
             const rsScore = r4 > 0 ? (rebound / r4) * 100 : 50;
 
+            const candleSum4h = formatCandleSummary("4H", bars4h, vision4h);
             digest.push({
               rank: 0,
               coin,
@@ -339,7 +353,7 @@ export async function scanAndAlert(): Promise<string[]> {
               entry: g.trigger,
               stop: g.stop,
               tp: g.tp,
-              text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅"),
+              text: planText(g.side, coin, "🔨 High test 4H", g.trigger, g.stop, g.tp, candleSum4h),
             });
           }
           // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
@@ -355,7 +369,7 @@ export async function scanAndAlert(): Promise<string[]> {
                   rsScore: 75,
                   entry: st.entry,
                   stop: st.stop,
-                  text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅"),
+                  text: planText(st.side, coin, "📈 Supertrend 4H", st.entry, st.stop),
                 });
             }
           }
@@ -409,7 +423,7 @@ export async function scanAndAlert(): Promise<string[]> {
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
-            const lab = SO_LABEL[so.kind];
+            const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
             digest.push({
               rank: 3,
               coin,
@@ -418,7 +432,7 @@ export async function scanAndAlert(): Promise<string[]> {
               entry: so.entry,
               stop: so.stop,
               tp: so.tp,
-              text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1),
+              text: planText(so.side, coin, "🔁 Hồi đỉnh cũ", so.entry, so.stop, so.tp, candleSum1h, so.tp1),
             });
           }
 
@@ -429,6 +443,7 @@ export async function scanAndAlert(): Promise<string[]> {
             if (allowShort) {
               sent.add(ictKey);
               addLimit(coin, ict, ICT_PAPER);
+              const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
               digest.push({
                 rank: 1,
                 coin,
@@ -437,7 +452,7 @@ export async function scanAndAlert(): Promise<string[]> {
                 entry: ict.limit,
                 stop: ict.stop,
                 tp: ict.tp,
-                text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua"),
+                text: planText(-1, coin, "🎯 ICT FVG Limit", ict.limit, ict.stop, ict.tp, candleSum1h),
               });
               markAlerted(coin, -1);
             }
@@ -463,21 +478,16 @@ export async function scanAndAlert(): Promise<string[]> {
 
   const topLongs = longAltcoins.slice(0, 2);
   const topShorts = shortAltcoins.slice(0, 2);
-  const droppedCount = (longAltcoins.length - topLongs.length) + (shortAltcoins.length - topShorts.length);
 
   const finalDigest = [...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
 
   if (finalDigest.length > 0 || isNewBtcSweep) {
     const btcCompass = btcSentinel.sweep
-      ? `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
-      : `🧭 *LA BÀN THỊ TRƯỜNG (BTC):* Cấu trúc 4H/1H ${btcSentinel.dailyTrend > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcSentinel.dailyTrend < 0 ? "GIẢM ↘ (CẤM LONG, Chỉ lọc Altcoin SHORT)" : "TRANH CHẤP / LƯỠNG LỰ"}\n\n`;
-
-    const shieldNote = droppedCount > 0
-      ? `\n\n🛡️ *LÁ CHẮN TƯƠNG QUAN:* Đã chọn Top 2 Altcoin bật khỏe nhất (RS cao nhất). Bỏ qua ${droppedCount} kèo cùng chiều yếu hơn để tránh nhân rủi ro!`
-      : "";
+      ? `🧭 *BTC:* ${btcSentinel.sweep.note} → *CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
+      : `🧭 *BTC:* ${btcSentinel.dailyTrend > 0 ? "Xu hướng TĂNG ↗ (Ưu tiên LONG)" : btcSentinel.dailyTrend < 0 ? "Xu hướng GIẢM ↘ (CẤM LONG, Chỉ SHORT)" : "Đi ngang giằng co"}\n\n`;
 
     if (finalDigest.length > 0) {
-      const msg = `📋 *KÈO ALTCOIN MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote;
+      const msg = `📋 *KÈO MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n");
       out.push(msg);
       // Tự theo dõi kèo có TP: báo ⏰ khi giá cách điểm vào < 0.5%, 🔔 khi chạm (24h)
       for (const d of finalDigest) {

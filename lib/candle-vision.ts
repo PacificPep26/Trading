@@ -126,6 +126,32 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
 }
 
 /**
+ * Tạo chuỗi tóm tắt giải phẫu nến gọn gàng cho tin báo Telegram
+ * Ví dụ: M15 [18:15]: Xanh (Thân 71% · Râu dưới 20% · 2.1x Vol)
+ */
+export function formatCandleSummary(tf: string, cs: Candle[], vision: CandleVision): string {
+  const closed = cs.filter((c) => c.closed !== false);
+  const last = closed.at(-1);
+  if (!last) return "";
+  const d = new Date(last.t);
+  const vnHours = String((d.getUTCHours() + 7) % 24).padStart(2, "0");
+  const vnMins = String(d.getUTCMinutes()).padStart(2, "0");
+  const timeStr = `${vnHours}:${vnMins}`;
+
+  const prev10 = closed.slice(-11, -1);
+  const avgVol = prev10.length > 0 ? prev10.reduce((s, x) => s + (x.v || 0), 0) / prev10.length : 0;
+  const volRatio = avgVol > 0 && (last.v || 0) > 0 ? ((last.v || 0) / avgVol).toFixed(1) + "x Vol" : "";
+
+  const color = vision.lastCandle.isGreen ? "Xanh" : "Đỏ";
+  const body = `Thân ${vision.lastCandle.bodyPct.toFixed(0)}%`;
+  const wick = vision.lastCandle.isGreen
+    ? `Râu dưới ${vision.lastCandle.lowerWickPct.toFixed(0)}%`
+    : `Râu trên ${vision.lastCandle.upperWickPct.toFixed(0)}%`;
+
+  return `${tf} [${timeStr}]: ${color} (${body} · ${wick}${volRatio ? ` · ${volRatio}` : ""})`;
+}
+
+/**
  * 📦 NHẬN DIỆN MÔ HÌNH TÍCH LUỸ HẤP THỤ PHÁ VỠ (ACCUMULATION BREAKOUT)
  * Đúng mẫu hình con TIA: Đi ngang nén biên độ hẹp >= 8 nến, volume cạn kiệt,
  * sau đó xuất hiện nến xanh Breakout đóng vượt đỉnh hộp kèm Volume bùng nổ >= 1.35x TB!
