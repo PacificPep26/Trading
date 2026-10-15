@@ -53,32 +53,33 @@ transcript = ""
 
 if platform == "YouTube":
     print("Đang tải phụ đề chính thức từ YouTube...")
-    sub_cmd = ["yt-dlp", "--write-sub", "--write-auto-sub", "--sub-lang", "en,vi", "--skip-download", "-o", os.path.join(research_dir, "temp_sub.%(ext)s"), url]
+    sub_cmd = ["yt-dlp", "--write-sub", "--write-auto-sub", "--sub-lang", "en-orig,en.*,vi.*,en,vi", "--skip-download", "-o", os.path.join(research_dir, "temp_sub.%(ext)s"), url]
     subprocess.run(sub_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     # check if temp_sub exists
     found_sub = None
     for f in os.listdir(research_dir):
-        if f.startswith("temp_sub.") and (f.endswith(".vtt") or f.endswith(".srt")):
+        if f.startswith("temp_sub") and (f.endswith(".vtt") or f.endswith(".srt")):
             found_sub = os.path.join(research_dir, f)
             break
             
     if found_sub:
         with open(found_sub, "r", encoding="utf-8", errors="ignore") as f:
             sub_raw = f.read()
-        # Clean VTT / SRT tags
-        cues = re.findall(r'(\d{2}:\d{2}:\d{2}[^\n]*)\n(.*?)(?=\n\d{2}:\d{2}|\Z)', sub_raw, re.DOTALL)
+        # Clean VTT / SRT tags and handle auto-sub deduplication
+        blocks = re.findall(r'(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})[^\n]*\n(.*?)(?=\n\d{2}:\d{2}|\Z)', sub_raw, re.DOTALL)
         clean_lines = []
-        last_t = ""
-        for time_part, text_part in cues:
-            clean = re.sub(r'<[^>]+>', '', text_part).strip()
-            clean = re.sub(r'\s+', ' ', clean)
-            if clean and clean != last_t:
-                clean_lines.append(clean)
-                last_t = clean
-        transcript = " ".join(clean_lines)
+        last_l = ""
+        for start, end, body in blocks:
+            lines = [re.sub(r'<[^>]+>', '', l).strip() for l in body.split("\n") if l.strip()]
+            if lines:
+                curr_l = lines[-1]
+                if curr_l and curr_l != last_l:
+                    clean_lines.append(f"[{start[:8]}] {curr_l}")
+                    last_l = curr_l
+        transcript = "\n".join(clean_lines) if clean_lines else sub_raw[:5000]
         os.remove(found_sub)
-        print(f"Đã trích xuất phụ đề YouTube thành công: {len(transcript)} ký tự.")
+        print(f"Đã trích xuất phụ đề YouTube thành công: {len(transcript)} ký tự ({len(clean_lines)} dòng có timestamp).")
         
 elif platform == "TikTok" or not transcript:
     print("Đang tải audio và chuyển giọng nói thành văn bản bằng Whisper AI...")

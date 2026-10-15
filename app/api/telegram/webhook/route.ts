@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
 import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
-import { COINS, ICT_PAPER, HIGHTEST_PAPER, ST_PAPER, f, soPaper } from "@/lib/telegram-alerts";
+import { COINS, ICT_PAPER, HIGHTEST_PAPER, ST_PAPER, IDM_PAPER, f, soPaper } from "@/lib/telegram-alerts";
 import { SO_LABEL, type SoKind } from "@/lib/so-setups";
 import { coinSnapshot } from "@/lib/snapshot";
 
@@ -12,6 +12,7 @@ const HELP =
   "• 🎯 ICT quét đỉnh hôm qua → SHORT 1H\n" +
   "• 🔨 Nến high test 4H → lệnh chờ phá (Jason Graystone, đạt chuẩn)\n" +
   "• 📈 Supertrend 4H đổi màu → vào ngay, không TP, bot nhắc dời SL theo dải (Wysetrade, đạt chuẩn)\n" +
+  "• 🧲 Mồi nhử + FVG, Limit vùng A 1H (TradingLab, đạt chuẩn mỏng)\n" +
   "• SO Trading 1H, tin kèm số backtest (chỉ 🔁 đạt chuẩn): 🔁 hồi đỉnh cũ · 👤 vai–đầu–vai · 🚀 phá vỡ sau nén · 🕯 chòm râu\n" +
   "Tin: `TP1` = chốt 50% rồi dời SL về giá vào; `x` = đòn bẩy gợi ý (≤ 10).\n\n" +
   "Lệnh: `thống kê` · tên coin (vd `SOL`) · `theo dõi SUI 1.041 1.029 1.085 btc 82750` · `bỏ theo dõi`";
@@ -34,13 +35,14 @@ async function reply(token: string, chatId: number | string, text: string) {
 function stats(): string {
   const line = (name: string, s: { n: number; wins: number; avgR: number; sumR: number }, open: string) =>
     `${name}: ${s.n} lệnh đóng · thắng ${s.n ? Math.round((s.wins / s.n) * 100) : 0}% · TB ${s.avgR >= 0 ? "+" : ""}${s.avgR.toFixed(2)}R · tổng ${(s.sumR * 2.5).toFixed(0)}$ (2.5$/lệnh) · ${open}`;
-  const lim = limitStats(loadLimits()), ict = limitStats(loadLimits(ICT_PAPER)), sw = swingStats(loadSwings()), st = swingStats(loadSwings(ST_PAPER));
+  const lim = limitStats(loadLimits()), ict = limitStats(loadLimits(ICT_PAPER)), sw = swingStats(loadSwings()), st = swingStats(loadSwings(ST_PAPER)), idm = limitStats(loadLimits(IDM_PAPER));
   return "📊 *Sổ paper* (so với backtest 2025–26)\n" +
     line("🎯 ICT", ict, `${ict.pending} chờ, ${ict.open} mở`) + "\n   backtest +0.42R/lệnh\n" +
     line("📌 Limit (tắt tin)", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
     line("📊 4H (tắt tin)", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh\n" +
     line("🔨 High test 4H", limitStats(loadLimits(HIGHTEST_PAPER)), "lệnh chờ phá") + "\n   backtest +0.13R/lệnh\n" +
     line("📈 Supertrend 4H", st, `${st.open} mở`) + "\n   backtest +0.16R/lệnh\n" +
+    line("🧲 Mồi nhử + FVG 1H", idm, `${idm.pending} chờ, ${idm.open} mở`) + "\n   backtest +0.09R/lệnh (mỏng)\n" +
     (Object.keys(SO_LABEL) as SoKind[]).map((k) => {
       const st = limitStats(loadLimits(soPaper(k)));
       return line(SO_LABEL[k].name, st, `${st.open} mở`) + `\n   ${SO_LABEL[k].stats}`;

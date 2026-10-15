@@ -176,3 +176,34 @@ export function stFlipSetup(all: Candle[]): { side: 1 | -1; entry: number; stop:
   const risk = (side * (c.c - stop)) / c.c;
   return risk >= 0.003 && risk <= 0.08 ? { side, entry: c.c, stop, barTime: c.t } : null;
 }
+
+/** 🧲 TradingLab "You're Using Liquidity Wrong", 1H, cả 2 chiều — chép service/scripts/tradinglab_study.py.
+ *  Đỉnh A rồi đỉnh B thấp hơn (B vừa xác nhận ở nến cuối); giữa A và B có FVG giảm nằm trên B chưa bị chạm → B là mồi nhử.
+ *  Sell Limit ở đáy nến A, SL đỉnh A + 0.1 ATR, TP đáy thấp nhất từ A (bỏ nếu < 2R). Ngược lại cho LONG. */
+export function inducementSetup(all: Candle[]): { side: 1 | -1; limit: number; stop: number; tp: number; barTime: number }[] {
+  const cs = all.filter((c) => c.closed !== false);
+  const i = cs.length - 1;
+  if (i < 60) return [];
+  const sw = swings(cs), a = atrSeries(cs)[i], out = [];
+  for (const side of [-1, 1] as const) {
+    const piv = side < 0 ? sw.highs : sw.lows;
+    const [A, B] = piv.slice(-2);
+    if (B !== i - 3 || A === undefined) continue; // B vừa xác nhận
+    if (side < 0 ? cs[B].h >= cs[A].h : cs[B].l <= cs[A].l) continue;
+    let gap = false;
+    for (let j = A + 2; j <= B; j++) {
+      const after = cs.slice(j + 1, i + 1);
+      if (side < 0 && cs[j].h < cs[j - 2].l && cs[j].h > cs[B].h && Math.max(...after.map((c) => c.h)) < cs[j].h) gap = true;
+      if (side > 0 && cs[j].l > cs[j - 2].h && cs[j].l < cs[B].l && Math.min(...after.map((c) => c.l)) > cs[j].l) gap = true;
+    }
+    if (!gap) continue;
+    const z = cs[A], leg = cs.slice(A, i + 1);
+    const limit = side < 0 ? z.l : z.h, stop = side < 0 ? z.h + 0.1 * a : z.l - 0.1 * a;
+    const tp = side < 0 ? Math.min(...leg.map((c) => c.l)) : Math.max(...leg.map((c) => c.h));
+    if (side < 0 ? cs[i].c >= limit : cs[i].c <= limit) continue;
+    const risk = (side * (limit - stop)) / limit;
+    if (risk < 0.003 || risk > 0.06 || side * (tp - limit) < 2 * side * (limit - stop)) continue;
+    out.push({ side, limit, stop, tp, barTime: cs[i].t });
+  }
+  return out;
+}

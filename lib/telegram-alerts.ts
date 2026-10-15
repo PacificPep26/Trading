@@ -11,7 +11,7 @@ import { openSwing, stepSwing } from "@/lib/swing-4h";
 import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
-import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, type SoKind } from "@/lib/so-setups";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "@/lib/so-setups";
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -25,6 +25,7 @@ export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
 export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 export const HIGHTEST_PAPER = path.join(process.cwd(), "data", "paper-hightest.json");
 export const ST_PAPER = path.join(process.cwd(), "data", "paper-st.json");
+export const IDM_PAPER = path.join(process.cwd(), "data", "paper-idm.json");
 
 function loadSent(): string[] {
   try {
@@ -184,6 +185,15 @@ export async function scanAndAlert(): Promise<string[]> {
       for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
 
       // Kèo SO Trading (lời thoại video): tin ghi kèm số backtest 2025/2026
+      // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
+      for (const m of stepLimits(coin, bars1h, IDM_PAPER)) await say(m);
+      for (const g of inducementSetup(bars300)) {
+        const key = `IDM:${coin}:${g.side}:${g.barTime}`;
+        if (sent.has(key)) continue;
+        sent.add(key);
+        addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
+        digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
+      }
       for (const so of soSetups(bars300)) {
         const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
         if (sent.has(key)) continue;

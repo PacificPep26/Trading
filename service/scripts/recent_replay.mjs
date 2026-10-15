@@ -7,7 +7,7 @@ import { analyse, restingLimit, ictSweepShort } from "../../lib/patterns.ts";
 import { isSwingSetupOk } from "../../lib/trading-policy.ts";
 import { openSwing, stepSwing, loadSwings } from "../../lib/swing-4h.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
-import { soSetups, SO_LABEL, highTestSetup, stFlipSetup } from "../../lib/so-setups.ts";
+import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup } from "../../lib/so-setups.ts";
 
 const DAYS = Number(process.argv[2] ?? 14), H = 3_600_000, H4 = 4 * H, DAY = 86_400_000, USD = 2.5;
 const COINS = ["BTC","ETH","SOL","HYPE","XRP","DOGE","BNB","ADA","AVAX","LINK","DOT","LTC","SUI","ARB","OP","NEAR","APT","INJ","TIA","PEPE","WIF"];
@@ -37,7 +37,7 @@ function dailyTrendFn(h1) {
 }
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "recent-"));
-const files = { "📌 Limit": "limit", "🎯 ICT": "ict", "🔨 High test 4H": "ht", ...Object.fromEntries(Object.entries(SO_LABEL).map(([k, v]) => [v.name, `so-${k}`])) };
+const files = { "📌 Limit": "limit", "🎯 ICT": "ict", "🔨 High test 4H": "ht", "🧲 TradingLab IDM": "idm", ...Object.fromEntries(Object.entries(SO_LABEL).map(([k, v]) => [v.name, `so-${k}`])) };
 const f = (coin, k) => path.join(tmp, `${coin}-${k}.json`);
 const swingTrades = [], stTrades = [];
 const btc4 = await history("BTC-USDT-SWAP", "4H", 900), btcTrend = dailyTrendFn(btc4.flatMap((b) => [b]));
@@ -57,6 +57,9 @@ for (const coin of COINS) {
     if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, f(coin, "limit"), true); }
     const ict = ictSweepShort(bars);
     if (ict) addLimit(coin, ict, f(coin, "ict"));
+    for (const g of inducementSetup(h1.slice(n - 299, n + 1))) {
+      addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, f(coin, "idm"), true);
+    }
     for (const so of soSetups(h1.slice(n - 299, n + 1))) {
       addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, f(coin, `so-${so.kind}`));
     }

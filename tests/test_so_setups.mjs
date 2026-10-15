@@ -58,3 +58,26 @@ for (let k = 82; k < 90; k++) dn.push({ t: k * H, o: 933 + (k - 82) * 3, h: 937 
 assert.ok(stepSwing("SOL", dn, f3).some((m) => /dời SL/.test(m)));
 assert.ok(loadSwings(f3)[0].stop > sf.stop && loadSwings(f3)[0].status === "open");
 console.log("All supertrend tests passed!");
+
+// 🧲 TradingLab: đỉnh A, FVG giảm, đỉnh B tại i - 3, Limit ở đáy A
+const { inducementSetup } = await import("../lib/so-setups.ts");
+const idmCs = Array.from({ length: 65 }, (_, i) => ({ t: i * H, o: 100, h: 101, l: 99, c: 100, v: 1, closed: true }));
+idmCs.push({ t: 65 * H, o: 120, h: 130, l: 124, c: 125, closed: true }); // A
+idmCs.push({ t: 66 * H, o: 124, h: 124, l: 118, c: 119, closed: true });
+idmCs.push({ t: 67 * H, o: 119, h: 120, l: 110, c: 111, closed: true }); // FVG: high 120 < 124
+idmCs.push({ t: 68 * H, o: 110, h: 110, l: 100, c: 101, closed: true });
+idmCs.push({ t: 69 * H, o: 101, h: 106, l: 100, c: 105, closed: true });
+idmCs.push({ t: 70 * H, o: 105, h: 108, l: 102, c: 104, closed: true });
+idmCs.push({ t: 71 * H, o: 104, h: 107, l: 101, c: 102, closed: true });
+idmCs.push({ t: 72 * H, o: 102, h: 112, l: 105, c: 110, closed: true }); // B
+idmCs.push({ t: 73 * H, o: 110, h: 109, l: 104, c: 105, closed: true });
+idmCs.push({ t: 74 * H, o: 105, h: 107, l: 103, c: 104, closed: true });
+idmCs.push({ t: 75 * H, o: 104, h: 105, l: 95, c: 96, closed: true });
+const idmRes = inducementSetup(idmCs);
+assert.equal(idmRes.length, 1);
+assert.equal(idmRes[0].side, -1);
+assert.equal(idmRes[0].limit, 124);
+assert.ok(idmRes[0].stop > 130);
+assert.equal(idmRes[0].tp, 95);
+console.log("All inducement tests passed!");
+

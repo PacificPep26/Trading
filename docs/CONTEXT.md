@@ -13,14 +13,17 @@ Next.js 16 trên Railway (`main` push là tự deploy). Quét 21 coin bằng d�
 | Kèo | Code | Paper | Code live chạy lại 2025 / 2026 (2.5$/lệnh, phí 0) |
 |---|---|---|---|
 | 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua (1H, SHORT) | `ictSweepShort` (`lib/patterns.ts`) | `data/paper-ict.json` | +119$ / +85$ · +0.42R · 193 lệnh |
+| 🧲 Mồi nhử + FVG → Limit vùng A (1H, cả 2 chiều, TradingLab) | `inducementSetup` (`lib/so-setups.ts`) | `data/paper-idm.json` | +60$ / +169$ · +0.09R · 1.000 lệnh (mỏng) |
 | 📌 Limit mua 0.5 ATR dưới đáy 1H vừa xác nhận, coin tăng ngày (LONG) | `restingLimit` | `data/paper-limit.json` | +131$ / +169$ · +0.06R · 2.003 lệnh |
 | 📊 Hai đỉnh/đáy 4H thuận ngày coin + BTC, volume ≥ 2x, không TP, SL trailing 3 ATR | `analyse` + `isSwingSetupOk` (`lib/trading-policy.ts`) | `data/paper-4h.json` (`lib/swing-4h.ts`) | +46$ / +45$ · +1.26R · 29 lệnh |
 
-**15/10: chủ dự án bỏ kèo cũ — 📌 và 📊 TẮT TIN, chỉ ghi paper** (`recent_replay.mjs` 1–15/10: 📌 −105$, 📊 −2$). Tin đang gửi: 🎯 ICT, 🔨 high test, 📈 Supertrend 4H, 🔁 hồi đỉnh cũ, 👤 🚀 🕯 (SO Trading).
+**15/10: chủ dự án bỏ kèo cũ — 📌 và 📊 TẮT TIN, chỉ ghi paper** (`recent_replay.mjs` 1–15/10: 📌 −105$, 📊 −2$). Tin đang gửi: 🎯 ICT, 🔨 high test, 📈 Supertrend 4H, 🧲 Mồi nhử + FVG, 🔁 hồi đỉnh cũ, 👤 🚀 🕯 (SO Trading).
 
 **🔨 Nến high test 4H → lệnh chờ phá** (`highTestSetup`, Jason Graystone, đạt chuẩn): 2025 +303$ / 2026 +132$, sổ `data/paper-hightest.json`.
 
 **📈 Supertrend 4H đổi màu → vào ngay, không TP, SL dời theo dải** (`stFlipSetup` + `swing-4h.ts` `trail: "st"`, Wysetrade, đạt chuẩn): 2025 +139$ / 2026 +85$, sổ `data/paper-st.json`, tin `📈 Supertrend … dời SL` / `🚪`.
+
+**🧲 Mồi nhử + FVG → Limit vùng A** (`inducementSetup`, TradingLab, đạt chuẩn mỏng): 2025 +60$ / 2026 +169$, sổ `data/paper-idm.json`, tin kèm số backtest.
 
 **Thêm 4 kèo SO Trading 1H** (`lib/so-setups.ts`, sổ `data/paper-so-*.json`): 🔁 hồi đỉnh cũ (+212$ / +195$, đạt chuẩn mỏng), 👤 vai–đầu–vai, 🚀 phá vỡ sau nén, 🕯 chòm râu — 3 kèo sau KHÔNG đạt chuẩn; chủ dự án vẫn chọn nhận tin, mỗi tin ghi số backtest để tự cân nhắc. Đừng tự xoá chúng.
 
