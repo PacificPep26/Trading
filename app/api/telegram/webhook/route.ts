@@ -36,7 +36,7 @@ function stats(): string {
   const lim = limitStats(loadLimits()), ict = limitStats(loadLimits(ICT_PAPER)), sw = swingStats(loadSwings());
   return "📊 *Sổ paper* (so với backtest 2025–26)\n" +
     line("🎯 ICT", ict, `${ict.pending} chờ, ${ict.open} mở`) + "\n   backtest +0.42R/lệnh\n" +
-    line("📌 Limit", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
+    line("📌 Limit (tắt tin)", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
     line("📊 4H (tắt tin)", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh\n" +
     line("🔨 High test 4H", limitStats(loadLimits(HIGHTEST_PAPER)), "lệnh chờ phá") + "\n   backtest +0.13R/lệnh\n" +
     (Object.keys(SO_LABEL) as SoKind[]).map((k) => {
