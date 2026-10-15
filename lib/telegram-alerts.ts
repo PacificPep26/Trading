@@ -20,7 +20,7 @@ export { f };
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
-  "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF",
+  "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF", "ZEC",
 ];
 const H = 3_600_000;
 // data/ là Railway volume → chống trùng và sổ paper sống qua redeploy
@@ -149,8 +149,9 @@ export async function scanAndAlert(): Promise<string[]> {
 
   const digest: { rank: number; text: string }[] = [];
   const btcDaily = await dailyTrend("BTC");
-  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 60).catch(() => []);
-  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily);
+  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
+  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
+  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m);
 
   // ⚡ LA BÀN BTC: Bắt ngay cú quét thanh khoản đáy/đỉnh của BTC (ưu tiên cao nhất thị trường)
   if (btcSentinel.sweep) {
