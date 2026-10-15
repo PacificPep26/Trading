@@ -1,5 +1,4 @@
 import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 
 const envContent = fs.readFileSync(".env", "utf-8");

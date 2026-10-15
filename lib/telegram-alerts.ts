@@ -4,6 +4,8 @@
 // Kèm: nhắc tin Mỹ (us-events), theo dõi giá chủ tài khoản đặt (price-watch). Mỗi kèo có sổ paper để đối chiếu backtest.
 import fs from "fs";
 import path from "path";
+import { f } from "@/lib/format";
+import { getMexcOpenPositions } from "@/lib/mexc";
 import { analyse, restingLimit, ictSweepShort } from "@/lib/patterns";
 import { candles, ticker, funding, type Candle } from "@/lib/okx";
 import { isSwingSetupOk } from "@/lib/trading-policy";
@@ -12,6 +14,8 @@ import { addLimit, stepLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "@/lib/so-setups";
+
+export { f };
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -70,8 +74,7 @@ export async function dailyTrend(coin: string): Promise<1 | -1 | 0> {
   }
 }
 
-// coin giá rất nhỏ (PEPE) cần chữ số có nghĩa, không phải số lẻ cố định
-export const f = (v: number) => v.toLocaleString("vi-VN", v > 0 && v < 0.01 ? { maximumSignificantDigits: 5 } : { maximumFractionDigits: v > 1000 ? 1 : v > 1 ? 3 : 7 });
+// coin giá rất nhỏ (PEPE) cần chữ số có nghĩa, không phải số lẻ cố định (đã dùng f từ format.ts)
 const vnTime = (t: number) => new Date(t).toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
 
 export async function send(text: string): Promise<boolean> {
@@ -139,55 +142,70 @@ export async function scanAndAlert(): Promise<string[]> {
     return out;
   }
 
+  // Vị thế thật đang mở trên MEXC: không quét báo tín hiệu mới cho các coin này để tránh spam trùng lệnh
+  const mexcPositions = await getMexcOpenPositions().catch(() => []);
+  const heldCoins = new Set(mexcPositions.map((p) => p.coin));
+
   const digest: { rank: number; text: string }[] = [];
-  const btc = after4h ? await dailyTrend("BTC") : 0;
+  const btc = await dailyTrend("BTC");
   const btc1h: Candle[] = after4h ? await candles("BTC-USDT-SWAP", "1H", 10).catch(() => []) : [];
 
   for (const coin of COINS) {
     try {
-      const own = after1h || after4h ? await dailyTrend(coin) : 0;
+      const isHeld = heldCoins.has(coin);
 
       if (after15m) {
         const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 120);
-        for (const m of stepLimits(coin, bars15m, HIGHTEST_15M_PAPER)) await say(m);
-        for (const g of highTestSetup(bars15m, "swing")) {
-          const key = `HT15:${coin}:${g.side}:${g.barTime}`;
-          if (sent.has(key)) continue;
-          sent.add(key);
-          addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
-          digest.push({ rank: 0, text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅") });
+        stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
+        if (!isHeld) {
+          const ownDaily = await dailyTrend(coin);
+          for (const g of highTestSetup(bars15m, "swing")) {
+            // Lọc xu hướng: không short khi BTC hoặc coin đang trong sóng tăng ngày/bật đáy hỗ trợ
+            if (ownDaily !== 0 && g.side !== ownDaily) continue;
+            if (btc !== 0 && g.side !== btc) continue;
+
+            const key = `HT15:${coin}:${g.side}:${g.barTime}`;
+            if (sent.has(key)) continue;
+            sent.add(key);
+            addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
+            digest.push({ rank: 0, text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅") });
+          }
         }
       }
 
       if (after4h) {
         const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 300);
-        stepSwing(coin, bars4h); // 📊 chỉ paper im lặng (tắt tin 15/10: 14 ngày gần nhất −2.4$)
-        for (const m of stepLimits(coin, bars4h, HIGHTEST_PAPER)) await say(m);
-        // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
-        for (const g of highTestSetup(bars4h)) {
-          const key = `HT:${coin}:${g.side}:${g.barTime}`;
-          if (sent.has(key)) continue;
-          sent.add(key);
-          addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
-          digest.push({ rank: 0, text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅") });
-        }
-        // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
-        for (const m of stepSwing(coin, bars4h, ST_PAPER)) await say(`📈 Supertrend ${m}`);
-        const st = stFlipSetup(bars4h);
-        if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
-          sent.add(`ST:${coin}:${st.barTime}`);
-          if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
-            digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
-        }
-        const a4 = analyse(bars4h);
-        const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
-        const fundingRate = (await funding(`${coin}-USDT-SWAP`).catch(() => null))?.rate;
-        for (const s of a4.setups) {
-          const key = `4H:${coin}:${s.side}:${a4.lastBarTime}`;
-          if (sent.has(key) || !isSwingSetupOk(s, { ownDaily: own, btcDaily: btc, lastBarTime: a4.lastBarTime, now, btc1h, fundingRate, livePrice: live })) continue;
-          sent.add(key);
-          const entry = live ?? s.entry;
-          openSwing(coin, { side: s.side, entry, stop: s.stop, entryTime: a4.lastBarTime + 4 * H });
+        stepSwing(coin, bars4h); // 📊 chỉ paper im lặng
+        stepLimits(coin, bars4h, HIGHTEST_PAPER); // paper im lặng
+        stepSwing(coin, bars4h, ST_PAPER); // paper im lặng
+
+        if (!isHeld) {
+          const own = await dailyTrend(coin);
+          // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
+          for (const g of highTestSetup(bars4h)) {
+            const key = `HT:${coin}:${g.side}:${g.barTime}`;
+            if (sent.has(key)) continue;
+            sent.add(key);
+            addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
+            digest.push({ rank: 0, text: planText(g.side, coin, `🔨 4H high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 12h · BT +303$/+132$ ✅") });
+          }
+          // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
+          const st = stFlipSetup(bars4h);
+          if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
+            sent.add(`ST:${coin}:${st.barTime}`);
+            if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
+              digest.push({ rank: 0, text: planText(st.side, coin, "📈 Supertrend 4H đổi màu", st.entry, st.stop, undefined, "BT +139$/+85$ ✅") });
+          }
+          const a4 = analyse(bars4h);
+          const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
+          const fundingRate = (await funding(`${coin}-USDT-SWAP`).catch(() => null))?.rate;
+          for (const s of a4.setups) {
+            const key = `4H:${coin}:${s.side}:${a4.lastBarTime}`;
+            if (sent.has(key) || !isSwingSetupOk(s, { ownDaily: own, btcDaily: btc, lastBarTime: a4.lastBarTime, now, btc1h, fundingRate, livePrice: live })) continue;
+            sent.add(key);
+            const entry = live ?? s.entry;
+            openSwing(coin, { side: s.side, entry, stop: s.stop, entryTime: a4.lastBarTime + 4 * H });
+          }
         }
       }
 
@@ -196,44 +214,46 @@ export async function scanAndAlert(): Promise<string[]> {
         const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
         const bars1h = bars300.slice(-100);
         stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
-        for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
-        for (const m of stepLimits(coin, bars1h, soPaper("pullback"))) await say(m);
+        stepLimits(coin, bars1h, ICT_PAPER); // paper im lặng
+        stepLimits(coin, bars1h, soPaper("pullback")); // paper im lặng
+        stepLimits(coin, bars1h, IDM_PAPER); // paper im lặng
 
-        // Kèo SO Trading (lời thoại video): chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
-        // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
-        for (const m of stepLimits(coin, bars1h, IDM_PAPER)) await say(m);
-        for (const g of inducementSetup(bars300)) {
-          const key = `IDM:${coin}:${g.side}:${g.barTime}`;
-          if (sent.has(key)) continue;
-          sent.add(key);
-          addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
-          digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
-        }
-        for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
-          const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
-          if (sent.has(key)) continue;
-          sent.add(key);
-          addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
-          const lab = SO_LABEL[so.kind];
-          digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
-        }
+        if (!isHeld) {
+          const own = await dailyTrend(coin);
+          // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (FVG chưa lấp phía sau) → Limit ở vùng A; vùng mới thay lệnh chờ cũ
+          for (const g of inducementSetup(bars300)) {
+            const key = `IDM:${coin}:${g.side}:${g.barTime}`;
+            if (sent.has(key)) continue;
+            sent.add(key);
+            addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
+            digest.push({ rank: 3, text: planText(g.side, coin, "🧲 Mồi nhử + FVG, Limit vùng A", g.limit, g.stop, g.tp, "huỷ sau 24h · BT +60$/+169$ mỏng") });
+          }
+          // Kèo SO Trading: chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
+          for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
+            const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
+            if (sent.has(key)) continue;
+            sent.add(key);
+            addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
+            const lab = SO_LABEL[so.kind];
+            digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
+          }
 
-        // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
-        const ict = ictSweepShort(bars1h);
-        const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
-        if (ict && ictKey && !sent.has(ictKey)) {
-          sent.add(ictKey);
-          addLimit(coin, ict, ICT_PAPER);
-          digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
-          markAlerted(coin, -1);
-        }
+          // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
+          const ict = ictSweepShort(bars1h);
+          const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
+          if (ict && ictKey && !sent.has(ictKey)) {
+            sent.add(ictKey);
+            addLimit(coin, ict, ICT_PAPER);
+            digest.push({ rank: 1, text: planText(-1, coin, "🎯 ICT Limit", ict.limit, ict.stop, ict.tp, "quét đỉnh hôm qua") });
+            markAlerted(coin, -1);
+          }
 
-        // 📌 Limit dưới đáy 1H: CHỈ PAPER, không gửi tin (chủ dự án 15/10 bỏ kèo cũ; sổ thật 14–15/10: 14 lệnh, thắng 1, −30$;
-        // chạy lại 14 ngày: 102 lệnh −105$ — chỉ LONG nên dính SL loạt khi thị trường giảm)
-        const rl = own > 0 ? restingLimit(bars1h, 1) : null;
-        if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
-          sent.add(`RL:${coin}:${rl.barTime}`);
-          addLimit(coin, rl, undefined, true);
+          // 📌 Limit dưới đáy 1H: CHỈ PAPER
+          const rl = own > 0 ? restingLimit(bars1h, 1) : null;
+          if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
+            sent.add(`RL:${coin}:${rl.barTime}`);
+            addLimit(coin, rl, undefined, true);
+          }
         }
       }
     } catch (e) {

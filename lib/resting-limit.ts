@@ -3,6 +3,7 @@
 // khớp ở min(limit, giá mở); nến khớp mà chạm SL = thua; tối đa 48 nến; phí 0% (MEXC), trượt giá 0.04%.
 import fs from "fs";
 import path from "path";
+import { f } from "./format.ts";
 
 export type RestingLimit = {
   coin: string;
@@ -73,33 +74,33 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
     if (x.status === "pending" && x.stopEntry) {
       if (b.t > x.createdBar + 3 * bar || (x.side > 0 ? b.l <= x.stop : b.h >= x.stop)) {
         x.status = "cancelled"; x.note = "không kích hoạt";
-        msgs.push(`⌛ ${tag(x)} · lệnh chờ phá ${x.limit} không kích hoạt → huỷ`); break;
+        msgs.push(`⌛ ${tag(x)} · lệnh chờ phá ${f(x.limit)} không kích hoạt → huỷ`); break;
       }
       if (x.side > 0 ? b.h >= x.limit : b.l <= x.limit) {
         x.status = "open";
         x.entry = x.side > 0 ? Math.max(x.limit, b.o) : Math.min(x.limit, b.o);
         x.fillBar = b.t;
-        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${f(x.entry)} · TP ${f(x.tp)} · SL ${f(x.stop)}`);
       }
     }
     if (x.status === "pending" && x.market) {
       x.status = "open";
       x.entry = b.o;
       x.fillBar = b.t;
-      msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
+      msgs.push(`🧪 ${tag(x)} · paper KHỚP ${f(x.entry)} · TP ${f(x.tp)} · SL ${f(x.stop)}`);
     }
     if (x.status === "pending" && !x.stopEntry) {
-      if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${x.limit}`); break; }
+      if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${f(x.limit)}`); break; }
       // chạm Limit trước: nến chọc qua Limit thì lệnh đã khớp dù sau đó đóng thủng sâu (lỗi backtest cũ bỏ sót lệnh này)
       if (x.side > 0 ? b.l <= x.limit : b.h >= x.limit) {
         x.status = "open";
         x.entry = x.side > 0 ? Math.min(x.limit, b.o) : Math.max(x.limit, b.o);
         x.fillBar = b.t;
-        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${f(x.entry)} · TP ${f(x.tp)} · SL ${f(x.stop)}`);
         if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; } // cùng nến chạm SL = thua
         continue;
       }
-      if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { x.status = "cancelled"; x.note = "chạy tới TP trước"; msgs.push(`↗️ ${tag(x)} · giá chạy tới TP trước → huỷ Limit ${x.limit}`); break; }
+      if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { x.status = "cancelled"; x.note = "chạy tới TP trước"; msgs.push(`↗️ ${tag(x)} · giá chạy tới TP trước → huỷ Limit ${f(x.limit)}`); break; }
     } else if (x.status === "open") {
       if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; }
       if (x.side > 0 ? b.h >= x.tp : b.l <= x.tp) { close(x, x.tp, msgs); break; }
@@ -115,7 +116,7 @@ function close(x: RestingLimit, px: number, msgs: string[]) {
   x.status = "closed";
   x.exitPrice = px;
   x.r = (x.side * (px / x.entry! - 1) - SLIP) / risk;
-  msgs.push(`🧪 ${tag(x)} · paper ĐÓNG ${x.entry} → ${px} · *${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}R*`);
+  msgs.push(`🧪 ${tag(x)} · paper ĐÓNG ${f(x.entry!)} → ${f(px)} · *${x.r >= 0 ? "+" : ""}${x.r.toFixed(2)}R*`);
 }
 
 export function limitStats(rs: RestingLimit[]) {

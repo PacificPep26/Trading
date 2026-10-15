@@ -1,10 +1,10 @@
-// Webhook @VictorHuynh_trading_bot: hướng dẫn, thống kê 6 kèo chuẩn, tra cứu coin, theo dõi giá.
 import { NextRequest, NextResponse } from "next/server";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
 import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
 import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAPER, f, soPaper, dailyTrend } from "@/lib/telegram-alerts";
 import { ticker } from "@/lib/okx";
+import { getMexcOpenPositions } from "@/lib/mexc";
 
 const HELP =
   "🤖 *Bot báo 6 kèo đã kiểm chứng* (bạn tự vào lệnh tay trên MEXC, phí 0):\n" +
@@ -28,8 +28,8 @@ async function reply(token: string, chatId: number | string, text: string) {
         chat_id: chatId, text, parse_mode: "Markdown", disable_web_page_preview: true,
         reply_markup: {
           keyboard: [
-            [{ text: "📊 Thống kê" }, { text: "❓ Hướng dẫn" }, { text: "👁 Đang theo dõi" }],
-            [{ text: "BTC" }, { text: "ETH" }, { text: "SOL" }, { text: "NEAR" }]
+            [{ text: "💼 Vị thế thật" }, { text: "📊 Thống kê" }, { text: "👁 Đang theo dõi" }],
+            [{ text: "❓ Hướng dẫn" }, { text: "BTC" }, { text: "ETH" }, { text: "SOL" }, { text: "NEAR" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -60,10 +60,42 @@ function stats(): string {
     line("📈 Supertrend 4H", st, `${st.open} mở`) + "\n   backtest: +224$ (+0.16R/lệnh)";
 }
 
+async function mexcStatus(): Promise<string> {
+  const positions = await getMexcOpenPositions();
+  if (!positions.length) {
+    return "💼 *Vị thế thật trên MEXC:*\nHiện không có vị thế nào đang mở (hoặc chưa cấu hình API).";
+  }
+  return (
+    "💼 *Vị thế thật trên MEXC của Victor:*\n\n" +
+    positions
+      .map((p) => {
+        const pnlSign = p.unRealizedPnl >= 0 ? "+" : "";
+        const pnlIcon = p.unRealizedPnl >= 0 ? "🟢" : "🔴";
+        const sideText = p.side > 0 ? "🟢 LONG" : "🔴 SHORT";
+        return (
+          `• ${sideText} *${p.coin}* · x${p.leverage}\n` +
+          `   Vào: ${f(p.entry)} · Thanh lý: ${f(p.liquidatePrice)}\n` +
+          `   PNL: ${pnlIcon} *${pnlSign}${p.unRealizedPnl.toFixed(2)}$* (ký quỹ ~${p.margin.toFixed(1)}$)`
+        );
+      })
+      .join("\n\n")
+  );
+}
+
 async function coinStatus(coin: string): Promise<string> {
   const p = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
   const trend = await dailyTrend(coin);
   const lines = [`*${coin}* ${p ? f(p) : ""} · xu hướng ngày ${trend > 0 ? "TĂNG ↗" : trend < 0 ? "GIẢM ↘" : "?"}`];
+
+  // Kiểm tra vị thế thật MEXC
+  const mexcPos = (await getMexcOpenPositions().catch(() => [])).find((x) => x.coin === coin);
+  if (mexcPos) {
+    const pnlSign = mexcPos.unRealizedPnl >= 0 ? "+" : "";
+    const pnlIcon = mexcPos.unRealizedPnl >= 0 ? "🟢" : "🔴";
+    lines.push(
+      `💼 *Vị thế thật MEXC:* ${mexcPos.side > 0 ? "🟢 LONG" : "🔴 SHORT"} x${mexcPos.leverage} @${f(mexcPos.entry)} · PNL ${pnlIcon} *${pnlSign}${mexcPos.unRealizedPnl.toFixed(2)}$*`
+    );
+  }
 
   const checkLimit = (name: string, file: string) => {
     const item = loadLimits(file).find((x) => x.coin === coin && (x.status === "pending" || x.status === "open"));
@@ -101,10 +133,20 @@ export async function POST(req: NextRequest) {
     }
 
     let text: string;
-    if (lower === "👁 đang theo dõi" || lower === "đang theo dõi" || lower === "dang theo doi") {
+    if (
+      lower === "💼 vị thế thật" ||
+      lower === "vị thế thật" ||
+      lower === "vi the that" ||
+      lower === "vị thế" ||
+      lower === "vi the" ||
+      lower === "/positions" ||
+      lower === "/pos"
+    ) {
+      text = await mexcStatus();
+    } else if (lower === "👁 đang theo dõi" || lower === "đang theo dõi" || lower === "dang theo doi") {
       const ws = loadWatches();
       text = ws.length
-        ? "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · TP ${x.tp} · SL ${x.stop}`).join("\n")
+        ? "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${f(x.entry)} · TP ${f(x.tp)} · SL ${f(x.stop)}`).join("\n")
         : "Chưa có coin nào trong danh sách theo dõi.\nCú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750`";
     } else if (lower.includes("theo dõi") || lower.includes("theo doi")) {
       if (lower.startsWith("bỏ") || lower.startsWith("bo ")) {
@@ -114,10 +156,10 @@ export async function POST(req: NextRequest) {
         const w = parseWatch(lower, COINS), ws = loadWatches();
         if (w) {
           saveWatches([...ws.filter((x) => x.coin !== w.coin), w]);
-          text = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (TP ${w.tp}, SL ${w.stop})` +
-            `${w.btcCancel ? `, huỷ nếu BTC ${w.side > 0 ? "<" : ">"} ${w.btcCancel}` : ""}. Hết hạn 23:59 hôm nay.`;
+          text = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${f(w.entry)} → báo (TP ${f(w.tp)}, SL ${f(w.stop)})` +
+            `${w.btcCancel ? `, huỷ nếu BTC ${w.side > 0 ? "<" : ">"} ${f(w.btcCancel)}` : ""}. Hết hạn 23:59 hôm nay.`;
         } else if (ws.length) {
-          text = "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · TP ${x.tp} · SL ${x.stop}`).join("\n");
+          text = "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${f(x.entry)} · TP ${f(x.tp)} · SL ${f(x.stop)}`).join("\n");
         } else {
           text = "Cú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750` (coin, giá vào, SL, TP, tuỳ chọn mức BTC huỷ).";
         }
