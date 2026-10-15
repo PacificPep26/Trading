@@ -290,7 +290,11 @@ export async function scanAndAlert(): Promise<string[]> {
 
   if (digest.length) {
     digest.sort((a, b) => a.rank - b.rank);
-    await say(`📋 *KÈO MỚI ${vnTime(now)}*\n` + digest.map((d) => d.text).join("\n"));
+    const btcCompass = btcSentinel.sweep
+      ? `🧭 *LA BÀN BTC:* ${btcSentinel.sweep.note}\n🔥 *LỌC ALTCOIN: CHỈ ĐÁNH ${btcSentinel.sweep.side > 0 ? "LONG ↗" : "SHORT ↘"}*\n\n`
+      : `🧭 *LA BÀN BTC:* Xu hướng ngày ${btcDaily > 0 ? "TĂNG ↗ (Chỉ lọc Altcoin LONG)" : btcDaily < 0 ? "GIẢM ↘ (Chỉ lọc Altcoin SHORT)" : "ĐI NGANG"}\n\n`;
+
+    await say(`📋 *KÈO MỚI ${vnTime(now)}*\n` + btcCompass + digest.map((d) => d.text).join("\n\n"));
   }
   saveSent();
   return out;
