@@ -20,12 +20,16 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | Ý tưởng | Kết quả | Thiếu gì |
 |---|---|---|
 | Gãy nền mạnh → hồi về nền → SHORT (4H) | +0.17R / +0.04R | t ≈ 1; 1H thì không đạt |
+| Vai–đầu–vai ngược → LONG khi phá cổ (4H) | SO Trading video 21 | 2025 +26$ (n=14) / 2026 +11$ (n=16) | mẫu quá nhỏ, tách chiều sau khi xem |
 | Chốt 50% ở 1R + dời SL hoà vốn (cách thoát cho 📌) | +9$ / +165$, thắng ~53% | 2025 ≈ hoà |
 
 ## ❌ Không dùng (đã kiểm)
 
 | Ý tưởng | Nguồn | Vì sao bỏ |
 |---|---|---|
+| Phá vỡ vùng nhiều đỉnh sau độ nén | SO Trading video 4, 7 | Quá hiếm (19 lệnh/21 tháng), 2026 −15$ |
+| Chờ phe bán thất bại 2–3 lần ở vùng cản + nến xác nhận | SO Trading video 17, 14, 22, 23, 25 | 1H 2025 −187$, kém cả vào ngẫu nhiên; 4H âm cả 2 năm |
+| Vai–đầu–vai (phá cổ / test lại cổ) 1H | SO Trading video 21 | ≈ vào ngẫu nhiên; test lại cổ âm cả 2 năm |
 | Đánh theo nến đầu sau tin Mỹ (CPI/NFP/FOMC) | Chủ dự án | 162 tin: −0.31R / −0.22R; nến đầu hay đảo chiều |
 | Lướt vài giây lúc tin ra | Chủ dự án | Đi tiếp 44–65% (tung đồng xu), lời ≤ trượt giá |
 | Mở long + short x30 trước tin | Chủ dự án | Tổng = 0 tới khi 1 bên cháy (cần > 3.3%); BTC −13$ đến −34$ |
@@ -43,6 +47,8 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | Funding cực đoan, momentum BTC 15m, BTC dẫn altcoin | Repo | ≈ 0 hoặc âm |
 
 ## Bài học chung
+
+- **Nguyên tắc từ SO Trading đáng giữ (không phải luật vào lệnh, không backtest được)**: biết đứng ngoài khi không có kèo; có kế hoạch và khung giờ cố định; không vào lệnh ngược để gỡ / trả thù thị trường; không dời SL khi đang lỗ; kiểm chứng phương pháp bằng thống kê trước khi dùng tiền thật (đúng cách repo này làm).
 
 - **Nhìn lại chart thì thấy rõ, lúc đang chạy thì không**: một ngày thắng (CPI 14/10) không chứng minh được luật; phải đếm trên hàng trăm lần.
 - **Tỷ lệ thắng một mình vô nghĩa**: hoà vốn = 1 ÷ (1 + R:R). 1:2 chỉ cần thắng 33%.
