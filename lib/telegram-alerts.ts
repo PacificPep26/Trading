@@ -102,7 +102,7 @@ export function planText(side: number, coin: string, how: string, entry: number,
     ? "không TP, bot nhắc dời SL"
     : `TP1 ${f(tp1 ?? entry + Math.sign(tp - entry) * r)} · TP2 ${f(tp)}`; // TP1 mặc định 1R: chốt 50% rồi dời SL về giá vào
   return `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${how} ${f(entry)}${note ? ` · ${note}` : ""}\n` +
-    `   SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · ${exit} · x${lev}`;
+    `   ${exit} · SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · x${lev}`;
 }
 
 export async function scanAndAlert(): Promise<string[]> {

@@ -54,8 +54,8 @@ function stats(): string {
 async function coinStatus(coin: string): Promise<string> {
   const s = await coinSnapshot(coin);
   const lines = [`*${coin}* ${s.price ? f(s.price) : ""} · xu hướng ngày ${s.daily > 0 ? "TĂNG ↗" : s.daily < 0 ? "GIẢM ↘" : "?"}`];
-  if (s.ict) lines.push(`🎯 ICT ${s.ict.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.ict.limit)} · SL ${f(s.ict.stop)} · TP ${f(s.ict.tp)}`);
-  if (s.limit) lines.push(`📌 ${s.limit.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.limit.limit)} · SL ${f(s.limit.stop)} · TP ${f(s.limit.tp)}`);
+  if (s.ict) lines.push(`🎯 ICT ${s.ict.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.ict.limit)} · TP ${f(s.ict.tp)} · SL ${f(s.ict.stop)}`);
+  if (s.limit) lines.push(`📌 ${s.limit.status === "open" ? "đang mở" : "chờ khớp"} · Limit ${f(s.limit.limit)} · TP ${f(s.limit.tp)} · SL ${f(s.limit.stop)}`);
   if (s.swing) lines.push(`📊 4H ${s.swing.side > 0 ? "LONG" : "SHORT"} đang mở · vào ${f(s.swing.entry)} · SL hiện tại ${f(s.swing.stop)}`);
   for (const p of s.pending4h) {
     lines.push(`📊 4H ${p.side > 0 ? "hai đáy" : "hai đỉnh"} chờ đóng nến ${p.side > 0 ? "trên" : "dưới"} ${f(p.trigger)} (cách ${(Math.abs(p.distancePct) * 100).toFixed(1)}%) · SL ${f(p.stop)}`);
@@ -88,10 +88,10 @@ export async function POST(req: NextRequest) {
         const w = parseWatch(lower, COINS), ws = loadWatches();
         if (w) {
           saveWatches([...ws.filter((x) => x.coin !== w.coin), w]);
-          text = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (SL ${w.stop}, TP ${w.tp})` +
+          text = `👁 Theo dõi ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}*: chạm ${w.entry} → báo (TP ${w.tp}, SL ${w.stop})` +
             `${w.btcCancel ? `, huỷ nếu BTC ${w.side > 0 ? "<" : ">"} ${w.btcCancel}` : ""}. Hết hạn 23:59 hôm nay.`;
         } else if (ws.length) {
-          text = "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · SL ${x.stop} · TP ${x.tp}`).join("\n");
+          text = "👁 *Đang theo dõi:*\n" + ws.map((x) => `• ${x.side > 0 ? "LONG" : "SHORT"} ${x.coin} @${x.entry} · TP ${x.tp} · SL ${x.stop}`).join("\n");
         } else {
           text = "Cú pháp: `theo dõi SUI 1.041 1.029 1.085 btc 82750` (coin, giá vào, SL, TP, tuỳ chọn mức BTC huỷ).";
         }

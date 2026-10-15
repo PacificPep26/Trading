@@ -79,14 +79,14 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
         x.status = "open";
         x.entry = x.side > 0 ? Math.max(x.limit, b.o) : Math.min(x.limit, b.o);
         x.fillBar = b.t;
-        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
       }
     }
     if (x.status === "pending" && x.market) {
       x.status = "open";
       x.entry = b.o;
       x.fillBar = b.t;
-      msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+      msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
     }
     if (x.status === "pending" && !x.stopEntry) {
       if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${x.limit}`); break; }
@@ -95,7 +95,7 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
         x.status = "open";
         x.entry = x.side > 0 ? Math.min(x.limit, b.o) : Math.max(x.limit, b.o);
         x.fillBar = b.t;
-        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+        msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · TP ${x.tp} · SL ${x.stop}`);
         if (x.side > 0 ? b.l <= x.stop : b.h >= x.stop) { close(x, x.stop, msgs); break; } // cùng nến chạm SL = thua
         continue;
       }

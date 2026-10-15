@@ -79,11 +79,11 @@ nến khớp mà chạm SL = thua; không tính TP trên nến khớp; tối đa
 ```
 📋 KÈO MỚI 16:15
 🔴 SHORT SOL · 🎯 ICT Limit 104,5 · quét đỉnh hôm qua
-   SL 106,2 (−1.6%) · TP1 102,8 · TP2 100,1 · x6
+   TP1 102,8 · TP2 100,1 · SL 106,2 (−1.6%) · x6
 🟢 LONG NEAR · 📌 Limit 4,933
-   SL 4,779 (−3.1%) · TP1 5,087 · TP2 5,181 · x10
+   TP1 5,087 · TP2 5,181 · SL 4,779 (−3.1%) · x10
 🟢 LONG SOL · 📊 4H hai đáy 118,2
-   SL 115,0 (−2.7%) · không TP, bot nhắc dời SL · x10
+   không TP, bot nhắc dời SL · SL 115,0 (−2.7%) · x10
 ```
 
 - TP1 = 1R: chốt 50% rồi dời SL về giá vào; TP2 = mục tiêu. `x` = đòn bẩy gợi ý min(10, 0.8 ÷ %SL).
