@@ -16,7 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision } from "./candle-vision";
+import { analyzeCandleVision, detectAccumulationBreakout } from "./candle-vision";
 
 export { f };
 
@@ -276,6 +276,28 @@ export async function scanAndAlert(): Promise<string[]> {
               tp: g.tp,
               text: planText(g.side, coin, `🔨 15m high test, chờ ${g.side > 0 ? "mua" : "bán"} phá`, g.trigger, g.stop, g.tp, "huỷ sau 45m · BT +1.501$/+295$ ✅"),
             });
+          }
+
+          // 📦 Mô hình Tích luỹ Hấp thụ Phá vỡ (Accumulation Breakout - chuẩn mẫu TIA)
+          if (allowLong && (ownDaily >= 0)) {
+            const ab = detectAccumulationBreakout(bars15m);
+            if (ab) {
+              const abKey = `AB15:${coin}:${ab.barTime}`;
+              if (!sent.has(abKey)) {
+                sent.add(abKey);
+                addLimit(coin, { side: 1, level: ab.entry, limit: ab.entry, stop: ab.stop, tp: ab.tp, atr: 0, barTime: ab.barTime, market: true }, HIGHTEST_15M_PAPER);
+                digest.push({
+                  rank: 0,
+                  coin,
+                  side: 1,
+                  rsScore: 90, // Tích luỹ bùng nổ có độ tin cậy và RS cao nhất
+                  entry: ab.entry,
+                  stop: ab.stop,
+                  tp: ab.tp,
+                  text: planText(1, coin, "📦 Tích luỹ nén hộp, Mua phá vỡ", ab.entry, ab.stop, ab.tp, ab.note),
+                });
+              }
+            }
           }
         }
       }

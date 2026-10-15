@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test:policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_ict.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_resting_limit.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_swing_4h.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_us_events.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_price_watch.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_so_setups.mjs"
+    "test:policy": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_ict.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_resting_limit.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_swing_4h.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_us_events.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_price_watch.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_so_setups.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/test_candle_vision.mjs"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

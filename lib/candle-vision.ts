@@ -11,17 +11,30 @@ export type CandleVision = {
     lowerWickPct: number; // Râu dưới chiếm bao nhiêu % biên độ
     isPinbarBullish: boolean; // Rút râu dưới >= 55%
     isPinbarBearish: boolean; // Rút râu trên >= 55%
-    isMarubozuBullish: boolean; // Thân xanh đặc >= 70% không râu trên
-    isMarubozuBearish: boolean; // Thân đỏ đặc >= 70% không râu dưới
+    isMarubozuBullish: boolean; // Thân xanh đặc >= 65% không râu trên
+    isMarubozuBearish: boolean; // Thân đỏ đặc >= 65% không râu dưới
   };
   isValidShortCandle: boolean; // Nến đạt chuẩn để Short (không bị nến xanh đục cản, có từ chối rõ ràng)
   isValidLongCandle: boolean; // Nến đạt chuẩn để Long (không bị nến đỏ cắm đầu, có rút chân rõ ràng)
 };
 
+export type AccumulationBreakout = {
+  side: 1 | -1;
+  boxHigh: number;
+  boxLow: number;
+  breakoutPrice: number;
+  entry: number;
+  stop: number;
+  tp: number;
+  volumeRatio: number;
+  barTime: number;
+  note: string;
+};
+
 /**
  * 👁️ BỘ MẮT ĐỌC NẾN (CANDLE VISION)
  * Phân tích hành vi, hình thái và bối cảnh cụm nến trước khi phát tín hiệu.
- * Ngăn chặn tuyệt đối việc Short chặn đầu xe lửa hoặc Long bắt dao rơi!
+ * Đúc kết từ 16 Video Price Action Mastery (Trade IQ / Graystone / Wyckoff).
  */
 export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
   const cs = rawCandles.filter((c) => c.closed !== false);
@@ -66,7 +79,6 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
   const isMarubozuBearish = isRed && bodyPct >= 65 && lowerWickPct <= 15;
 
   // 2. Phân tích xung lực 3 cây nến gần nhất (Momentum Context)
-  // Tính biên độ trung bình (ATR xấp xỉ) của 10 nến trước đó
   const prev10 = cs.slice(Math.max(0, n - 11), n - 1);
   const avgRange = prev10.reduce((s, x) => s + (x.h - x.l), 0) / Math.max(1, prev10.length);
 
@@ -110,5 +122,65 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
     },
     isValidShortCandle,
     isValidLongCandle,
+  };
+}
+
+/**
+ * 📦 NHẬN DIỆN MÔ HÌNH TÍCH LUỸ HẤP THỤ PHÁ VỠ (ACCUMULATION BREAKOUT)
+ * Đúng mẫu hình con TIA: Đi ngang nén biên độ hẹp >= 8 nến, volume cạn kiệt,
+ * sau đó xuất hiện nến xanh Breakout đóng vượt đỉnh hộp kèm Volume bùng nổ >= 1.35x TB!
+ */
+export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBreakout | null {
+  const cs = rawCandles.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 12) return null;
+
+  const last = cs[n - 1]; // nến vừa đóng
+  // Kiểm tra nến cuối phải là nến xanh đục cản (Bullish Breakout)
+  if (last.c <= last.o) return null;
+
+  // Lấy hộp tích luỹ gồm 10 đến 16 nến trước đó
+  const boxLength = 10;
+  const box = cs.slice(n - 1 - boxLength, n - 1);
+  if (box.length < boxLength) return null;
+
+  const boxHigh = Math.max(...box.map((b) => b.h));
+  const boxLow = Math.min(...box.map((b) => b.l));
+  const boxRange = boxHigh - boxLow;
+
+  // 1. Biên độ nén phải hẹp (Contraction / Squeeze): <= 4.5% biên độ giá
+  if (boxRange / boxLow > 0.045) return null;
+
+  // 2. Nến cuối cùng phải đóng dứt khoát TRÊN đỉnh hộp tích luỹ
+  if (last.c <= boxHigh) return null;
+
+  // Thân nến breakout phải chiếm >= 55% toàn bộ cây nến (nến xung lực, không phải râu giả)
+  const rng = last.h - last.l;
+  if (rng <= 0 || (last.c - last.o) < 0.55 * rng) return null;
+
+  // 3. Phân tích Volume (VPA - Ep 7): Volume cây nến phá vỡ phải vọt cao >= 1.35x Volume trung bình của cả hộp
+  const avgBoxVol = box.reduce((s, x) => s + (x.v || 0), 0) / box.length;
+  const volRatio = avgBoxVol > 0 ? (last.v || 0) / avgBoxVol : 1;
+  if (volRatio < 1.35) return null;
+
+  // 4. Thiết lập Kèo vào lệnh:
+  const entry = last.c;
+  const stop = boxLow - 0.002 * boxLow; // SL đặt dưới đáy hộp tích luỹ
+  const risk = (entry - stop) / entry;
+  if (risk < 0.005 || risk > 0.05) return null; // Risk an toàn từ 0.5% đến 5%
+
+  const tp = entry + 2 * (entry - stop); // TP mục tiêu tối thiểu 2R
+
+  return {
+    side: 1,
+    boxHigh,
+    boxLow,
+    breakoutPrice: boxHigh,
+    entry,
+    stop,
+    tp,
+    volumeRatio: +volRatio.toFixed(1),
+    barTime: last.t,
+    note: `Tích luỹ nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến xanh Breakout nổ Vol ${volRatio.toFixed(1)}x`,
   };
 }
