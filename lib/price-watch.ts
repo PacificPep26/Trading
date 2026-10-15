@@ -11,7 +11,10 @@ export type Watch = {
   tp: number;
   btcCancel?: number; // LONG: BTC dưới mức này thì huỷ; SHORT: BTC trên mức này thì huỷ
   expires: number;
+  near?: boolean; // đã báo "gần tới" (cách điểm vào < 0.5%)
 };
+
+const NEAR = 0.005;
 
 const FILE = path.join(process.cwd(), "data", "price-watch.json");
 
@@ -44,6 +47,11 @@ export function parseWatch(text: string, coins: string[], now = Date.now()): Wat
 }
 
 /** Kiểm tra một lượt: trả các tin cần gửi và danh sách watch còn lại. */
+/** Thêm/thay theo dõi của coin (bot tự gọi khi gửi kèo Limit). */
+export function addWatch(w: Watch, file = FILE) {
+  saveWatches([...loadWatches(file).filter((x) => x.coin !== w.coin), w], file);
+}
+
 export function evaluateWatches(ws: Watch[], price: Record<string, number>, now = Date.now()) {
   const msgs: string[] = [];
   const keep: Watch[] = [];
@@ -54,6 +62,10 @@ export function evaluateWatches(ws: Watch[], price: Record<string, number>, now 
     if (w.btcCancel && Number.isFinite(btc) && (w.side > 0 ? btc < w.btcCancel : btc > w.btcCancel)) {
       msgs.push(`❌ BTC ${btc} đã ${w.side > 0 ? "mất" : "vượt"} ${w.btcCancel} → *HUỶ lệnh Limit ${label} trên MEXC*.`);
       continue;
+    }
+    if (Number.isFinite(p) && !w.near && (w.side > 0 ? p > w.entry : p < w.entry) && Math.abs(p - w.entry) / w.entry <= NEAR) {
+      w.near = true;
+      msgs.push(`⏰ *GẦN TỚI ĐIỂM VÀO* ${w.side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${w.coin}* — giá ${p}, cách ${(Math.abs(p - w.entry) / w.entry * 100).toFixed(2)}%\n• Vào ${w.entry} · SL ${w.stop} · TP ${w.tp}`);
     }
     if (Number.isFinite(p) && (w.side > 0 ? p <= w.entry : p >= w.entry)) {
       if (w.side > 0 ? p <= w.stop : p >= w.stop) { msgs.push(`❌ ${label}: giá ${p} đã qua luôn SL ${w.stop}, bỏ kèo.`); continue; }

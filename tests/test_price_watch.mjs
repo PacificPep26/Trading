@@ -21,3 +21,18 @@ assert.match(r.msgs[0], /qua luôn SL/);
 r = evaluateWatches([w], { SUI: 1.05, BTC: 83000 }, w.expires + 1);
 assert.match(r.msgs[0], /Hết hạn/);
 console.log("All price watch tests passed!");
+
+// ⏰ gần tới (< 0.5%) báo 1 lần, chưa chạm thì vẫn giữ theo dõi
+{
+  const { evaluateWatches: ev } = await import("../lib/price-watch.ts");
+  const s = { coin: "SUI", side: -1, entry: 1.022, stop: 1.032, tp: 0.9608, expires: Date.now() + 3_600_000 };
+  let r = ev([s], { SUI: 1.0, BTC: 80000 });
+  assert.equal(r.msgs.length, 0); // còn xa 2.2%
+  r = ev([s], { SUI: 1.018, BTC: 80000 }); // cách 0.39%
+  assert.match(r.msgs[0], /GẦN TỚI/); assert.equal(r.keep.length, 1); assert.equal(r.keep[0].near, true);
+  r = ev(r.keep, { SUI: 1.019, BTC: 80000 });
+  assert.equal(r.msgs.length, 0); // không báo lại
+  r = ev(r.keep, { SUI: 1.023, BTC: 80000 });
+  assert.match(r.msgs[0], /CHẠM ĐIỂM VÀO/);
+  console.log("near-entry watch ok");
+}

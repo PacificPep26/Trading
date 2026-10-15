@@ -12,7 +12,7 @@ import { candles, ticker, funding, type Candle } from "./okx";
 import { isSwingSetupOk } from "./trading-policy";
 import { openSwing, stepSwing } from "./swing-4h";
 import { addLimit, stepLimits } from "./resting-limit";
-import { loadWatches, saveWatches, evaluateWatches } from "./price-watch";
+import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-watch";
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
@@ -447,6 +447,10 @@ export async function scanAndAlert(): Promise<string[]> {
     if (finalDigest.length > 0) {
       const msg = `📋 *KÈO ALTCOIN MỚI ${vnTime(now)}*\n` + btcCompass + finalDigest.map((d) => d.text).join("\n\n") + shieldNote;
       out.push(msg);
+      // Tự theo dõi kèo có TP: báo ⏰ khi giá cách điểm vào < 0.5%, 🔔 khi chạm (24h)
+      for (const d of finalDigest) {
+        if (d.tp !== undefined && d.entry !== undefined && d.stop !== undefined) addWatch({ coin: d.coin, side: d.side as 1 | -1, entry: d.entry, stop: d.stop, tp: d.tp, expires: now + 24 * 3_600_000 });
+      }
 
       let chartBuf: Buffer | null = null;
       try {
