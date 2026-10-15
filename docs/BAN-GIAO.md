@@ -21,7 +21,12 @@
    - Code live đã viết: `inducementSetup()` cuối `lib/so-setups.ts`; nối vào `lib/telegram-alerts.ts` (khối 1H, sổ `data/paper-idm.json`, `IDM_PAPER`, tin `🧲 Mồi nhử + FVG, Limit vùng A`, lệnh mới thay lệnh chờ cũ); mục **G** trong `service/scripts/live_replay_study.mjs`. `npx tsc` OK.
    - **Code live đã chạy lại (mục G): 1.000 lệnh +0.092R (t=1.4), 2025 +60$ / 2026 +169$** → dương cả 2 năm, khớp hướng Python → giữ trong bot; tin đã ghi `BT +60$/+169$ mỏng`.
    - **Còn phải làm**: dòng `🧲` trong `stats()` + `HELP` ở `app/api/telegram/webhook/route.ts` (mẫu: dòng 📈 Supertrend), test nhỏ trong `tests/test_so_setups.mjs`, thêm vào `service/scripts/recent_replay.mjs` (mẫu: `stFlipSetup`), docs (nhật ký, sổ tay dòng TradingLab, bot-spec mục mới + bảng luồng quét, CONTEXT "Tin đang gửi"), rồi `npx tsc --noEmit -p .`, `npm run -s test:policy`, `npm run -s lint`, `npm run -s build`, commit, push, xem `railway deployment list` tới SUCCESS.
-2. **Chạy lại video cũ ở khung nhỏ**: `service/scripts/lowtf_study.py` (`python -m service.scripts.lowtf_study 15m 5m`) chạy Rayner T.A.E, The Trading Channel hai đáy, Graystone high test, TradingLab trên **15m và 5m** (dữ liệu 5m 21 coin vừa tải: `data/crypto/*-PERP_5m.csv`, từ 2024-11). Chưa có kết quả. Kèo nào lời cả 2 năm → viết code live + replay như trên. Chưa test: SO Trading trên 15m (`service/scripts/sotrading_study.py` đang chạy 1H/4H) — nên làm.
+2. **Chạy lại video cũ ở khung nhỏ** — `service/scripts/lowtf_study.py` (`python -m service.scripts.lowtf_study 15m 5m`, ~1 giờ; dữ liệu 5m: `data/crypto/*-PERP_5m.csv`). Kết quả (chưa ghi nhật ký/sổ tay — cần ghi):
+   - **Graystone high test 15m: lời cả 2 năm, hơn ngẫu nhiên rất xa** (ngẫu nhiên −1.600$ đến −2.200$/năm). TP swing **+1.501$ / +295$** (14.804 lệnh, t 3.9 / 0.9); TP 2R +1.851$ / +15$; TP 1.5R +1.653$ / +45$. → **Việc tiếp theo: đưa 🔨 15m TP swing vào bot** (theo yêu cầu "có lời là vô"): `highTestSetup` chạy trên nến 15m (cần biến thể TP = swing đối diện, ≥ 1R — xem `graystone()` trong `video_hub_study.py`), sổ paper riêng, `stopEntry` + `barMs` 15 phút, replay code live. Lưu ý: ~23 kèo/ngày cho 21 coin → hỏi chủ dự án có muốn lọc bớt (vd chỉ coin lớn) không. 2026 yếu (t 0.9).
+   - Graystone 5m: TP swing +880$ / −495$ ❌; TP 2R âm ❌.
+   - TradingLab 15m +345$ / −147$ ❌; 5m −151$ / +246$ ❌ (chỉ 1H đạt, xem mục 1).
+   - Rayner T.A.E và The Trading Channel hai đáy: âm mọi biến thể ở 15m và 5m ❌.
+   - Chưa test: SO Trading trên 15m (`service/scripts/sotrading_study.py` đang chạy 1H/4H) — nên làm.
 3. Commit cuối cùng đã push: `872f2d9` (Supertrend ngày→1H đúng video ❌). Trước đó `2b9c127` thêm **📈 Supertrend 4H đổi màu** vào bot (code live 2025 +139$ / 2026 +85$).
 
 ## Kèo bot đang báo (v3.0.0)
