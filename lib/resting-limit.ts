@@ -20,6 +20,7 @@ export type RestingLimit = {
   exitPrice?: number;
   r?: number;
   note?: string;
+  market?: boolean; // vào Market ở giá mở nến kế (không chờ Limit); được tính TP ngay trong nến đó như backtest
 };
 
 const H1 = 3_600_000;
@@ -66,6 +67,12 @@ export function stepLimits(coin: string, bars: Bar[], file = FILE): string[] {
   const closed = bars.filter((b) => b.closed !== false && b.t > x.checkedTo);
   for (const b of closed) {
     x.checkedTo = b.t;
+    if (x.status === "pending" && x.market) {
+      x.status = "open";
+      x.entry = b.o;
+      x.fillBar = b.t;
+      msgs.push(`🧪 ${tag(x)} · paper KHỚP ${x.entry} · SL ${x.stop} · TP ${x.tp}`);
+    }
     if (x.status === "pending") {
       if (b.t > x.createdBar + 24 * H1) { x.status = "cancelled"; x.note = "hết 24h chưa khớp"; msgs.push(`⌛ ${tag(x)} · hết 24h chưa khớp → huỷ Limit ${x.limit}`); break; }
       // chạm Limit trước: nến chọc qua Limit thì lệnh đã khớp dù sau đó đóng thủng sâu (lỗi backtest cũ bỏ sót lệnh này)

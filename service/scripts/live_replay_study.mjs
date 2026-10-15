@@ -11,6 +11,7 @@ import { analyse, restingLimit, ictSweepShort } from "../../lib/patterns.ts";
 import { isSwingSetupOk } from "../../lib/trading-policy.ts";
 import { openSwing, stepSwing, loadSwings } from "../../lib/swing-4h.ts";
 import { addLimit, stepLimits, loadLimits } from "../../lib/resting-limit.ts";
+import { soSetups, SO_LABEL } from "../../lib/so-setups.ts";
 
 const H = 3_600_000, H4 = 4 * H, DAY = 86_400_000;
 const START = Date.UTC(2025, 0, 1), USD = 2.5;
@@ -42,7 +43,7 @@ const lastBefore = (arr, t) => { let lo = 0, hi = arr.length - 1, k = -1; while 
 const btc1h = load("BTC"), btcTrend = dailyTrendFn(btc1h), btcIdx = new Map(btc1h.map((b, i) => [b.t, i]));
 const A = [];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "replay-"));
-const B = [], C = [];
+const B = [], C = [], D = Object.fromEntries(Object.keys(SO_LABEL).map((k) => [k, []]));
 
 for (const coin of COINS) {
   const h1 = load(coin), h4 = resample(h1, H4), own = coin === "BTC" ? btcTrend : dailyTrendFn(h1), fund = loadFunding(coin);
@@ -75,7 +76,15 @@ for (const coin of COINS) {
     if (own(now) > 0) { const rl = restingLimit(bars, 1); if (rl) addLimit(coin, rl, file, true); } // như live: đáy mới thay lệnh chờ cũ
     const ict = ictSweepShort(bars);
     if (ict) addLimit(coin, ict, fileC);
+    // D. kèo SO Trading: soSetups trên 300 nến 1H, mỗi kèo 1 sổ, Market vào ở giá mở nến kế
+    if (n >= 300) {
+      for (const k of Object.keys(SO_LABEL)) stepLimits(coin, bars, path.join(tmp, `${coin}-so-${k}.json`));
+      for (const so of soSetups(h1.slice(n - 299, n + 1))) {
+        addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, path.join(tmp, `${coin}-so-${so.kind}.json`));
+      }
+    }
   }
+  for (const k of Object.keys(SO_LABEL)) for (const x of loadLimits(path.join(tmp, `${coin}-so-${k}.json`))) if (x.status === "closed" && x.r !== undefined) D[k].push({ t: x.createdBar, r: x.r });
   for (const x of loadLimits(file)) if (x.status === "closed" && x.r !== undefined) B.push({ t: x.createdBar, r: x.r });
   for (const x of loadLimits(fileC)) if (x.status === "closed" && x.r !== undefined) C.push({ t: x.createdBar, r: x.r });
   process.stderr.write(`${coin}: 4H ${A.length} · 📌 ${B.length} · 🎯 ${C.length}\n`);
@@ -88,7 +97,7 @@ function st(xs) {
   return `n=${String(n).padStart(4)}  thắng ${(rs.filter((r) => r > 0).length / n * 100).toFixed(0)}%  TB ${m >= 0 ? "+" : ""}${m.toFixed(3)}R  t=${(m / (sd / Math.sqrt(n))).toFixed(2)}  tổng ${(m * n * USD >= 0 ? "+" : "") + (m * n * USD).toFixed(0)}$`;
 }
 const yr = (y) => (x) => new Date(x.t).getUTCFullYear() === y;
-for (const [name, xs] of [["A. 📊 Hai đỉnh/đáy 4H, SL trailing 3 ATR", A], ["B. 📌 Limit dưới đáy 1H (LONG)", B], ["C. 🎯 ICT quét đỉnh hôm qua → SHORT 1H", C]]) {
+for (const [name, xs] of [["A. 📊 Hai đỉnh/đáy 4H, SL trailing 3 ATR", A], ["B. 📌 Limit dưới đáy 1H (LONG)", B], ["C. 🎯 ICT quét đỉnh hôm qua → SHORT 1H", C], ...Object.entries(D).map(([k, xs]) => [`D. ${SO_LABEL[k].name} (Python: ${SO_LABEL[k].stats})`, xs])]) {
   console.log(name);
   for (const y of [2025, 2026]) console.log(`  ${y}: ${st(xs.filter(yr(y)))}`);
   console.log(`  25–26: ${st(xs)}`);

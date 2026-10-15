@@ -14,6 +14,8 @@ Next.js 16 trên Railway (`main` push là tự deploy). Quét 21 coin bằng d�
 | 📌 Limit mua 0.5 ATR dưới đáy 1H vừa xác nhận, coin tăng ngày (LONG) | `restingLimit` | `data/paper-limit.json` | +131$ / +169$ · +0.06R · 2.003 lệnh |
 | 📊 Hai đỉnh/đáy 4H thuận ngày coin + BTC, volume ≥ 2x, không TP, SL trailing 3 ATR | `analyse` + `isSwingSetupOk` (`lib/trading-policy.ts`) | `data/paper-4h.json` (`lib/swing-4h.ts`) | +46$ / +45$ · +1.26R · 29 lệnh |
 
+**Thêm 4 kèo SO Trading 1H** (`lib/so-setups.ts`, sổ `data/paper-so-*.json`): 🔁 hồi đỉnh cũ (+212$ / +195$, đạt chuẩn mỏng), 👤 vai–đầu–vai, 🚀 phá vỡ sau nén, 🕯 chòm râu — 3 kèo sau KHÔNG đạt chuẩn; chủ dự án vẫn chọn nhận tin, mỗi tin ghi số backtest để tự cân nhắc. Đừng tự xoá chúng.
+
 Kèm: nhắc tin Mỹ CPI/NFP/FOMC (`lib/us-events.ts`, lịch `lib/us-events.json` — cập nhật mỗi năm), theo dõi giá chủ dự án đặt (`lib/price-watch.ts`).
 
 ## Sơ đồ file

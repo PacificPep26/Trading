@@ -17,6 +17,17 @@ quét mỗi 2 phút; chỉ dùng nến đã đóng. Xu hướng ngày = giá đ�
 - Limit = đáy − 0.5 ATR; SL = Limit − 1.5 ATR; TP = đỉnh 1H trước đáy (bỏ nếu < 1R).
 - Mỗi coin 1 lệnh chờ: đáy mới thay Limit cũ chưa khớp (tin ghi "huỷ Limit cũ …"); đã khớp thì không đặt thêm. SHORT không đạt → không dùng.
 
+## Kèo SO Trading 1H (`lib/so-setups.ts`) — chủ dự án chọn báo cả 4, tin ghi kèm số backtest
+
+| Tin | Luật (lời thoại video) | Code live 2025 / 2026 |
+|---|---|---|
+| 🔁 Hồi đỉnh cũ | cấu trúc thuận chiều, giá hồi về đỉnh cũ vừa bị phá, ≥ 2 nến thử mà đóng giữ được, nến mạnh (thân ≥ 60%) vượt các nến thử → vào; SL dưới nến thử thấp nhất − 0.1 ATR; TP1 2R, TP2 3R | +212$ / +195$ ✅ (đạt chuẩn, mỏng) |
+| 👤 Vai–đầu–vai | đầu vượt 2 vai ≥ 0.5 ATR, cổ ngang ≤ 0.3 ATR, vai phải không cao hơn vai trái; đóng qua cổ → vào (nến phá > 1.5 ATR thì Limit ở cổ); SL ngoài vai phải; TP = biên độ đầu–cổ, ≥ 1.5R | +78$ / −24$ |
+| 🚀 Phá vỡ sau nén | ≥ 2 đỉnh phẳng, 2 đáy cao dần sát vùng ≤ 2 ATR, nến đóng vượt vùng; SL dưới đáy cao dần; TP 2R; bỏ nếu cản bên trái chắn | −9$ / −13$ (hiếm) |
+| 🕯 Chòm râu | 3 nến liền râu từ chối ≥ 50%, cực trị cách nhau ≤ 0.3 ATR, ở đáy/đỉnh 24 nến; SL ngoài râu; TP 2R | +11$ / −6$ |
+
+Cả 2 chiều; vào Market ở giá đóng (paper khớp giá mở nến kế, `market: true`); sổ `data/paper-so-<kiểu>.json`. Bản backtest Python dời SL theo đáy mới cho 🚀 — tin/paper live dùng SL cố định.
+
 ## Sổ paper 🎯 📌 (`lib/resting-limit.ts`)
 
 Chờ khớp 24 nến 1H; nến chạm Limit là khớp ở giá Limit (hoặc giá mở nếu mở vượt); huỷ nếu giá chạm TP trước khi khớp;

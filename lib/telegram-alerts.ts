@@ -11,6 +11,7 @@ import { openSwing, stepSwing } from "@/lib/swing-4h";
 import { addLimit, stepLimits, loadLimits } from "@/lib/resting-limit";
 import { loadWatches, saveWatches, evaluateWatches } from "@/lib/price-watch";
 import { US_EVENTS, newsMessages } from "@/lib/us-events";
+import { soSetups, SO_LABEL, type SoKind } from "@/lib/so-setups";
 
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
@@ -20,6 +21,8 @@ const H = 3_600_000;
 // data/ là Railway volume → chống trùng và sổ paper sống qua redeploy
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
 export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
+// 4 kèo SO Trading: chủ dự án chọn báo cả 4 kèm số backtest (chỉ "hồi đỉnh cũ" đạt chuẩn) — mỗi kèo 1 sổ paper
+export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 
 function loadSent(): string[] {
   try {
@@ -89,12 +92,12 @@ export async function send(text: string): Promise<boolean> {
 }
 
 /** Tin kèo mẫu chung 2 dòng. tp = undefined: kèo không TP (4H trailing). */
-export function planText(side: number, coin: string, how: string, entry: number, stop: number, tp?: number, note = "") {
+export function planText(side: number, coin: string, how: string, entry: number, stop: number, tp?: number, note = "", tp1?: number) {
   const r = Math.abs(entry - stop), risk = r / entry;
   const lev = Math.min(10, Math.max(1, Math.floor(0.8 / risk))); // tối đa x10; chạm SL mất ≤ 80% ký quỹ
   const exit = tp === undefined
     ? "không TP, bot nhắc dời SL"
-    : `TP1 ${f(entry + Math.sign(tp - entry) * r)} · TP2 ${f(tp)}`; // TP1 = 1R: chốt 50% rồi dời SL về giá vào
+    : `TP1 ${f(tp1 ?? entry + Math.sign(tp - entry) * r)} · TP2 ${f(tp)}`; // TP1 mặc định 1R: chốt 50% rồi dời SL về giá vào
   return `${side > 0 ? "🟢 LONG" : "🔴 SHORT"} *${coin}* · ${how} ${f(entry)}${note ? ` · ${note}` : ""}\n` +
     `   SL ${f(stop)} (−${(risk * 100).toFixed(1)}%) · ${exit} · x${lev}`;
 }
@@ -158,10 +161,22 @@ export async function scanAndAlert(): Promise<string[]> {
         }
       }
 
-      // 1H: sổ paper 📌 và 🎯 (100 nến: ICT cần trọn ngày hôm qua, có khi cả hôm kia)
-      const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 100);
+      // 1H: 300 nến cho kèo SO Trading; 📌 và 🎯 dùng 100 nến cuối như backtest (ICT cần trọn ngày hôm qua, có khi cả hôm kia)
+      const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
+      const bars1h = bars300.slice(-100);
       for (const m of stepLimits(coin, bars1h)) await say(m);
       for (const m of stepLimits(coin, bars1h, ICT_PAPER)) await say(m);
+      for (const k of Object.keys(SO_LABEL) as SoKind[]) for (const m of stepLimits(coin, bars1h, soPaper(k))) await say(m);
+
+      // Kèo SO Trading (lời thoại video): tin ghi kèm số backtest 2025/2026
+      for (const so of soSetups(bars300)) {
+        const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
+        if (sent.has(key)) continue;
+        sent.add(key);
+        addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
+        const lab = SO_LABEL[so.kind];
+        digest.push({ rank: 3, text: planText(so.side, coin, `${lab.name} ${so.limit ? "Limit" : "vào"}`, so.entry, so.stop, so.tp, lab.stats, so.tp1) });
+      }
 
       // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
       const ict = ictSweepShort(bars1h);

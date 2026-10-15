@@ -3,12 +3,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadLimits, limitStats } from "@/lib/resting-limit";
 import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
-import { COINS, ICT_PAPER, f } from "@/lib/telegram-alerts";
+import { COINS, ICT_PAPER, f, soPaper } from "@/lib/telegram-alerts";
+import { SO_LABEL, type SoKind } from "@/lib/so-setups";
 import { coinSnapshot } from "@/lib/snapshot";
 
 const HELP =
   "🤖 *Bot báo 3 kèo đã kiểm chứng* (bạn tự vào lệnh, phí 0):\n" +
   "• 🎯 ICT quét đỉnh hôm qua → SHORT 1H\n• 📌 Limit dưới đáy 1H → LONG\n• 📊 Hai đỉnh/đáy 4H, không TP, bot nhắc dời SL\n" +
+  "• SO Trading 1H, tin kèm số backtest (chỉ 🔁 đạt chuẩn): 🔁 hồi đỉnh cũ · 👤 vai–đầu–vai · 🚀 phá vỡ sau nén · 🕯 chòm râu\n" +
   "Tin: `TP1` = chốt 50% rồi dời SL về giá vào; `x` = đòn bẩy gợi ý (≤ 10).\n\n" +
   "Lệnh: `thống kê` · tên coin (vd `SOL`) · `theo dõi SUI 1.041 1.029 1.085 btc 82750` · `bỏ theo dõi`";
 
@@ -34,7 +36,11 @@ function stats(): string {
   return "📊 *Sổ paper* (so với backtest 2025–26)\n" +
     line("🎯 ICT", ict, `${ict.pending} chờ, ${ict.open} mở`) + "\n   backtest +0.42R/lệnh\n" +
     line("📌 Limit", lim, `${lim.pending} chờ, ${lim.open} mở`) + "\n   backtest +0.06R/lệnh\n" +
-    line("📊 4H", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh";
+    line("📊 4H", sw, `${sw.open} mở`) + "\n   backtest +1.2R/lệnh\n" +
+    (Object.keys(SO_LABEL) as SoKind[]).map((k) => {
+      const st = limitStats(loadLimits(soPaper(k)));
+      return line(SO_LABEL[k].name, st, `${st.open} mở`) + `\n   ${SO_LABEL[k].stats}`;
+    }).join("\n");
 }
 
 async function coinStatus(coin: string): Promise<string> {
