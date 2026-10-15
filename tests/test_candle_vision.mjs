@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-const { analyzeCandleVision, detectAccumulationBreakout } = await import("../lib/candle-vision.ts");
+const { analyzeCandleVision, detectAccumulationBreakout, detect5mEarlyTrigger } = await import("../lib/candle-vision.ts");
 
 console.log("Running candle vision unit tests...");
 
@@ -82,6 +82,45 @@ console.log("Running candle vision unit tests...");
   assert.equal(ab?.entry, 2.05);
   assert.ok(ab?.volumeRatio >= 1.5, "Volume ratio phải lớn hơn 1.5x");
   assert.ok(ab?.tp < ab?.entry, "TP của Short phải thấp hơn entry");
+}
+
+// Test 6: Kích hoạt vào sớm 5M chuẩn (Nền 15m + Nến 5m nổ Vol 2.5x + Thân đặc)
+{
+  const bars15m = [];
+  for (let i = 0; i < 15; i++) {
+    bars15m.push({ t: i * 15 * 60000, o: 100, h: 102, l: 99, c: 101, v: 5000, closed: true });
+  }
+
+  const bars5m = [];
+  for (let i = 0; i < 15; i++) {
+    bars5m.push({ t: i * 5 * 60000, o: 100.5, h: 101.5, l: 99.5, c: 101, v: 1000, closed: true });
+  }
+  // Cây nến 5m breakout: đục phá đỉnh 102, đóng 102.8, Vol 2800 (gấp 2.8 lần), thân nến 75%
+  bars5m.push({ t: 15 * 5 * 60000, o: 101, h: 103, l: 100.8, c: 102.8, v: 2800, closed: true });
+
+  const early = detect5mEarlyTrigger(bars15m, bars5m);
+  assert.notEqual(early, null, "Phải bắt được tín hiệu kích hoạt sớm 5M đạt chuẩn");
+  assert.equal(early?.side, 1);
+  assert.equal(early?.entry, 102.8);
+  assert.ok(early?.volumeRatio >= 1.8, "Volume phải gấp ít nhất 1.8x");
+}
+
+// Test 7: CHỐNG BOM HÀNG: Nến 5m vượt đỉnh nhưng Vol yếu (dưới 1.8x) hoặc râu trên xả dài -> Phải bị từ chối (null)!
+{
+  const bars15m = [];
+  for (let i = 0; i < 15; i++) {
+    bars15m.push({ t: i * 15 * 60000, o: 100, h: 102, l: 99, c: 101, v: 5000, closed: true });
+  }
+
+  const bars5m = [];
+  for (let i = 0; i < 15; i++) {
+    bars5m.push({ t: i * 5 * 60000, o: 100.5, h: 101.5, l: 99.5, c: 101, v: 1000, closed: true });
+  }
+  // Cây nến 5m vượt đỉnh nhưng bị đạp râu trên dài (Shooting Star lừa gà): H 103.5, C 102.1 (râu trên 1.4 giá trên biên 2.7 giá ~ 52%)
+  bars5m.push({ t: 15 * 5 * 60000, o: 101.5, h: 103.5, l: 100.8, c: 102.1, v: 2800, closed: true });
+
+  const earlyTrap = detect5mEarlyTrigger(bars15m, bars5m);
+  assert.equal(earlyTrap, null, "Chống bom hàng: nến 5m râu trên dài bị đạp phải bị loại bỏ!");
 }
 
 console.log("All candle vision unit tests passed successfully! ✅");

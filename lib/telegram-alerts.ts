@@ -16,7 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary, detectAnticipatingBox } from "./candle-vision";
+import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary, detectAnticipatingBox, detect5mEarlyTrigger } from "./candle-vision";
 
 export { f };
 
@@ -186,10 +186,11 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   }
 
   const minute = new Date(now).getUTCMinutes();
+  const after5m = forceAll || minute % 5 < 2; // nến 5m vừa đóng (trong 2 phút đầu)
   const after15m = forceAll || minute % 15 < 3; // nến 15m vừa đóng (hoặc lệnh quét chủ động)
   const after1h = forceAll || minute < 15; // nến 1H vừa đóng
   const after4h = forceAll || (after1h && new Date(now).getUTCHours() % 4 === 0); // nến 4H vừa đóng
-  if (!after15m && !after1h && !forceAll) {
+  if (!after5m && !after15m && !after1h && !forceAll) {
     saveSent();
     return out;
   }
@@ -250,11 +251,49 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     try {
       const isHeld = heldCoins.has(coin);
 
-      if (after15m) {
-        const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
-        stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
-        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
-          const ownDaily = await dailyTrend(coin);
+      if (!isHeld && coin !== "BTC" && coin !== "ETH") {
+        const ownDaily = await dailyTrend(coin);
+
+        // ⚡ KÍCH HOẠT VÀO SỚM 5M DỰA TRÊN NỀN HỘP 15M (ANTI-TRAP: Vol >= 1.8x, Thân >= 60%)
+        if (after5m) {
+          const bars15mShort = await candles(`${coin}-USDT-SWAP`, "15m", 30).catch(() => []);
+          const bars5m = await candles(`${coin}-USDT-SWAP`, "5m", 30).catch(() => []);
+          const early5m = detect5mEarlyTrigger(bars15mShort, bars5m);
+          if (early5m) {
+            const isLongOk = early5m.side > 0 && allowLong && ownDaily >= 0;
+            const isShortOk = early5m.side < 0 && allowShort && ownDaily <= 0;
+            if (isLongOk || isShortOk) {
+              const key5 = `E5M:${coin}:${early5m.side}:${early5m.barTime}`;
+              if (!sent.has(key5)) {
+                sent.add(key5);
+                const vision5m = analyzeCandleVision(bars5m);
+                const candleSum5m = formatCandleSummary("M5", bars5m, vision5m);
+                digest.push({
+                  rank: 0,
+                  coin,
+                  side: early5m.side,
+                  rsScore: 95, // 5M early breakout có RS ưu tiên cao nhất
+                  entry: early5m.entry,
+                  stop: early5m.stop,
+                  tp: early5m.tp,
+                  text: planText(
+                    early5m.side,
+                    coin,
+                    early5m.side > 0 ? "⚡ 5M nổ hộp vào sớm" : "⚡ 5M thủng hộp xả sớm",
+                    early5m.entry,
+                    early5m.stop,
+                    early5m.tp,
+                    candleSum5m
+                  ),
+                });
+              }
+            }
+          }
+        }
+
+        if (after15m) {
+          const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
+          stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
           const vision15m = analyzeCandleVision(bars15m);
           const candleSum15m = formatCandleSummary("M15", bars15m, vision15m);
 

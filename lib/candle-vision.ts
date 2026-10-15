@@ -292,3 +292,109 @@ export function detectAnticipatingBox(rawCandles: Candle[]): AnticipatingSetup |
   return null;
 }
 
+export type Early5mTrigger = {
+  side: 1 | -1;
+  boxHigh: number;
+  boxLow: number;
+  entry: number;
+  stop: number;
+  tp: number;
+  volumeRatio: number;
+  barTime: number;
+  note: string;
+};
+
+/**
+ * ⚡ KÍCH HOẠT VÀO SỚM 5M DỰA TRÊN CĂN CỨ 15M (ANTI-TRAP / CHỐNG BOM HÀNG)
+ * 1. Khung 15m phải đang nén hộp chặt chẽ (biên <= 4.2%, >= 8 nến).
+ * 2. Nến 5m vừa đóng phải bùng nổ phá vỡ đỉnh/đáy hộp.
+ * 3. Thân nến 5m phải đặc >= 60%, râu chối từ <= 20% (chống rút râu lừa).
+ * 4. Volume 5m phải nổ gấp >= 1.8x trung bình 10 nến 5m trước (xác nhận dòng tiền thật).
+ */
+export function detect5mEarlyTrigger(
+  bars15m: Candle[],
+  bars5m: Candle[]
+): Early5mTrigger | null {
+  const cs15 = bars15m.filter((c) => c.closed !== false);
+  const cs5 = bars5m.filter((c) => c.closed !== false);
+  if (cs15.length < 12 || cs5.length < 15) return null;
+
+  // 1. Kiểm tra căn cứ hộp 15m (10 nến)
+  const boxLength = 10;
+  const box15 = cs15.slice(cs15.length - boxLength);
+  const boxHigh = Math.max(...box15.map((b) => b.h));
+  const boxLow = Math.min(...box15.map((b) => b.l));
+  const boxRange = boxHigh - boxLow;
+  if (boxRange / boxLow > 0.042) return null; // Hộp 15m phải nén hẹp <= 4.2%
+
+  // 2. Kiểm tra nến 5m vừa đóng
+  const last5 = cs5[cs5.length - 1];
+  const rng5 = last5.h - last5.l;
+  if (rng5 <= 0) return null;
+
+  const prev10_5 = cs5.slice(cs5.length - 11, cs5.length - 1);
+  const avgVol5 = prev10_5.reduce((s, x) => s + (x.v || 0), 0) / prev10_5.length;
+  const volRatio5 = avgVol5 > 0 ? (last5.v || 0) / avgVol5 : 1;
+
+  // CHỐNG BOM HÀNG: Volume nến 5m phá cản bắt buộc phải >= 1.8x trung bình
+  if (volRatio5 < 1.8) return null;
+
+  // 🟢 CHIỀU LONG: Nến 5m đục đỉnh hộp 15m
+  if (last5.c > last5.o && last5.c > boxHigh) {
+    const body5 = last5.c - last5.o;
+    const upperWick5 = last5.h - last5.c;
+    // Thân nến phải đặc >= 60% và râu trên <= 20% (không có dấu hiệu bị đạp đầu)
+    if (body5 < 0.6 * rng5 || upperWick5 > 0.2 * rng5) return null;
+
+    const entry = last5.c;
+    // SL ngắn ngay dưới đáy nến 5m (hoặc -0.15% dưới đáy nến 5m)
+    const stopCandidate = Math.max(last5.l - 0.001 * last5.l, boxHigh - 0.4 * boxRange);
+    const stop = Math.min(stopCandidate, entry - 0.005 * entry); // tối thiểu 0.5%
+    const risk = (entry - stop) / entry;
+    if (risk < 0.005 || risk > 0.045) return null; // SL siêu ngắn từ 0.5% đến 4.5%
+    const tp = entry + 2.5 * (entry - stop); // Tối ưu R:R lên 1:2.5!
+
+    return {
+      side: 1,
+      boxHigh,
+      boxLow,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio5.toFixed(1),
+      barTime: last5.t,
+      note: `5M nổ Vol ${volRatio5.toFixed(1)}x phá hộp 15m (Thân ${((body5/rng5)*100).toFixed(0)}%, SL ngắn ${(risk*100).toFixed(1)}%)`,
+    };
+  }
+
+  // 🔴 CHIỀU SHORT: Nến 5m đục đáy hộp 15m
+  if (last5.c < last5.o && last5.c < boxLow) {
+    const body5 = last5.o - last5.c;
+    const lowerWick5 = last5.c - last5.l;
+    // Thân nến phải đặc >= 60% và râu dưới <= 20% (không có dấu hiệu rút chân)
+    if (body5 < 0.6 * rng5 || lowerWick5 > 0.2 * rng5) return null;
+
+    const entry = last5.c;
+    const stopCandidate = Math.min(last5.h + 0.001 * last5.h, boxLow + 0.4 * boxRange);
+    const stop = Math.max(stopCandidate, entry + 0.005 * entry);
+    const risk = (stop - entry) / entry;
+    if (risk < 0.005 || risk > 0.045) return null;
+    const tp = entry - 2.5 * (stop - entry); // Tối ưu R:R lên 1:2.5!
+
+    return {
+      side: -1,
+      boxHigh,
+      boxLow,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio5.toFixed(1),
+      barTime: last5.t,
+      note: `5M xả Vol ${volRatio5.toFixed(1)}x thủng hộp 15m (Thân ${((body5/rng5)*100).toFixed(0)}%, SL ngắn ${(risk*100).toFixed(1)}%)`,
+    };
+  }
+
+  return null;
+}
+
+
