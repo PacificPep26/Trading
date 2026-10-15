@@ -151,6 +151,12 @@ export async function scanAndAlert(): Promise<string[]> {
     console.error("[NEWS]", e);
   }
 
+  const btcDaily = await dailyTrend("BTC");
+  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
+  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
+  const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
+  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
+
   // Theo dõi giá chủ tài khoản đặt qua Telegram ("theo dõi SUI 1.041 1.029 1.085 btc 82750")
   const watches = loadWatches();
   if (watches.length) {
@@ -158,7 +164,10 @@ export async function scanAndAlert(): Promise<string[]> {
     for (const c of new Set([...watches.map((w) => w.coin), "BTC"])) {
       price[c] = (await ticker(`${c}-USDT-SWAP`).catch(() => null))?.last ?? NaN;
     }
-    const { msgs, keep } = evaluateWatches(watches, price);
+    const { msgs, keep } = evaluateWatches(watches, price, now, {
+      allowLong: btcSentinel.allowLong,
+      allowShort: btcSentinel.allowShort,
+    });
     for (const m of msgs) await say(m);
     if (msgs.length) saveWatches(keep);
   }
@@ -190,12 +199,6 @@ export async function scanAndAlert(): Promise<string[]> {
     tp?: number;
   };
   const digest: DigestItem[] = [];
-
-  const btcDaily = await dailyTrend("BTC");
-  const btc1h: Candle[] = await candles("BTC-USDT-SWAP", "1H", 120).catch(() => []);
-  const btc15m: Candle[] = await candles("BTC-USDT-SWAP", "15m", 60).catch(() => []);
-  const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
-  const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
 
   // 🚨 ĐIỀU KIỆN PHẾ TRUẤT LA BÀN BTC (INVALIDATION):
   // Nếu BTC đâm thủng đáy râu quét vừa tạo -> Bắn cảnh báo khẩn cấp và thu hồi cờ Long ngay lập tức

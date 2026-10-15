@@ -52,13 +52,26 @@ export function addWatch(w: Watch, file = FILE) {
   saveWatches([...loadWatches(file).filter((x) => x.coin !== w.coin), w], file);
 }
 
-export function evaluateWatches(ws: Watch[], price: Record<string, number>, now = Date.now()) {
+export function evaluateWatches(
+  ws: Watch[],
+  price: Record<string, number>,
+  now = Date.now(),
+  context?: { allowLong?: boolean; allowShort?: boolean }
+) {
   const msgs: string[] = [];
   const keep: Watch[] = [];
   for (const w of ws) {
     const p = price[w.coin], btc = price.BTC;
     const label = `${w.side > 0 ? "LONG" : "SHORT"} ${w.coin} @${w.entry}`;
     if (now > w.expires) { msgs.push(`⌛ Hết hạn theo dõi ${label} (chưa chạm).`); continue; }
+    if (w.side < 0 && context && context.allowShort === false) {
+      msgs.push(`🛡️ *HUỶ THEO DÕI:* ${label} — Thị trường / BTC đang tăng mạnh (CẤM SHORT chặn đầu xe lửa).`);
+      continue;
+    }
+    if (w.side > 0 && context && context.allowLong === false) {
+      msgs.push(`🛡️ *HUỶ THEO DÕI:* ${label} — Thị trường / BTC đang xả mạnh (CẤM BẮT DAO RƠI).`);
+      continue;
+    }
     if (w.btcCancel && Number.isFinite(btc) && (w.side > 0 ? btc < w.btcCancel : btc > w.btcCancel)) {
       msgs.push(`❌ BTC ${btc} đã ${w.side > 0 ? "mất" : "vượt"} ${w.btcCancel} → *HUỶ lệnh Limit ${label} trên MEXC*.`);
       continue;
