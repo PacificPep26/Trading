@@ -162,10 +162,6 @@ export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBr
   if (n < 12) return null;
 
   const last = cs[n - 1]; // nến vừa đóng
-  // Kiểm tra nến cuối phải là nến xanh đục cản (Bullish Breakout)
-  if (last.c <= last.o) return null;
-
-  // Lấy hộp tích luỹ gồm 10 đến 16 nến trước đó
   const boxLength = 10;
   const box = cs.slice(n - 1 - boxLength, n - 1);
   if (box.length < boxLength) return null;
@@ -177,38 +173,63 @@ export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBr
   // 1. Biên độ nén phải hẹp (Contraction / Squeeze): <= 4.5% biên độ giá
   if (boxRange / boxLow > 0.045) return null;
 
-  // 2. Nến cuối cùng phải đóng dứt khoát TRÊN đỉnh hộp tích luỹ
-  if (last.c <= boxHigh) return null;
-
-  // Thân nến breakout phải chiếm >= 55% toàn bộ cây nến (nến xung lực, không phải râu giả)
   const rng = last.h - last.l;
-  if (rng <= 0 || (last.c - last.o) < 0.55 * rng) return null;
+  if (rng <= 0) return null;
 
-  // 3. Phân tích Volume (VPA - Ep 7): Volume cây nến phá vỡ phải vọt cao >= 1.35x Volume trung bình của cả hộp
+  // Phân tích Volume (VPA - Ep 7): Volume cây nến phá vỡ phải vọt cao >= 1.35x Volume trung bình của cả hộp
   const avgBoxVol = box.reduce((s, x) => s + (x.v || 0), 0) / box.length;
   const volRatio = avgBoxVol > 0 ? (last.v || 0) / avgBoxVol : 1;
   if (volRatio < 1.35) return null;
 
-  // 4. Thiết lập Kèo vào lệnh:
-  const entry = last.c;
-  const stop = boxLow - 0.002 * boxLow; // SL đặt dưới đáy hộp tích luỹ
-  const risk = (entry - stop) / entry;
-  if (risk < 0.005 || risk > 0.05) return null; // Risk an toàn từ 0.5% đến 5%
+  // 🟢 CHIỀU 1: BREAKOUT LONG (Tích luỹ bùng nổ vượt đỉnh hộp)
+  if (last.c > last.o && last.c > boxHigh) {
+    if ((last.c - last.o) < 0.55 * rng) return null; // Thân xanh >= 55%
 
-  const tp = entry + 2 * (entry - stop); // TP mục tiêu tối thiểu 2R
+    const entry = last.c;
+    const stop = boxLow - 0.002 * boxLow; // SL đặt dưới đáy hộp tích luỹ
+    const risk = (entry - stop) / entry;
+    if (risk < 0.005 || risk > 0.06) return null;
+    const tp = entry + 2 * (entry - stop); // TP 2R
 
-  return {
-    side: 1,
-    boxHigh,
-    boxLow,
-    breakoutPrice: boxHigh,
-    entry,
-    stop,
-    tp,
-    volumeRatio: +volRatio.toFixed(1),
-    barTime: last.t,
-    note: `Tích luỹ nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến xanh Breakout nổ Vol ${volRatio.toFixed(1)}x`,
-  };
+    return {
+      side: 1,
+      boxHigh,
+      boxLow,
+      breakoutPrice: boxHigh,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio.toFixed(1),
+      barTime: last.t,
+      note: `Tích luỹ nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến xanh Breakout nổ Vol ${volRatio.toFixed(1)}x`,
+    };
+  }
+
+  // 🔴 CHIỀU 2: BREAKDOWN SHORT (Phân phối sụp đổ đục thủng đáy hộp)
+  if (last.c < last.o && last.c < boxLow) {
+    if ((last.o - last.c) < 0.55 * rng) return null; // Thân đỏ >= 55%
+
+    const entry = last.c;
+    const stop = boxHigh + 0.002 * boxHigh; // SL đặt trên đỉnh hộp phân phối
+    const risk = (stop - entry) / entry;
+    if (risk < 0.005 || risk > 0.06) return null;
+    const tp = entry - 2 * (stop - entry); // TP 2R
+
+    return {
+      side: -1,
+      boxHigh,
+      boxLow,
+      breakoutPrice: boxLow,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio.toFixed(1),
+      barTime: last.t,
+      note: `Phân phối nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến đỏ Breakdown xả Vol ${volRatio.toFixed(1)}x`,
+    };
+  }
+
+  return null;
 }
 
 export type AnticipatingSetup = {
@@ -222,9 +243,9 @@ export type AnticipatingSetup = {
 };
 
 /**
- * 🔍 QUÉT NẾN SẮP VÀO MÔ HÌNH (RÌNH TRƯỚC BREAKOUT)
- * Tìm những Altcoin đang nén hộp chặt chẽ (biên <= 4.2%), giá sát trần hộp,
- * volume cạn kiệt chuẩn bị bùng nổ theo kiểu TIA!
+ * 🔍 QUÉT NẾN SẮP VÀO MÔ HÌNH (RÌNH TRƯỚC BREAKOUT / BREAKDOWN)
+ * Tìm những Altcoin đang nén hộp chặt chẽ (biên <= 4.2%), giá sát trần hoặc sát sàn hộp,
+ * volume cạn kiệt chuẩn bị bùng nổ theo cả 2 chiều!
  */
 export function detectAnticipatingBox(rawCandles: Candle[]): AnticipatingSetup | null {
   const cs = rawCandles.filter((c) => c.closed !== false);
@@ -241,8 +262,10 @@ export function detectAnticipatingBox(rawCandles: Candle[]): AnticipatingSetup |
   if (boxRange / boxLow > 0.042) return null;
 
   const last = cs[n - 1];
-  // Giá đang nằm sát đỉnh hộp trong phạm vi 1.5%
   const distToHigh = (boxHigh - last.c) / last.c;
+  const distToLow = (last.c - boxLow) / last.c;
+
+  // 1. Giá sát trần hộp (chuẩn bị nổ Long)
   if (distToHigh >= -0.005 && distToHigh <= 0.015) {
     return {
       kind: "box_squeeze",
@@ -250,9 +273,22 @@ export function detectAnticipatingBox(rawCandles: Candle[]): AnticipatingSetup |
       boxLow,
       currentPrice: last.c,
       distancePct: +(distToHigh * 100).toFixed(1),
-      note: `Nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), giá sát trần, chờ nến M15 nổ Vol phá ${boxHigh}`,
+      note: `Nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), giá sát trần, chờ nến M15 nổ Vol phá ${boxHigh} để LONG`,
     };
   }
+
+  // 2. Giá sát sàn hộp (chuẩn bị sập Short)
+  if (distToLow >= -0.005 && distToLow <= 0.015) {
+    return {
+      kind: "box_squeeze",
+      boxHigh,
+      boxLow,
+      currentPrice: last.c,
+      distancePct: +(distToLow * 100).toFixed(1),
+      note: `Nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), giá sát sàn, chờ nến M15 xả Vol thủng ${boxLow} để SHORT`,
+    };
+  }
+
   return null;
 }
 

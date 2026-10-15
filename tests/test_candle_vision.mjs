@@ -66,4 +66,22 @@ console.log("Running candle vision unit tests...");
   assert.ok(ab?.tp > ab?.entry, "TP phải cao hơn entry");
 }
 
+// Test 5: Mô hình Phân phối Thủng hộp (Distribution Breakdown Short)
+{
+  const candles = [];
+  // 12 nến đi ngang trong hộp 2.10 - 2.16 (biên độ ~2.8%)
+  for (let i = 0; i < 14; i++) {
+    candles.push({ t: i * 60000, o: 2.12, h: 2.16, l: 2.10, c: 2.13, v: 1000, closed: true });
+  }
+  // Cây nến xả thủng đáy: đóng 2.05 (thủng đáy hộp 2.10), nổ Volume 3200 (gấp 3.2 lần), nến đỏ thân dài
+  candles.push({ t: 14 * 60000, o: 2.11, h: 2.12, l: 2.04, c: 2.05, v: 3200, closed: true });
+
+  const ab = detectAccumulationBreakout(candles);
+  assert.notEqual(ab, null, "Phải phát hiện được mô hình phân phối thủng hộp Breakdown Short");
+  assert.equal(ab?.side, -1, "Side phải là Short (-1)");
+  assert.equal(ab?.entry, 2.05);
+  assert.ok(ab?.volumeRatio >= 1.5, "Volume ratio phải lớn hơn 1.5x");
+  assert.ok(ab?.tp < ab?.entry, "TP của Short phải thấp hơn entry");
+}
+
 console.log("All candle vision unit tests passed successfully! ✅");

@@ -291,23 +291,33 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             });
           }
 
-          // 📦 Mô hình Tích luỹ Hấp thụ Phá vỡ (Accumulation Breakout - chuẩn mẫu TIA)
-          if (allowLong && (ownDaily >= 0)) {
-            const ab = detectAccumulationBreakout(bars15m);
-            if (ab) {
-              const abKey = `AB15:${coin}:${ab.barTime}`;
+          // 📦 Mô hình Nén Hộp Bùng Nổ / Phân Phối Sụp Đổ (Wyckoff Breakout & Breakdown)
+          const ab = detectAccumulationBreakout(bars15m);
+          if (ab) {
+            const isLongOk = ab.side > 0 && allowLong && ownDaily >= 0;
+            const isShortOk = ab.side < 0 && allowShort && ownDaily <= 0;
+            if (isLongOk || isShortOk) {
+              const abKey = `AB15:${coin}:${ab.side}:${ab.barTime}`;
               if (!sent.has(abKey)) {
                 sent.add(abKey);
-                addLimit(coin, { side: 1, level: ab.entry, limit: ab.entry, stop: ab.stop, tp: ab.tp, atr: 0, barTime: ab.barTime, market: true }, HIGHTEST_15M_PAPER);
+                addLimit(coin, { side: ab.side, level: ab.entry, limit: ab.entry, stop: ab.stop, tp: ab.tp, atr: 0, barTime: ab.barTime, market: true }, HIGHTEST_15M_PAPER);
                 digest.push({
                   rank: 0,
                   coin,
-                  side: 1,
-                  rsScore: 90, // Tích luỹ bùng nổ có độ tin cậy và RS cao nhất
+                  side: ab.side,
+                  rsScore: 90, // Nén hộp bùng nổ có độ tin cậy và RS cao nhất
                   entry: ab.entry,
                   stop: ab.stop,
                   tp: ab.tp,
-                  text: planText(1, coin, "📦 Nén hộp bùng nổ", ab.entry, ab.stop, ab.tp, candleSum15m),
+                  text: planText(
+                    ab.side,
+                    coin,
+                    ab.side > 0 ? "📦 Nén hộp bùng nổ" : "📦 Thủng hộp phân phối",
+                    ab.entry,
+                    ab.stop,
+                    ab.tp,
+                    candleSum15m
+                  ),
                 });
               }
             }
