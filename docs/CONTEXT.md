@@ -36,7 +36,13 @@ Kèm: nhắc tin Mỹ CPI/NFP/FOMC (`lib/us-events.ts`, lịch `lib/us-events.js
 5. Không thêm lớp "AI"/chấm điểm chưa backtest; không báo kèo chỉ vì "nhìn chart thấy đúng hôm qua".
 6. Trả lời chủ dự án bằng tiền ($) và tỷ lệ thắng, ngắn; không giảng về phí.
 
-## Thêm kiến thức
+## Thêm kiến thức (quy trình với `docs/research/MASTER_VIDEO_HUB.md`)
+
+Một agent khác lấy video (lời thoại) vào `docs/research/MASTER_VIDEO_HUB.md` — **không sửa file đó**. Việc của agent này: đọc mục mới →
+viết luật đo được → backtest (thêm vào `service/scripts/video_hub_study.py` hoặc script riêng) → nhật ký + bảng "Đối chiếu MASTER_VIDEO_HUB"
+trong `docs/so-tay-kien-thuc.md` (theo số #). Chủ dự án quyết định kèo nào vào bot (có thể chọn báo cả kèo không đạt, ghi số backtest trong tin).
+
+## Thêm kiến thức (cũ)
 
 Chủ dự án bỏ tóm tắt video/ý tưởng vào `docs/research/`. Quy trình: đọc → viết thành luật đo được (vào ở đâu, SL, TP, khung) →
 script trong `service/scripts/` → kết quả vào nhật ký + 1 dòng trong sổ tay → đạt chuẩn mới nối vào bot.

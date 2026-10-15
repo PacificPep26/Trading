@@ -48,6 +48,18 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | Donchian / phá đỉnh 20 ngày | Gemini | Điểm vào ≈ ngẫu nhiên |
 | Funding cực đoan, momentum BTC 15m, BTC dẫn altcoin | Repo | ≈ 0 hoặc âm |
 
+## Đối chiếu `docs/research/MASTER_VIDEO_HUB.md` (agent khác cập nhật video; số # theo hub)
+
+| # hub | Video | Kết luận |
+|---|---|---|
+| 1 | Rayner Teo — khoá mẫu nến, khung T.A.E | ❌ mọi biến thể âm/≈ 0 (`video_hub_study.py`) |
+| 2 | VN Rebates — phiên Á → Âu quét + CISD | ❌ −1.191$ / −660$, kém ngẫu nhiên |
+| 3 | VN Rebates — Order Block 4 yếu tố | ⏳ chưa đo riêng; Order Block đơn thuần đã âm |
+| 4 | VN Rebates — Fibonacci OTE + FVG | ⏳ chưa đo riêng; Fibonacci + xác nhận, FVG đã âm |
+| 5 | VN Rebates — 4 loại FVG | ⏳ FVG 1H→15m đã âm; loại "breakaway" chưa đo |
+| 6 | VN Rebates — chờ quét thanh khoản rồi vào | ✅ chính là 📌 và 🎯 đang chạy |
+| 7–38 | SO Trading (32 video) | 🔁 hồi đỉnh cũ ✅; vai–đầu–vai, phá vỡ sau nén, chòm râu ❌ nhưng vẫn báo theo yêu cầu; nhấn chìm lần hai ❌; tâm lý/kế hoạch = nguyên tắc |
+
 ## Bài học chung
 
 - **Nguyên tắc từ SO Trading đáng giữ (không phải luật vào lệnh, không backtest được)**: biết đứng ngoài khi không có kèo; có kế hoạch và khung giờ cố định; không vào lệnh ngược để gỡ / trả thù thị trường; không dời SL khi đang lỗ; kiểm chứng phương pháp bằng thống kê trước khi dùng tiền thật (đúng cách repo này làm).
