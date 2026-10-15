@@ -12,10 +12,17 @@ Usage: python -m service.scripts.video_hub_study
 2. VN Rebates #2 Asia → London sweep: Asia range = 00:00–07:00 UTC; between 07:00 and 11:00 UTC a 15m bar takes out one side,
    then a 15m bar closes beyond the open of the bar that made the sweep extreme (CISD) → next open; SL beyond the sweep
    extreme + 0.1 ATR; TP = the other side of the Asia range (>= 1R). One trade per coin per day.
-21 bot coins, 1H/4H for (1), 15m for (2); 2025–2026; fee 0; slippage 0.04%; stop first; max 48 bars; random control.
+3. The Trading Channel "price action system" (hub: "The Only Price Action Trading Video"): conservative entry = double bottom
+   with a termination zone (first bottom's body-to-wick range); the 2nd bottom touches the zone with no close below the 1st
+   bottom's low, then buying pressure (green bar with body >= 60% of range, or a hammer) within 3 bars → next open; SL under
+   the lower bottom − 0.1 ATR; TP 1.4R / 2R; only in trend structure. Mirror for double tops.
+4. Jason Graystone "high test candle" (hub: "Trading for Beginners Part 1"): trend structure, pullback to the broken swing
+   (support turned resistance), shooting star / hammer there (wick >= 2x body and >= 60% of range); stop order beyond the
+   candle's low (high) valid 3 bars; SL beyond its high (low) + 0.1 ATR; TP = last opposite swing (>= 1R) or 2R.
+21 bot coins, 1H/4H for (1, 3, 4), 15m for (2); 2025–2026; fee 0; slippage 0.04%; stop first; max 48 bars; random control.
 """
 from service.backtest.data import DATA_DIR, load
-from service.backtest.patterns import build, confirmed
+from service.backtest.patterns import build, confirmed, trend
 from service.scripts import fee0_shootout as X
 from service.scripts.live_precise_study import LIVE_COINS
 from service.scripts.rule_study import daily_trend, trend_at
@@ -108,6 +115,83 @@ def tae(cs, x, own, tf, sym):
     return out
 
 
+def ttc_double(cs, x, own, tf, sym):
+    out, busy = [], 0
+    for i in range(60, len(cs) - MAXB - 2):
+        if year_of(cs[i].t) < 2025 or i <= busy:
+            continue
+        a, c = x.atr[i], cs[i]
+        for side in (1, -1):
+            if trend(x, i) != side:
+                continue
+            first = confirmed(x.lows if side > 0 else x.highs, i, 1)
+            if not first or first[0] < i - 40:
+                continue
+            k = first[0]
+            b1 = cs[k]
+            wick_end = b1.l if side > 0 else b1.h
+            body_end = min(b1.o, b1.c) if side > 0 else max(b1.o, b1.c)
+            later = cs[k + 1 : i]
+            if any((b.c < wick_end) if side > 0 else (b.c > wick_end) for b in later + [c]):
+                continue  # a close beyond the first bottom = trend continuation, not a double bottom
+            touches = [j for j in range(max(k + 4, i - 3), i + 1) if ((cs[j].l <= body_end) if side > 0 else (cs[j].h >= body_end))]
+            if not touches:
+                continue
+            rng, body = c.h - c.l, abs(c.c - c.o)
+            wick = (min(c.o, c.c) - c.l) if side > 0 else (c.h - max(c.o, c.c))
+            pressure = rng > 0 and (side * (c.c - c.o) >= 0.6 * rng or (wick >= 2 * body and wick >= 0.6 * rng))
+            if not pressure:
+                continue
+            e = cs[i + 1].o
+            lowest = min([wick_end] + [cs[j].l for j in touches]) if side > 0 else max([wick_end] + [cs[j].h for j in touches])
+            stop = lowest - side * 0.1 * a
+            for R in (1.4, 2.0):
+                r = row(cs, i + 1, side, e, stop, e + R * (e - stop), f"TTC hai đáy/đỉnh + lực mua · TP {R}R", tf, sym, own)
+                if r:
+                    out.append(r)
+            busy = i + 3
+            break
+    return out
+
+
+def graystone(cs, x, own, tf, sym):
+    out, busy = [], 0
+    for i in range(60, len(cs) - MAXB - 5):
+        if year_of(cs[i].t) < 2025 or i <= busy:
+            continue
+        a, c = x.atr[i], cs[i]
+        for side in (1, -1):
+            if trend(x, i) != side:
+                continue
+            hs = confirmed(x.highs if side > 0 else x.lows, i, 3)
+            top = (lambda k: cs[k].h) if side > 0 else (lambda k: cs[k].l)
+            if len(hs) < 2 or side * (top(hs[-1]) - top(hs[-2])) <= 0:
+                continue
+            S = top(hs[-2])
+            if not ((c.l <= S + 0.2 * a) if side > 0 else (c.h >= S - 0.2 * a)):
+                continue
+            rng, body = c.h - c.l, abs(c.c - c.o)
+            wick = (min(c.o, c.c) - c.l) if side > 0 else (c.h - max(c.o, c.c))
+            if not (rng > 0 and wick >= 2 * body and wick >= 0.6 * rng):
+                continue
+            trig = c.h if side > 0 else c.l
+            stop = (c.l - 0.1 * a) if side > 0 else (c.h + 0.1 * a)
+            for j in range(i + 1, i + 4):
+                b = cs[j]
+                if (b.l <= stop) if side > 0 else (b.h >= stop):
+                    break  # invalidated before triggering
+                if (b.h >= trig) if side > 0 else (b.l <= trig):
+                    e = max(trig, b.o) if side > 0 else min(trig, b.o)
+                    for name, tp in (("TP swing", top(hs[-1])), ("TP 2R", e + 2 * (e - stop))):
+                        r = row(cs, j, side, e, stop, tp, f"Graystone high-test + lệnh chờ phá · {name}", tf, sym, own)
+                        if r:
+                            out.append(r)
+                    busy = j + 3
+                    break
+            break
+    return out
+
+
 def asia(cs, x, own, sym):
     out, days = [], {}
     for k, b in enumerate(cs):
@@ -154,7 +238,10 @@ def main():
         c1 = load(sym, "1h", include_holdout=True)
         own = daily_trend(c1)
         c4 = resample(c1, 4)
-        rows += tae(c1, build(c1), own, "1h", sym) + tae(c4, build(c4), own, "4h", sym)
+        x1, x4 = build(c1), build(c4)
+        rows += tae(c1, x1, own, "1h", sym) + tae(c4, x4, own, "4h", sym)
+        rows += ttc_double(c1, x1, own, "1h", sym) + ttc_double(c4, x4, own, "4h", sym)
+        rows += graystone(c1, x1, own, "1h", sym) + graystone(c4, x4, own, "4h", sym)
         if (DATA_DIR / f"{sym}_15m.csv").exists():
             m = load(sym, "15m", include_holdout=True)
             rows += asia(m, build(m), own, sym)

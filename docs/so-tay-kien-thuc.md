@@ -15,6 +15,12 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | Đặt sẵn Limit đón râu quét đáy | Chủ dự án | 1H, LONG, Limit 0.5 ATR dưới đáy, bỏ đáy volume ≥ 2.5x | +0.063R, +145$ / +172$ |
 | Hai đỉnh/đáy thuận xu hướng, gồng lãi | Repo | 4H, volume ≥ 2x, SL trailing 3 ATR, không TP | +1.22R, +45$ / +43$ |
 
+## ✅ Đạt chuẩn, chưa nối vào bot
+
+| Ý tưởng | Nguồn | Luật | Kết quả |
+|---|---|---|---|
+| Nến "high test" (búa/bắn sao) ở swing vừa bị phá, thuận cấu trúc, lệnh chờ phá râu | Jason Graystone (YouTube) | 4H, SL ngoài nến + 0.1 ATR, TP 2R | +0.115R t=2.9, 2025 +251$ / 2026 +138$, ngẫu nhiên +161$ / −62$; SHORT +0.22R mỗi năm |
+
 ## 🧪 Có dấu hiệu, chưa đủ chắc
 
 | Ý tưởng | Kết quả | Thiếu gì |
@@ -58,6 +64,8 @@ Chi tiết số liệu ở [nhật ký nghiên cứu](nhat-ky-nghien-cuu.md). T�
 | 4 | VN Rebates — Fibonacci OTE + FVG | ⏳ chưa đo riêng; Fibonacci + xác nhận, FVG đã âm |
 | 5 | VN Rebates — 4 loại FVG | ⏳ FVG 1H→15m đã âm; loại "breakaway" chưa đo |
 | 6 | VN Rebates — chờ quét thanh khoản rồi vào | ✅ chính là 📌 và 🎯 đang chạy |
+| (mới) | The Trading Channel — "The Only Price Action Trading Video" (hai đáy/đỉnh + vùng kết thúc + lực mua) | ❌ 1H −598$ / −35$; 4H ≈ 0 |
+| (mới) | Jason Graystone — "Trading for Beginners Part 1" (nến high test + lệnh chờ phá) | ✅ **4H TP 2R +251$ / +138$, hơn ngẫu nhiên**; 1H ❌ |
 | 7–38 | SO Trading (32 video) | 🔁 hồi đỉnh cũ ✅; vai–đầu–vai, phá vỡ sau nén, chòm râu ❌ nhưng vẫn báo theo yêu cầu; nhấn chìm lần hai ❌; tâm lý/kế hoạch = nguyên tắc |
 
 ## Bài học chung
