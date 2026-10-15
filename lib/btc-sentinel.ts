@@ -169,7 +169,7 @@ export function analyseBtcSentinel(
         saveState(state);
 
         return {
-          dailyTrend: marketStructure,
+          dailyTrend: btcDailyTrend,
           allowLong: false, // KHÓA TOÀN BỘ LONG NGAY LẬP TỨC
           allowShort: true, // Mở Short theo đà thủng đáy
           sweep: null,
@@ -192,7 +192,7 @@ export function analyseBtcSentinel(
         saveState(state);
 
         return {
-          dailyTrend: marketStructure,
+          dailyTrend: btcDailyTrend,
           allowLong: true,
           allowShort: false,
           sweep: null,
@@ -311,9 +311,14 @@ export function analyseBtcSentinel(
   }
 
   // Xu hướng quyết định chiều lệnh:
-  // Mặc định thuận theo cấu trúc 4H/1H (marketStructure)
-  let allowLong = marketStructure > 0;
-  let allowShort = marketStructure < 0;
+  // Thuận theo xu hướng ngày (Daily Trend), không dùng EMA 4H/1H trễ để tránh bẫy cấm Long khi vừa tạo đáy
+  let allowLong = btcDailyTrend >= 0;
+  let allowShort = btcDailyTrend <= 0;
+
+  // Nếu giá BTC đang ép sát vùng đáy hỗ trợ macro (trong phạm vi 500 giá từ đáy sâu nhất): CẤM SHORT ĐUỔI ĐÁY
+  if (currentPrice <= macroLow + 500) {
+    allowShort = false;
+  }
 
   if (sweep?.side === 1) {
     allowLong = true;
@@ -325,7 +330,7 @@ export function analyseBtcSentinel(
 
   const statusText = sweep
     ? `⚡ ${sweep.note} → ${sweep.side > 0 ? "ƯU TIÊN LONG, CẤM SHORT ALTCOIN" : "ƯU TIÊN SHORT, CẤM LONG ALTCOIN"}`
-    : `Cấu trúc BTC 4H/1H: ${marketStructure > 0 ? "TĂNG ↗ (chỉ lọc Long altcoin)" : marketStructure < 0 ? "GIẢM ↘ (CẤM LONG, chỉ lọc Short altcoin)" : "LƯỠNG LỰ / TRANH CHẤP"}`;
+    : `BTC xu hướng ngày: ${btcDailyTrend > 0 ? "TĂNG ↗ (ưu tiên Long)" : btcDailyTrend < 0 ? "GIẢM ↘ (ưu tiên Short)" : "LƯỠNG LỰ"}`;
 
-  return { dailyTrend: marketStructure, allowLong, allowShort, sweep, invalidation: null, statusText };
+  return { dailyTrend: btcDailyTrend, allowLong, allowShort, sweep, invalidation: null, statusText };
 }
