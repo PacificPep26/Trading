@@ -295,9 +295,13 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     const upperWick = last.h - last.c;
     if (body < 0.50 * rng || upperWick > 0.25 * rng) return null;
 
-    // Chống mua đỉnh cản: Yêu cầu còn địa dư tăng trưởng >= 2.0% tới đỉnh cũ 36h
+    // Định vị cản lớn và phá đỉnh chu kỳ (Blue Sky Breakout - theo chỉ đạo thực chiến của Victor)
+    const isNewHighBreakout = last.c >= priorHigh * 0.998 || boxHigh >= priorHigh * 0.995;
     const distToResistance = (priorHigh - last.c) / last.c;
-    if (distToResistance < 0.020) return null;
+
+    // Chỉ chặn nếu là hộp nhỏ nằm dưới mà cản lớn 36h nằm quá gần ngay trên đầu (< 1.5%)
+    // Nếu giá phá chính đỉnh chu kỳ 36h thì KHÔNG CHẶN vì phía trên là bầu trời trống (Blue Sky)
+    if (!isNewHighBreakout && distToResistance > 0 && distToResistance < 0.015) return null;
 
     const entry = last.c;
     const stop = Math.max(last.l - 0.001 * last.l, boxHigh - 0.010 * boxHigh);
@@ -305,7 +309,9 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     if (risk < 0.003 || risk > 0.035) return null;
 
     const tp1 = entry + 1.4 * (entry - stop);
-    const tp2 = Math.max(entry + 3.0 * (entry - stop), priorHigh);
+    const tp2 = isNewHighBreakout
+      ? entry + 2.5 * (entry - stop)
+      : Math.max(entry + 2.5 * (entry - stop), priorHigh);
 
     return {
       side: 1,
@@ -319,7 +325,9 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
       tp2,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền (Còn cản +${(distToResistance * 100).toFixed(1)}%)`,
+      note: isNewHighBreakout
+        ? `M15 Nền ${boxLength} nến, nến 15m nổ Vol ${volRatio.toFixed(1)}x PHÁ ĐỈNH CHU KỲ (Blue Sky Breakout)`
+        : `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền (Còn cản +${(distToResistance * 100).toFixed(1)}%)`,
     };
   }
 
