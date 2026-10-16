@@ -120,7 +120,7 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
       center: (zoneTop + zoneBottom) / 2,
       timeframe: "4H",
       touchCount,
-      status: isBroken ? "EXHAUSTED" : touchCount <= 2 ? "FRESH" : "TESTED",
+      status: isBroken ? "EXHAUSTED" : touchCount <= 3 ? "FRESH" : "TESTED",
       isBrokenAndFlipped: false,
     });
   }
@@ -148,7 +148,7 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
       center: (zoneTop + zoneBottom) / 2,
       timeframe: "4H",
       touchCount,
-      status: isBroken ? "EXHAUSTED" : touchCount <= 2 ? "FRESH" : "TESTED",
+      status: isBroken ? "EXHAUSTED" : touchCount <= 3 ? "FRESH" : "TESTED",
       isBrokenAndFlipped: false,
     });
   }
@@ -246,7 +246,10 @@ export function detectMacroHunterSignal(
   // =========================================================================
   if (btcAllowance.allowShort && !btcAllowance.isBtcStrongPump) {
     const resistanceZones = zones.filter(
-      (z) => (z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H") && z.status === "FRESH"
+      (z) =>
+        (z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H") &&
+        (z.status === "FRESH" || z.status === "TESTED") &&
+        z.touchCount <= 3
     );
 
     for (const rz of resistanceZones) {
@@ -375,7 +378,10 @@ export function detectMacroHunterSignal(
   // =========================================================================
   if (btcAllowance.allowLong) {
     const supportZones = zones.filter(
-      (z) => (z.type === "SWING_LOW_7D" || z.type === "BULLISH_FVG_4H") && z.status === "FRESH"
+      (z) =>
+        (z.type === "SWING_LOW_7D" || z.type === "BULLISH_FVG_4H") &&
+        (z.status === "FRESH" || z.status === "TESTED") &&
+        z.touchCount <= 3
     );
 
     for (const sz of supportZones) {

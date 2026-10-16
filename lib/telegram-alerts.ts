@@ -500,8 +500,9 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           const macro4h = bars4h.length >= 10 ? extractMacro4HContext(bars4h, bars15m.at(-1)?.c || 0) : undefined;
           const sb15 = detect15mShelfBreakout(bars15m, macro4h);
           if (sb15) {
-            const isLongOk = sb15.side > 0 && allowLong && ownDaily >= 0;
-            const isShortOk = sb15.side < 0 && allowShort && ownDaily <= 0;
+            // Đã nới lỏng: Cho phép Altcoin bứt phá theo dòng tiền riêng (Alpha vs BTC) mà không bị gông cùm bởi EMA50 Daily cũ
+            const isLongOk = sb15.side > 0 && allowLong && (ownDaily >= 0 || alphaVsBtc >= 1.5);
+            const isShortOk = sb15.side < 0 && allowShort && (ownDaily <= 0 || alphaVsBtc <= -1.5);
             if (isLongOk || isShortOk) {
               const sbKey = `SB15:${coin}:${sb15.side}:${sb15.barTime}`;
               if (!sent.has(sbKey)) {
@@ -547,7 +548,8 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           // --- SETUP 3: SUPPORT BOUNCE ---
           // -------------------------------------------------------------------------
           const bounce15 = detect15mSupportBounce(bars15m);
-          if (bounce15 && allowLong && ownDaily >= 0) {
+          // Hỗ trợ rút chân: Cho phép đánh nếu hệ thống cho Long và coin có sức mạnh tương đối không quá yếu
+          if (bounce15 && allowLong && (ownDaily >= 0 || alphaVsBtc >= -2.0)) {
             const bounceKey = `BOUNCE15:${coin}:${bounce15.barTime}`;
             if (!sent.has(bounceKey)) {
               sent.add(bounceKey);
@@ -886,20 +888,29 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             `• Mã lệnh: \`${liveOrder.orderId}\``
           );
 
-          // Tự động gắn TP/SL lên MEXC ngay lập tức
+          // Tự động gắn TP/SL lên MEXC ngay lập tức (với cơ chế Retry 3 lần)
           try {
-            // Đợi 800ms để MEXC cập nhật positionId
-            await new Promise((r) => setTimeout(r, 800));
-            const updatedPositions = await getMexcOpenPositions().catch(() => []);
-            const pos = updatedPositions.find((p) => p.coin === item.coin);
-            if (pos && pos.positionId) {
-              await setMexcPositionStop({
-                positionId: pos.positionId,
-                symbol,
-                stopLossPrice: item.stop,
-                takeProfitPrice: item.tp,
-                vol,
-              });
+            let stopAttached = false;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              await new Promise((r) => setTimeout(r, attempt * 600)); // Chờ 600ms, 1200ms, 1800ms
+              const updatedPositions = await getMexcOpenPositions().catch(() => []);
+              const pos = updatedPositions.find((p) => p.coin === item.coin);
+              if (pos && pos.positionId) {
+                const stopRes = await setMexcPositionStop({
+                  positionId: pos.positionId,
+                  symbol,
+                  stopLossPrice: item.stop,
+                  takeProfitPrice: item.tp,
+                  vol,
+                });
+                if (stopRes.success) {
+                  stopAttached = true;
+                  break;
+                }
+              }
+            }
+            if (!stopAttached) {
+              console.warn(`[MEXC LIVE STOP WARNING] ${item.coin}: Chưa gắn được SL ngay lập tức, Fail-Safe Shield sẽ xử lý ở chu kỳ tới.`);
             }
           } catch (stopErr) {
             console.error(`[MEXC LIVE STOP ERR] ${item.coin}:`, stopErr);

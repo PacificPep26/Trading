@@ -294,9 +294,12 @@ export async function calculateMexcVolForMargin(
   targetMarginUsdt: number = 10.0,
   leverage: number = 10
 ): Promise<number> {
-  const contractSize = await getMexcContractSize(symbol);
+  const detail = await getMexcContractDetail(symbol);
+  const contractSize = detail.contractSize || 1;
+  const minVol = detail.minVol || 1;
   const notional = targetMarginUsdt * leverage; // 10 * 10 = 100 USDT
-  const vol = Math.max(1, Math.round(notional / (price * contractSize)));
+  const rawVol = notional / (price * contractSize);
+  const vol = Math.max(minVol, Math.round(rawVol));
   return vol;
 }
 
