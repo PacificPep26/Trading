@@ -76,8 +76,8 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
   const upperWickPct = (upperWick / rng) * 100;
   const lowerWickPct = (lowerWick / rng) * 100;
 
-  const isPinbarBullish = lowerWickPct >= 55 && upperWickPct <= 25;
-  const isPinbarBearish = upperWickPct >= 55 && lowerWickPct <= 25;
+  const isPinbarBullish = lowerWickPct >= 45 && upperWickPct <= 25;
+  const isPinbarBearish = upperWickPct >= 45 && lowerWickPct <= 25;
   const isMarubozuBullish = isGreen && bodyPct >= 65 && upperWickPct <= 15;
   const isMarubozuBearish = isRed && bodyPct >= 65 && lowerWickPct <= 15;
 
@@ -85,29 +85,21 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
   const prev10 = cs.slice(Math.max(0, n - 11), n - 1);
   const avgRange = prev10.reduce((s, x) => s + (x.h - x.l), 0) / Math.max(1, prev10.length);
 
-  // Nến xanh xung lực lớn (Bullish Expansion): nến xanh có thân > 1.25 * avgRange
-  // Hoặc 2 nến xanh liên tiếp đẩy mạnh
   const recent3 = cs.slice(Math.max(0, n - 3), n);
   const hasBigGreenBar = recent3.some((x) => x.c > x.o && x.c - x.o >= 1.25 * avgRange);
   const consecutiveGreen = recent3.length >= 2 && recent3.slice(-2).every((x) => x.c > x.o);
   const isBullishMomentum = hasBigGreenBar || (consecutiveGreen && isGreen);
 
-  // Nến đỏ xung lực lớn (Bearish Waterfall): nến đỏ có thân > 1.25 * avgRange
   const hasBigRedBar = recent3.some((x) => x.c < x.o && x.o - x.c >= 1.25 * avgRange);
   const consecutiveRed = recent3.length >= 2 && recent3.slice(-2).every((x) => x.c < x.o);
   const isBearishMomentum = hasBigRedBar || (consecutiveRed && isRed);
 
-  // 3. Đánh giá tính hợp lệ cho lệnh SHORT:
-  // - CẤM SHORT nếu vừa có nến xanh xung lực lớn (đang bơm)
-  // - CẤM SHORT nếu nến vừa đóng là nến xanh đặc ruột (Marubozu) đóng sát đỉnh
-  // - Muốn Short: Nến phải đóng đỏ HOẶC có râu trên từ chối rõ ràng (upperWickPct >= 50%)
-  const isValidShortCandle = !isBullishMomentum && !isMarubozuBullish && (isRed || upperWickPct >= 50);
+  // 🛡️ FIX CHÍ MẠNG 1: Nến Shooting Star / Pinbar từ chối tại cản được quyền phủ quyết (override) xung lực tăng trước đó
+  const isStrongRejection = (isRed && upperWickPct >= 45) || isPinbarBearish;
+  const isValidShortCandle = (!isBullishMomentum || isStrongRejection) && !isMarubozuBullish && (isRed || upperWickPct >= 45);
 
-  // 4. Đánh giá tính hợp lệ cho lệnh LONG:
-  // - CẤM LONG nếu vừa có nến đỏ xả thác lũ chưa có nến hấp thụ
-  // - CẤM LONG nếu nến vừa đóng là nến đỏ đặc ruột (Marubozu) cắm xuống đáy
-  // - Muốn Long: Nến phải đóng xanh HOẶC có râu dưới rút chân rõ ràng (lowerWickPct >= 50%)
-  const isValidLongCandle = !isBearishMomentum && !isMarubozuBearish && (isGreen || lowerWickPct >= 50);
+  const isStrongAbsorption = (isGreen && lowerWickPct >= 45) || isPinbarBullish;
+  const isValidLongCandle = (!isBearishMomentum || isStrongAbsorption) && !isMarubozuBearish && (isGreen || lowerWickPct >= 45);
 
   // 5. Cảnh báo hành vi & bẫy cá mập (Đúc kết từ chuỗi Video Price Action & Yin TP Trade):
   let warningNote: string | undefined = undefined;
@@ -288,17 +280,16 @@ export function extractMacro4HContext(candles4h: Candle[], currentPrice: number)
   const low7d = Math.min(...lookback.map((c) => c.l));
 
   // 2. Tìm khối Bearish FVG gần nhất trên đầu (chưa bị lấp)
-  // Bearish FVG: nến [i-2].low > nến [i].high (có khoảng trống giảm)
+  // 🛡️ FIX CHÍ MẠNG 2: Nhận diện FVG khi giá tiếp cận HOẶC đang nằm bên trong khối FVG (không bị mất dấu)
   let nearestBearishFvg: { top: number; bottom: number } | undefined;
   for (let i = n - 1; i >= Math.max(2, n - 42); i--) {
     const top = cs[i - 2].l;
     const bottom = cs[i].h;
     if (top > bottom) {
-      // Có Bearish FVG giữa [i-2] và [i]
-      // Kiểm tra xem các nến sau đó đã đóng qua hoặc lấp hết FVG này chưa
       const laterBars = cs.slice(i + 1);
-      const isMitigated = laterBars.some((b) => b.h >= top);
-      if (!isMitigated && bottom > currentPrice * 0.99) {
+      const isInvalidated = laterBars.some((b) => b.c > top);
+      const isPriceRelevant = currentPrice <= top * 1.01 && currentPrice >= bottom * 0.97;
+      if (!isInvalidated && isPriceRelevant) {
         if (!nearestBearishFvg || bottom < nearestBearishFvg.bottom) {
           nearestBearishFvg = { top, bottom };
         }
@@ -313,8 +304,9 @@ export function extractMacro4HContext(candles4h: Candle[], currentPrice: number)
     const bottom = cs[i - 2].h;
     if (top > bottom) {
       const laterBars = cs.slice(i + 1);
-      const isMitigated = laterBars.some((b) => b.l <= bottom);
-      if (!isMitigated && top < currentPrice * 1.01) {
+      const isInvalidated = laterBars.some((b) => b.c < bottom);
+      const isPriceRelevant = currentPrice >= bottom * 0.99 && currentPrice <= top * 1.03;
+      if (!isInvalidated && isPriceRelevant) {
         if (!nearestBullishFvg || top > nearestBullishFvg.top) {
           nearestBullishFvg = { top, bottom };
         }
@@ -330,7 +322,8 @@ export function extractMacro4HContext(candles4h: Candle[], currentPrice: number)
  * ĐÃ TUÂN THỦ NGHIÊM NGẶT TOP-DOWN ANALYSIS (KHUNG LỚN 4H / DAILY SO VỚI 15M):
  * 1. Khung 4H đánh dấu trước: Cản đỉnh 7 ngày (7D Swing High) và Bearish FVG.
  * 2. CẤM LONG khi đụng đầu cản 7 ngày (< 2.5%) hoặc đụng Bearish FVG 4H.
- * 3. CẤM SHORT khi đụng đáy 7 ngày (< 2.5%) hoặc đụng Bullish FVG 4H.
+ * 3. 🛡️ FIX CHÍ MẠNG 3: CẤM MUA ĐUỔI FOMO khi vừa phá đỉnh 7D (Upthrust trap). Bắt buộc chờ Retest!
+ * 4. CẤM SHORT khi đụng đáy 7 ngày (< 2.5%) hoặc đụng Bullish FVG 4H.
  */
 export function detect15mShelfBreakout(
   rawCandles15m: Candle[],
@@ -370,15 +363,19 @@ export function detect15mShelfBreakout(
     if (macro4h) {
       // 1. Kiểm tra đỉnh cản lớn 7-14 ngày
       const distTo7dHigh = (macro4h.high7d - last.c) / last.c;
-      // Nếu đỉnh 7 ngày nằm ngay sát sạt trên đầu (< 2.5%) và giá chưa vượt hẳn đỉnh 7 ngày -> CẤM LONG!
+      // a) Nếu đỉnh 7 ngày nằm ngay sát sạt trên đầu (< 2.5%) -> CẤM LONG!
       if (macro4h.high7d > last.c && distTo7dHigh < 0.025) {
-        return null; // Chặn đâm đầu vào kháng cự ngày 11/10!
+        return null;
+      }
+      // b) 🛡️ FIX CHÍ MẠNG 3: Nếu nến 15m vừa phá đỉnh 7D và giá vượt chưa quá 1.5% -> CẤM MUA ĐUỔI ĐỈNH (Upthrust Trap)!
+      // Phá đỉnh 7D phải nhường chỗ cho Macro Hunter săn Retest Long, không được mua đuổi tại đây!
+      if (last.c >= macro4h.high7d && (last.c - macro4h.high7d) / macro4h.high7d < 0.015) {
+        return null;
       }
 
       // 2. Kiểm tra khối Bearish FVG 4H chưa lấp trên đầu
       if (macro4h.nearestBearishFvg) {
         const distToFvg = (macro4h.nearestBearishFvg.bottom - last.c) / last.c;
-        // Nếu giá đâm thẳng vào bụng FVG hoặc cách FVG < 2.0% -> CẤM LONG!
         if (last.c <= macro4h.nearestBearishFvg.top && (distToFvg < 0.02 || last.c >= macro4h.nearestBearishFvg.bottom)) {
           return null; // Chặn đâm đầu vào Bearish FVG 4H!
         }
