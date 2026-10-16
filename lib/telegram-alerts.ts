@@ -529,6 +529,16 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 entry: darvasSig.entry,
                 stop: darvasSig.stop,
                 tp: darvasSig.tp,
+                zone: {
+                  top: darvasSig.box.top,
+                  bottom: darvasSig.box.bottom,
+                  type: "SWING_HIGH_3D",
+                  center: darvasSig.box.center,
+                  timeframe: "4H",
+                  touchCount: darvasSig.box.testCount,
+                  status: "FRESH",
+                  isBrokenAndFlipped: false,
+                },
                 rrRatio: darvasSig.rrRatio,
                 text: planText(
                   1,
@@ -773,11 +783,18 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
         const topCoin = topItem.coin;
         const tf = topItem.text.includes("15m") ? "15m" : "1H";
         const c = await candles(`${topCoin}-USDT-SWAP`, tf, 60);
+        const isDarvasAlert = topItem.text.includes("Darvas");
         const zoneInfo = topItem.zone
           ? {
               top: topItem.zone.top,
               bottom: topItem.zone.bottom,
-              label: topItem.zone.type === "BEARISH_FVG_4H" ? "Bearish FVG 4H (Sell Zone)" : topItem.zone.type === "BULLISH_FVG_4H" ? "Bullish FVG 4H (Buy Zone)" : "Cản Macro 4H",
+              label: isDarvasAlert
+                ? "Hộp Darvas (Nicolas Darvas)"
+                : topItem.zone.type === "BEARISH_FVG_4H"
+                ? "Bearish FVG 4H (Sell Zone)"
+                : topItem.zone.type === "BULLISH_FVG_4H"
+                ? "Bullish FVG 4H (Buy Zone)"
+                : "Cản Macro 4H",
               side: (topItem.side > 0 ? 1 : -1) as 1 | -1,
             }
           : undefined;
