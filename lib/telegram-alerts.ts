@@ -25,6 +25,7 @@ import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type S
 import { generateCandleChartPng } from "./chart-generator";
 import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand, extractMacro4HContext } from "./candle-vision";
 import { detectMacroHunterSignal, type HunterSignal } from "./macro-hunter";
+import { detectDarvasSignal, type DarvasSignal } from "./darvas-box";
 import { openPaperTrade, stepPaperTrades, isSessionPrime } from "./auto-paper-trader";
 
 export { f };
@@ -496,6 +497,56 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                   hunterSig.tp,
                   candleSum15m,
                   hunterSig.tp1
+                ),
+              });
+            }
+          }
+
+          // -------------------------------------------------------------------------
+          // --- SETUP 1.5: HỘP DARVAS BOX (NICOLAS DARVAS) & NHỊP TEST ĐÁY LẦN 2 ---
+          // -------------------------------------------------------------------------
+          const darvasSig = detectDarvasSignal(coin, bars15m, {
+            allowLong: btcSentinel.allowLong && heldLongCount < MAX_CONCURRENT_POSITIONS,
+            isBtcStrongPump: isBtcPump,
+          });
+
+          if (darvasSig) {
+            const darvasKey = `DARVAS:${coin}:${darvasSig.kind}:${darvasSig.barTime}`;
+            if (!sent.has(darvasKey)) {
+              sent.add(darvasKey);
+
+              const { alertMsg: paperDMsg } = openPaperTrade({
+                coin,
+                side: 1,
+                entry: darvasSig.entry,
+                stop: darvasSig.stop,
+                tp: darvasSig.tp,
+                tp1: darvasSig.tp1,
+                tp2: darvasSig.tp,
+                note: darvasSig.note,
+              });
+              if (paperDMsg) await say(paperDMsg);
+
+              digest.push({
+                rank: 0, // Ưu tiên số 1 ngang hàng Macro Hunter
+                coin,
+                side: 1,
+                rsScore: 97,
+                entry: darvasSig.entry,
+                stop: darvasSig.stop,
+                tp: darvasSig.tp,
+                rrRatio: darvasSig.rrRatio,
+                text: planText(
+                  1,
+                  coin,
+                  darvasSig.kind === "DARVAS_2ND_BOUNCE"
+                    ? "📦 Săn Đáy Hộp Darvas Lần 2 (Rút Chân)"
+                    : "🚀 Bứt Phá Hộp Darvas (Retest)",
+                  darvasSig.entry,
+                  darvasSig.stop,
+                  darvasSig.tp,
+                  candleSum15m,
+                  darvasSig.tp1
                 ),
               });
             }
