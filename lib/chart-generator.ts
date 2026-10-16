@@ -99,7 +99,8 @@ export async function generateCandleChartPng(params: {
   entry?: number;
   stop?: number;
   tp?: number;
-  zone?: { top: number; bottom: number; label: string; side?: 1 | -1 };
+  zone?: { top: number; bottom: number; label: string; side?: 1 | -1; startIndex?: number; endIndex?: number };
+  zones?: { top: number; bottom: number; label: string; side?: 1 | -1; startIndex?: number; endIndex?: number }[];
   width?: number;
   height?: number;
 }): Promise<Buffer | null> {
@@ -112,6 +113,7 @@ export async function generateCandleChartPng(params: {
     stop,
     tp,
     zone,
+    zones: extraZones,
     width = 920,
     height = 580,
   } = params;
@@ -194,23 +196,38 @@ export async function generateCandleChartPng(params: {
   }
 
   // 🟦 HỘP DARVAS BOX / FVG / ORDER BLOCK / VÙNG CUNG CẦU (SHADED BUY/SELL ZONE)
-  if (zone && zone.top && zone.bottom) {
-    const yTop = yPrice(Math.max(zone.top, zone.bottom));
-    const yBottom = yPrice(Math.min(zone.top, zone.bottom));
+  const allZones = [
+    ...(zone ? [zone] : []),
+    ...(extraZones || []),
+  ];
+
+  for (const z of allZones) {
+    if (!z || !z.top || !z.bottom) continue;
+    const yTop = yPrice(Math.max(z.top, z.bottom));
+    const yBottom = yPrice(Math.min(z.top, z.bottom));
     const boxHeight = Math.max(4, yBottom - yTop);
-    const isDarvas = zone.label.toLowerCase().includes("darvas") || zone.label.toLowerCase().includes("hộp");
-    const isBullZone = zone.side === 1 || zone.label.toLowerCase().includes("buy") || zone.label.toLowerCase().includes("cầu");
+    const isDarvas = z.label.toLowerCase().includes("darvas") || z.label.toLowerCase().includes("hộp");
+    const isBullZone = z.side === 1 || z.label.toLowerCase().includes("buy") || z.label.toLowerCase().includes("cầu") || z.label.toLowerCase().includes("đáy");
     
     const fillColor = isDarvas
-      ? "rgba(171, 71, 188, 0.22)" // Màu tím đặc trưng của hộp Darvas
+      ? "rgba(171, 71, 188, 0.25)" // Màu tím chuẩn theo hình OKX của Victor
       : isBullZone
-      ? "rgba(8, 153, 129, 0.18)"
-      : "rgba(242, 54, 69, 0.18)";
+      ? "rgba(8, 153, 129, 0.20)"
+      : "rgba(242, 54, 69, 0.20)";
     const strokeColor = isDarvas ? "#ab47bc" : isBullZone ? "#089981" : "#f23645";
 
-    elements.push(`<rect x="${paddingLeft}" y="${yTop}" width="${chartWidth}" height="${boxHeight}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5" stroke-dasharray="3 3"/>`);
-    elements.push(`<rect x="${paddingLeft + 8}" y="${yTop + 4}" width="220" height="18" fill="${strokeColor}" rx="3" opacity="0.90"/>`);
-    elements.push(`<text x="${paddingLeft + 14}" y="${yTop + 16}" fill="#ffffff" font-size="10" font-weight="bold">${zone.label} (${zone.bottom.toFixed(zone.bottom > 100 ? 1 : 4)} - ${zone.top.toFixed(zone.top > 100 ? 1 : 4)})</text>`);
+    // Tính toán độ rộng theo số nến thực tế nếu có chỉ định (tạo hình hộp nén theo chiều ngang)
+    let boxX = paddingLeft;
+    let boxW = chartWidth;
+    if (z.startIndex !== undefined) {
+      boxX = paddingLeft + z.startIndex * step;
+      boxW = (z.endIndex !== undefined ? (z.endIndex - z.startIndex + 1) : (displayCount - z.startIndex)) * step;
+    }
+
+    const safeLabel = z.label.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    elements.push(`<rect x="${boxX}" y="${yTop}" width="${boxW}" height="${boxHeight}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.8" rx="2"/>`);
+    elements.push(`<rect x="${boxX + 6}" y="${yTop + 4}" width="220" height="18" fill="${strokeColor}" rx="3" opacity="0.95"/>`);
+    elements.push(`<text x="${boxX + 12}" y="${yTop + 16}" fill="#ffffff" font-size="10" font-weight="bold">${safeLabel} (${z.bottom.toFixed(z.bottom > 100 ? 1 : 4)} - ${z.top.toFixed(z.top > 100 ? 1 : 4)})</text>`);
   }
 
   // Kháng cự & Hỗ trợ (Resistance / Support)
