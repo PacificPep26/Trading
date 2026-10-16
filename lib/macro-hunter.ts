@@ -240,6 +240,15 @@ export function detectMacroHunterSignal(
   const rng15 = last15.h - last15.l;
   if (rng15 <= 0) return null;
 
+  // 🛡️ CHẶN BẪY SIDEWAY NÉN HẸP (NARROW CHOP & INSIDE-BAR FILTER):
+  // Nếu biên độ 12 nến 15m gần nhất (3 tiếng) quá bé (< 1.8%)
+  // tức là giá đang kẹt trong một cái hộp nén nhỏ, tuyệt đối KHÔNG ĐÁNH ĐẢO CHIỀU TỪNG CÂY NẾN!
+  const recent12 = closed15m.slice(-12);
+  const high12 = Math.max(...recent12.map((x) => x.h));
+  const low12 = Math.min(...recent12.map((x) => x.l));
+  const chopRangePct = ((high12 - low12) / low12) * 100;
+  if (chopRangePct < 1.8) return null;
+
   // Volume confirm: So sánh volume nến kích hoạt với TB 20 nến 15m trước
   const prev20 = closed15m.slice(Math.max(0, closed15m.length - 21), closed15m.length - 1);
   const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
