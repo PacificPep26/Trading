@@ -181,8 +181,20 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   const btc4h: Candle[] = await candles("BTC-USDT-SWAP", "4H", 60).catch(() => []);
   const btcSentinel = analyseBtcSentinel(btc1h, btcDaily, btc15m, btc4h);
 
+  // 🛡️ VỊ THẾ THẬT ĐANG MỞ TRÊN MEXC: KIỂM TRA MỖI LƯỢT TICK (MỖI 2 PHÚT)
+  const mexcPositions = await getMexcOpenPositions().catch(() => []);
+  const heldCoins = new Set(mexcPositions.map((p) => p.coin));
+  const heldLongCount = mexcPositions.filter((p) => p.side === 1).length;
+  const heldShortCount = mexcPositions.filter((p) => p.side === -1).length;
+  const MAX_CONCURRENT_POSITIONS = 2; // Tối đa 2 vị thế cùng chiều trên toàn tài khoản để tránh bẫy tương quan đồng loạt
+
   // Theo dõi giá chủ tài khoản đặt qua Telegram ("theo dõi SUI 1.041 1.029 1.085 btc 82750")
-  const watches = loadWatches();
+  const rawWatches = loadWatches();
+  // Bỏ qua những coin đã có lệnh mở trên MEXC để không bị spam thông báo "Gần tới điểm vào"
+  const watches = rawWatches.filter((w) => !heldCoins.has(w.coin));
+  if (watches.length !== rawWatches.length) {
+    saveWatches(watches);
+  }
   if (watches.length) {
     const price: Record<string, number> = {};
     for (const c of new Set([...watches.map((w) => w.coin), "BTC"])) {
@@ -195,13 +207,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     for (const m of msgs) await say(m);
     if (msgs.length) saveWatches(keep);
   }
-
-  // 🛡️ VỊ THẾ THẬT ĐANG MỞ TRÊN MEXC: KIỂM TRA MỖI LƯỢT TICK (MỖI 2 PHÚT)
-  const mexcPositions = await getMexcOpenPositions().catch(() => []);
-  const heldCoins = new Set(mexcPositions.map((p) => p.coin));
-  const heldLongCount = mexcPositions.filter((p) => p.side === 1).length;
-  const heldShortCount = mexcPositions.filter((p) => p.side === -1).length;
-  const MAX_CONCURRENT_POSITIONS = 2; // Tối đa 2 vị thế cùng chiều trên toàn tài khoản để tránh bẫy tương quan đồng loạt
 
   // 1. TỰ ĐỘNG BẢO VỆ VỊ THẾ CHƯA CÓ TP/SL TRÊN SÀN (FAIL-SAFE SHIELD)
   for (const p of mexcPositions) {
@@ -834,7 +839,9 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
       out.push(msg);
       // Tự theo dõi kèo có TP: báo ⏰ khi giá cách điểm vào < 0.5%, 🔔 khi chạm (24h)
       for (const d of finalDigest) {
-        if (d.tp !== undefined && d.entry !== undefined && d.stop !== undefined) addWatch({ coin: d.coin, side: d.side as 1 | -1, entry: d.entry, stop: d.stop, tp: d.tp, expires: now + 24 * 3_600_000 });
+        if (d.tp !== undefined && d.entry !== undefined && d.stop !== undefined && !heldCoins.has(d.coin)) {
+          addWatch({ coin: d.coin, side: d.side as 1 | -1, entry: d.entry, stop: d.stop, tp: d.tp, expires: now + 24 * 3_600_000 });
+        }
       }
 
       let chartBuf: Buffer | null = null;

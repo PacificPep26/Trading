@@ -245,28 +245,44 @@ export type SubmitMexcOrderParams = {
   leverage?: number;
 };
 
-const contractDetailCache: Record<string, { contractSize: number; minVol: number; ts: number }> = {};
+const contractDetailCache: Record<
+  string,
+  { contractSize: number; minVol: number; priceScale: number; ts: number }
+> = {};
+
+/**
+ * Lấy chi tiết hợp đồng của coin từ MEXC (contractSize, minVol, priceScale).
+ */
+export async function getMexcContractDetail(
+  symbol: string
+): Promise<{ contractSize: number; minVol: number; priceScale: number }> {
+  const cached = contractDetailCache[symbol];
+  if (cached && Date.now() - cached.ts < 3600_000) {
+    return cached;
+  }
+  try {
+    const res = await fetch(`https://contract.mexc.com/api/v1/contract/detail?symbol=${symbol}`);
+    const data = await res.json();
+    if (data.success && data.data) {
+      const size = Number(data.data.contractSize || 1);
+      const minVol = Number(data.data.minVol || 1);
+      const priceScale = Number(data.data.priceScale ?? 4);
+      const obj = { contractSize: size, minVol, priceScale, ts: Date.now() };
+      contractDetailCache[symbol] = obj;
+      return obj;
+    }
+  } catch (err) {
+    console.error(`[MEXC] Lỗi lấy contract detail cho ${symbol}:`, err);
+  }
+  return { contractSize: 1, minVol: 1, priceScale: 4 };
+}
 
 /**
  * Lấy contractSize của coin để tính toán số hợp đồng chính xác ứng với số tiền Margin mong muốn.
  */
 export async function getMexcContractSize(symbol: string): Promise<number> {
-  const cached = contractDetailCache[symbol];
-  if (cached && Date.now() - cached.ts < 3600_000) {
-    return cached.contractSize;
-  }
-  try {
-    const res = await fetch(`https://contract.mexc.com/api/v1/contract/detail?symbol=${symbol}`);
-    const data = await res.json();
-    if (data.success && data.data?.contractSize) {
-      const size = Number(data.data.contractSize);
-      contractDetailCache[symbol] = { contractSize: size, minVol: Number(data.data.minVol || 1), ts: Date.now() };
-      return size;
-    }
-  } catch (err) {
-    console.error(`[MEXC] Lỗi lấy contract detail cho ${symbol}:`, err);
-  }
-  return 1;
+  const detail = await getMexcContractDetail(symbol);
+  return detail.contractSize;
 }
 
 /**
@@ -429,6 +445,9 @@ export async function setMexcPositionStop(
   if (!apiKey || !secret) return { success: false, error: "Chưa cấu hình API Key" };
 
   try {
+    const detail = await getMexcContractDetail(params.symbol);
+    const scale = detail.priceScale ?? 4;
+
     const body: Record<string, any> = {
       positionId: params.positionId,
       lossTrend: 1,
@@ -438,8 +457,12 @@ export async function setMexcPositionStop(
       stopLossType: 0, // Market SL
       takeProfitType: 0, // Market TP
     };
-    if (params.stopLossPrice && params.stopLossPrice > 0) body.stopLossPrice = params.stopLossPrice;
-    if (params.takeProfitPrice && params.takeProfitPrice > 0) body.takeProfitPrice = params.takeProfitPrice;
+    if (params.stopLossPrice && params.stopLossPrice > 0) {
+      body.stopLossPrice = Number(params.stopLossPrice.toFixed(scale));
+    }
+    if (params.takeProfitPrice && params.takeProfitPrice > 0) {
+      body.takeProfitPrice = Number(params.takeProfitPrice.toFixed(scale));
+    }
 
     const ts = Date.now().toString();
     const bodyStr = JSON.stringify(body);
