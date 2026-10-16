@@ -1,6 +1,8 @@
 import type { Candle } from "./okx";
 
 export type MacroLevelType =
+  | "SWING_HIGH_3D"
+  | "SWING_LOW_3D"
   | "SWING_HIGH_7D"
   | "SWING_LOW_7D"
   | "BEARISH_FVG_4H"
@@ -93,10 +95,10 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
   if (n < 15) return [];
 
   const zones: MacroZone[] = [];
-  const lookbackBars = Math.min(84, n); // Tối đa 14 ngày (84 nến 4H)
+  const lookbackBars = Math.min(18, n); // Tối đa 3 ngày (18 nến 4H = 72 giờ)
   const window4h = cs.slice(n - lookbackBars);
 
-  // 1. Tìm Đỉnh Cực Đại 7D - 14D (Swing High)
+  // 1. Tìm Đỉnh Cực Đại 3D (Swing High 3D)
   let maxHigh = -Infinity;
   let maxHighIdx = -1;
   for (let i = 0; i < window4h.length; i++) {
@@ -109,12 +111,12 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
   if (maxHighIdx >= 0) {
     const topBar = window4h[maxHighIdx];
     const zoneTop = topBar.h;
-    // Vùng cản lấy từ đỉnh cao nhất đến chân vùng cung (khoảng 1.8% dưới đỉnh)
-    const zoneBottom = Math.min(Math.max(topBar.o, topBar.c), zoneTop * 0.982);
+    // Vùng cản lấy từ đỉnh cao nhất đến chân vùng cung (khoảng 1.5% dưới đỉnh)
+    const zoneBottom = Math.min(Math.max(topBar.o, topBar.c), zoneTop * 0.985);
     const { touchCount, isBroken } = calculateDebouncedTouchCount(window4h, zoneTop, zoneBottom, maxHighIdx);
 
     zones.push({
-      type: "SWING_HIGH_7D",
+      type: "SWING_HIGH_3D",
       top: zoneTop,
       bottom: zoneBottom,
       center: (zoneTop + zoneBottom) / 2,
@@ -125,7 +127,7 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
     });
   }
 
-  // 2. Tìm Đáy Cực Đại 7D - 14D (Swing Low)
+  // 2. Tìm Đáy Cực Đại 3D (Swing Low 3D)
   let minLow = Infinity;
   let minLowIdx = -1;
   for (let i = 0; i < window4h.length; i++) {
@@ -138,11 +140,11 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
   if (minLowIdx >= 0) {
     const botBar = window4h[minLowIdx];
     const zoneBottom = botBar.l;
-    const zoneTop = Math.min(botBar.o, botBar.c, zoneBottom * 1.012);
+    const zoneTop = Math.min(botBar.o, botBar.c, zoneBottom * 1.015);
     const { touchCount, isBroken } = calculateDebouncedTouchCount(window4h, zoneTop, zoneBottom, minLowIdx);
 
     zones.push({
-      type: "SWING_LOW_7D",
+      type: "SWING_LOW_3D",
       top: zoneTop,
       bottom: zoneBottom,
       center: (zoneTop + zoneBottom) / 2,
@@ -258,12 +260,12 @@ export function detectMacroHunterSignal(
   const dynamicBuffer = Math.max(curPrice * 0.0025, 0.4 * atr15);
 
   // =========================================================================
-  // 🎯 SETUP 1: REJECTION SHORT TẠI CẢN LỚN (ĐỈNH 7D HOẶC BEARISH FVG 4H)
+  // 🎯 SETUP 1: REJECTION SHORT TẠI CẢN LỚN (ĐỈNH 3D HOẶC BEARISH FVG 4H)
   // =========================================================================
   if (btcAllowance.allowShort && !btcAllowance.isBtcStrongPump) {
     const resistanceZones = zones.filter(
       (z) =>
-        (z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H") &&
+        (z.type === "SWING_HIGH_3D" || z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H") &&
         (z.status === "FRESH" || z.status === "TESTED") &&
         z.touchCount <= 3
     );
@@ -332,6 +334,7 @@ export function detectMacroHunterSignal(
             const tp2 = entry - 2.8 * (stop - entry);
             const rrRatio = +(2.8).toFixed(1);
 
+            const zoneName = rz.type === "SWING_HIGH_3D" ? "Cản đỉnh 3D" : rz.type === "SWING_HIGH_7D" ? "Cản đỉnh 7D" : "Bearish FVG 4H";
             return {
               kind: "REJECTION_SHORT",
               side: -1,
@@ -344,7 +347,7 @@ export function detectMacroHunterSignal(
               zone: rz,
               volumeRatio: +volRatio.toFixed(1),
               barTime: last15.t,
-              note: `🎯 Săn Đảo Chiều Short tại ${rz.type === "SWING_HIGH_7D" ? "Cản đỉnh 7D" : "Bearish FVG 4H"} (${rz.bottom.toFixed(4)} - ${rz.top.toFixed(4)}). Nến 15m từ chối râu ${((upperWick / rng15) * 100).toFixed(0)}%, Vol ${volRatio.toFixed(1)}x`,
+              note: `🎯 Săn Đảo Chiều Short tại ${zoneName} (${rz.bottom.toFixed(4)} - ${rz.top.toFixed(4)}). Nến 15m từ chối râu ${((upperWick / rng15) * 100).toFixed(0)}%, Vol ${volRatio.toFixed(1)}x`,
               isMacroReversal: true,
             };
           }
@@ -361,7 +364,7 @@ export function detectMacroHunterSignal(
     const last1h = closed1h.at(-1);
 
     const resistanceZones = zones.filter(
-      (z) => z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H"
+      (z) => z.type === "SWING_HIGH_3D" || z.type === "SWING_HIGH_7D" || z.type === "BEARISH_FVG_4H"
     );
 
     for (const rz of resistanceZones) {
@@ -418,12 +421,12 @@ export function detectMacroHunterSignal(
   }
 
   // =========================================================================
-  // 🟢 SETUP 3: BOUNCE LONG TẠI HỖ TRỢ ĐÁY 7D HOẶC BULLISH FVG 4H
+  // 🟢 SETUP 3: BOUNCE LONG TẠI HỖ TRỢ ĐÁY 3D HOẶC BULLISH FVG 4H
   // =========================================================================
   if (btcAllowance.allowLong) {
     const supportZones = zones.filter(
       (z) =>
-        (z.type === "SWING_LOW_7D" || z.type === "BULLISH_FVG_4H") &&
+        (z.type === "SWING_LOW_3D" || z.type === "SWING_LOW_7D" || z.type === "BULLISH_FVG_4H") &&
         (z.status === "FRESH" || z.status === "TESTED") &&
         z.touchCount <= 3
     );
@@ -449,6 +452,7 @@ export function detectMacroHunterSignal(
           const tp1 = entry + 1.5 * (entry - stop);
           const tp2 = entry + 2.8 * (entry - stop);
 
+          const zoneName = sz.type === "SWING_LOW_3D" ? "Đáy 3D" : sz.type === "SWING_LOW_7D" ? "Đáy 7D" : "Bullish FVG 4H";
           return {
             kind: "BOUNCE_LONG",
             side: 1,
@@ -461,7 +465,7 @@ export function detectMacroHunterSignal(
             zone: sz,
             volumeRatio: +volRatio.toFixed(1),
             barTime: last15.t,
-            note: `🟢 Săn Bắt Đáy Hỗ Trợ tại ${sz.type === "SWING_LOW_7D" ? "Đáy 7D" : "Bullish FVG 4H"} (${sz.bottom.toFixed(4)} - ${sz.top.toFixed(4)}). Nến 15m rút chân ${((lowerWick / rng15) * 100).toFixed(0)}%, Vol ${volRatio.toFixed(1)}x`,
+            note: `🟢 Săn Bắt Đáy Hỗ Trợ tại ${zoneName} (${sz.bottom.toFixed(4)} - ${sz.top.toFixed(4)}). Nến 15m rút chân ${((lowerWick / rng15) * 100).toFixed(0)}%, Vol ${volRatio.toFixed(1)}x`,
             isMacroReversal: true,
           };
         }

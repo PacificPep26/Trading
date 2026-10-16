@@ -14,21 +14,21 @@ const bars4h = [];
 const startTs = Date.now() - 14 * 24 * 3600 * 1000;
 const H4 = 4 * 3600 * 1000;
 
-// Nến đỉnh ngày 11/10
+// Nến đỉnh trong vòng 3 ngày (18 nến 4H)
 bars4h.push(makeCandle(startTs, 0.1920, 0.2030, 0.1910, 0.1970, 50000));
-// Sau đó rơi xuống đáy
-for (let i = 1; i <= 20; i++) {
+// Sau đó rơi xuống đáy trong phạm vi 18 nến
+for (let i = 1; i <= 15; i++) {
   bars4h.push(makeCandle(startTs + i * H4, 0.1950 - i * 0.001, 0.1960 - i * 0.001, 0.1700, 0.1720, 10000));
 }
 
 const zones = extractMacroZones(bars4h, 0.1970);
 console.log("\n[Test 1] Trích xuất Vùng Cản Macro 4H:");
 console.log("- Số lượng zones tìm thấy:", zones.length);
-const swingHighZone = zones.find(z => z.type === "SWING_HIGH_7D");
-console.log("- Đỉnh 7D Swing High:", swingHighZone?.top, "đến", swingHighZone?.bottom, "| Status:", swingHighZone?.status, "| TouchCount:", swingHighZone?.touchCount);
+const swingHighZone = zones.find(z => z.type === "SWING_HIGH_3D" || z.type === "SWING_HIGH_7D");
+console.log("- Đỉnh Swing High:", swingHighZone?.top, "đến", swingHighZone?.bottom, "| Status:", swingHighZone?.status, "| TouchCount:", swingHighZone?.touchCount);
 
 if (!swingHighZone || swingHighZone.top !== 0.2030) {
-  throw new Error("LỖI: Không trích xuất được đỉnh ngày 11/10!");
+  throw new Error("LỖI: Không trích xuất được đỉnh 3D!");
 }
 
 // 2. Giả lập Nến 15m lúc 14:20 của ARB:

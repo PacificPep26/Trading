@@ -260,22 +260,22 @@ export function detectHtfBreakout(rawCandles1h: Candle[]): AccumulationBreakout 
 }
 
 export type Macro4HContext = {
-  high7d: number; // Đỉnh cao nhất 7-14 ngày qua trên khung 4H
-  low7d: number; // Đáy thấp nhất 7-14 ngày qua trên khung 4H
+  high7d: number; // Đỉnh cao nhất 3-7 ngày qua trên khung 4H (lookback 18 nến = 72h)
+  low7d: number; // Đáy thấp nhất 3-7 ngày qua trên khung 4H
   nearestBearishFvg?: { top: number; bottom: number }; // Khối FVG giảm chưa lấp trên đầu
   nearestBullishFvg?: { top: number; bottom: number }; // Khối FVG tăng chưa lấp dưới chân
 };
 
 /**
- * Quét cấu trúc nến 4H để đánh dấu Kháng cự / Hỗ trợ và FVG chưa lấp trong 7-14 ngày qua.
+ * Quét cấu trúc nến 4H để đánh dấu Kháng cự / Hỗ trợ và FVG chưa lấp trong 3 ngày qua (18 nến 4H).
  */
 export function extractMacro4HContext(candles4h: Candle[], currentPrice: number): Macro4HContext {
   const cs = candles4h.filter((c) => c.closed !== false);
   const n = cs.length;
   if (n < 10) return { high7d: currentPrice * 1.1, low7d: currentPrice * 0.9 };
 
-  // 1. Quét đỉnh đáy 7-14 ngày qua (42 đến 84 nến 4H)
-  const lookback = cs.slice(Math.max(0, n - 84));
+  // 1. Quét đỉnh đáy 3 ngày qua (18 nến 4H = 72 giờ)
+  const lookback = cs.slice(Math.max(0, n - 18));
   const high7d = Math.max(...lookback.map((c) => c.h));
   const low7d = Math.min(...lookback.map((c) => c.l));
 
