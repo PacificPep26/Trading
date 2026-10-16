@@ -16,13 +16,13 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectHtfBreakout, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
+import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
 
 export { f };
 
 export const COINS = [
-  "BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "BNB", "ADA", "AVAX", "LINK",
-  "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "PEPE", "WIF", "ZEC",
+  "BTC", "ETH", "SOL", "HYPE", "XRP", "BNB", "ADA", "AVAX", "LINK",
+  "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "ZEC",
 ];
 const H = 3_600_000;
 // data/ là Railway volume → chống trùng và sổ paper sống qua redeploy
@@ -246,6 +246,29 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     }
   }
 
+  // 🚨 THEO DÕI CÚ THỦNG / PHÁ NỀN LỚN 15M CỦA LA BÀN BTC (32-56 NẾN ~ 8-14H)
+  if (btc15m && btc15m.length >= 35) {
+    const btcShelf = detect15mShelfBreakout(btc15m);
+    if (btcShelf) {
+      const btcShelfKey = `BTC_SHELF:${btcShelf.side}:${btcShelf.barTime}`;
+      if (!sent.has(btcShelfKey)) {
+        sent.add(btcShelfKey);
+        await say(
+          btcShelf.side < 0
+            ? `🚨 *CẢNH BÁO ĐỎ: BTC VỪA XẢ THỦNG NỀN LỚN 15M!*\n\n` +
+              `BTC vừa đục thủng đáy hộp nền *${f(btcShelf.boxLow)}* (Hiện tại: *${f(btcShelf.entry)}*).\n` +
+              `📌 ${btcShelf.note}\n` +
+              `⚠️ *NGUY CƠ SẬP CÂY ĐỎ THẨM & KÉO XẢ ALTCOIN TOÀN DIỆN.*\n` +
+              `👉 *HÀNH ĐỘNG:* CẤM BẮT ĐÁY LONG! Ưu tiên canh SHORT hoặc đứng ngoài bảo toàn vốn!`
+            : `🟢 *CẢNH BÁO XANH: BTC VỪA PHÁ ĐỈNH NỀN LỚN 15M!*\n\n` +
+              `BTC vừa nổ Vol bùng nổ vượt đỉnh hộp nền *${f(btcShelf.boxHigh)}* (Hiện tại: *${f(btcShelf.entry)}*).\n` +
+              `📌 ${btcShelf.note}\n` +
+              `👉 Ưu tiên chọn các Altcoin khoẻ nhất (TIA, SUI) để LONG!`
+        );
+      }
+    }
+  }
+
   for (const coin of COINS) {
     try {
       const isHeld = heldCoins.has(coin);
@@ -290,6 +313,38 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               tp: g.tp,
               text: planText(g.side, coin, `🔨 High test phá râu`, g.trigger, g.stop, g.tp, candleSum15m),
             });
+          }
+
+          // 📦 Mô hình Phá Vỡ / Thủng Nền Lớn 15m (32 - 56 nến ~ 8-14 tiếng)
+          const sb15 = detect15mShelfBreakout(bars15m);
+          if (sb15) {
+            const isLongOk = sb15.side > 0 && allowLong && ownDaily >= 0;
+            const isShortOk = sb15.side < 0 && allowShort && ownDaily <= 0;
+            if (isLongOk || isShortOk) {
+              const sbKey = `SB15:${coin}:${sb15.side}:${sb15.barTime}`;
+              if (!sent.has(sbKey)) {
+                sent.add(sbKey);
+                addLimit(coin, { side: sb15.side, level: sb15.entry, limit: sb15.entry, stop: sb15.stop, tp: sb15.tp, atr: 0, barTime: sb15.barTime, market: true }, HIGHTEST_15M_PAPER);
+                digest.push({
+                  rank: 1,
+                  coin,
+                  side: sb15.side,
+                  rsScore: 90, // Tín hiệu Phá/Thủng Nền Lớn 15m có trọng số ưu tiên cao nhất
+                  entry: sb15.entry,
+                  stop: sb15.stop,
+                  tp: sb15.tp,
+                  text: planText(
+                    sb15.side,
+                    coin,
+                    sb15.side > 0 ? "📦 M15 nổ Vol phá đỉnh nền" : "📦 M15 xả Vol thủng đáy nền",
+                    sb15.entry,
+                    sb15.stop,
+                    sb15.tp,
+                    candleSum15m
+                  ),
+                });
+              }
+            }
           }
         }
       }

@@ -249,6 +249,96 @@ export function detectHtfBreakout(rawCandles1h: Candle[]): AccumulationBreakout 
   return null;
 }
 
+/**
+ * 📦 NHẬN DIỆN THỦNG NỀN / PHÁ NỀN LỚN KHUNG 15M (15M SHELF BREAKOUT / BREAKDOWN)
+ * Dựa trên đúng phát hiện và chỉ đạo thực chiến của Victor:
+ * 1. Khung thời gian: 15m.
+ * 2. Phạm vi nhìn: Quét toàn bộ bức tranh lớn từ 28 đến 60 nến 15m (~7 đến 15 tiếng tích luỹ nền đi ngang).
+ * 3. Thủng đáy hộp (Breakdown Short): Nến 15m xả đục thủng cạnh dưới của nền lớn kèm Volume >= 1.4x TB.
+ * 4. Phá đỉnh hộp (Breakout Long): Nến 15m bùng nổ vượt cạnh trên nền lớn kèm Volume >= 1.4x TB.
+ */
+export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBreakout | null {
+  const cs = rawCandles15m.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 35) return null;
+
+  const last = cs[n - 1]; // nến 15m vừa đóng
+  const boxLength = Math.min(56, n - 2); // soi nền lớn từ 28 đến 56 nến (~7 đến 14 tiếng)
+  if (boxLength < 28) return null;
+
+  const box = cs.slice(n - 1 - boxLength, n - 1);
+  const boxHigh = Math.max(...box.map((b) => b.h));
+  const boxLow = Math.min(...box.map((b) => b.l));
+  const boxRange = boxHigh - boxLow;
+
+  const boxRatio = boxRange / boxLow;
+  // Hộp nén tích luỹ biên độ thực tế từ 0.3% (BTC nén siêu chặt) đến 5.5% (Altcoins)
+  if (boxRatio < 0.003 || boxRatio > 0.055) return null;
+
+  const rng = last.h - last.l;
+  if (rng <= 0) return null;
+
+  const prev20 = cs.slice(Math.max(0, n - 21), n - 1);
+  const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
+  const volRatio = avgVol > 0 ? (last.v || 0) / avgVol : 1;
+
+  // 🟢 CHIỀU 1: PHÁ ĐỈNH NỀN 15M (BREAKOUT LONG)
+  if (last.c > last.o && last.c > boxHigh) {
+    if (volRatio < 1.4) return null;
+    const body = last.c - last.o;
+    const upperWick = last.h - last.c;
+    if (body < 0.50 * rng || upperWick > 0.25 * rng) return null;
+
+    const entry = last.c;
+    const stop = Math.max(boxLow, boxHigh - 0.008 * boxHigh);
+    const risk = (entry - stop) / entry;
+    if (risk < 0.003 || risk > 0.035) return null;
+    const tp = entry + 2 * (entry - stop);
+
+    return {
+      side: 1,
+      boxHigh,
+      boxLow,
+      breakoutPrice: boxHigh,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio.toFixed(1),
+      barTime: last.t,
+      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền`,
+    };
+  }
+
+  // 🔴 CHIỀU 2: THỦNG ĐÁY NỀN 15M (BREAKDOWN SHORT)
+  if (last.c < last.o && last.c < boxLow) {
+    if (volRatio < 1.4) return null;
+    const body = last.o - last.c;
+    const lowerWick = last.c - last.l;
+    if (body < 0.50 * rng || lowerWick > 0.25 * rng) return null;
+
+    const entry = last.c;
+    const stop = Math.min(boxHigh, boxLow + 0.008 * boxLow);
+    const risk = (stop - entry) / entry;
+    if (risk < 0.003 || risk > 0.035) return null;
+    const tp = entry - 2 * (stop - entry);
+
+    return {
+      side: -1,
+      boxHigh,
+      boxLow,
+      breakoutPrice: boxLow,
+      entry,
+      stop,
+      tp,
+      volumeRatio: +volRatio.toFixed(1),
+      barTime: last.t,
+      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m xả Vol ${volRatio.toFixed(1)}x đục thủng đáy nền`,
+    };
+  }
+
+  return null;
+}
+
 /** Giữ alias tương thích ngược */
 export const detectAccumulationBreakout = detectHtfBreakout;
 

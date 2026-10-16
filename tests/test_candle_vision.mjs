@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-const { analyzeCandleVision, detectAccumulationBreakout, detectHtfBreakout, isPriceInNoMansLand } = await import("../lib/candle-vision.ts");
+const { analyzeCandleVision, detectAccumulationBreakout, detectHtfBreakout, detect15mShelfBreakout, isPriceInNoMansLand } = await import("../lib/candle-vision.ts");
 
 console.log("Running candle vision unit tests...");
 
@@ -102,6 +102,23 @@ console.log("Running candle vision unit tests...");
   // Giá hiện tại ở 110 (cách đỉnh 120 là 9%, cách đáy 100 là 10% -> lơ lửng ở giữa)
   const isNoMan = isPriceInNoMansLand(candles);
   assert.equal(isNoMan, true, "Giá đang ở lưng chừng vùng chop phải được nhận diện là No Man's Land");
+}
+
+// Test 8: Nhận diện Phá/Thủng Nền Lớn 15m (32-56 nến ~ 8-14 tiếng, đúng như nhịp BTC 10:30)
+{
+  const candles = [];
+  // 48 nến 15m (12 tiếng) đi ngang tích luỹ trong biên 82,050 - 82,500 (biên độ ~0.55%)
+  for (let i = 0; i < 48; i++) {
+    candles.push({ t: i * 900000, o: 82200, h: 82500, l: 82050, c: 82250, v: 1000, closed: true });
+  }
+  // Cây nến 15m thứ 49: Xả thủng đáy hộp 82,050 xuống 81,750, nổ Volume gấp 2.5 lần, thân đỏ đặc
+  candles.push({ t: 48 * 900000, o: 82040, h: 82040, l: 81730, c: 81750, v: 2500, closed: true });
+
+  const breakdown = detect15mShelfBreakout(candles);
+  assert.notEqual(breakdown, null, "Phải nhận diện được cú xả thủng nền lớn 15m");
+  assert.equal(breakdown?.side, -1, "Phải là tín hiệu SHORT thủng nền");
+  assert.equal(breakdown?.entry, 81750);
+  assert.ok(breakdown?.volumeRatio >= 1.4, "Volume xả phải lớn");
 }
 
 console.log("All candle vision unit tests passed successfully! ✅");
