@@ -113,3 +113,4 @@ alertcondition(signalBreakout, "M15 Phá Đỉnh Nền Long", "M15 nổ Vol phá
 alertcondition(signalBreakdown, "M15 Thủng Đáy Nền Short", "M15 xả Vol thủng đáy nền tích luỹ {{ticker}}")
 alertcondition(signalRebound, "M15 Đón Đáy Hồi", "M15 chạm đáy hộp rút chân {{ticker}}")
 alertcondition(signalRejection, "M15 Đỉnh Đè", "M15 chạm đỉnh hộp từ chối {{ticker}}")
+

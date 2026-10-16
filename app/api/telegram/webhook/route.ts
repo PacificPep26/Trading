@@ -6,6 +6,7 @@ import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAP
 import { ticker, candles } from "@/lib/okx";
 import { getMexcOpenPositions, getMexcAccountAsset, getMexcTodayOrders } from "@/lib/mexc";
 import { analyseBtcSentinel } from "@/lib/btc-sentinel";
+import { getPaperBotSummary } from "@/lib/auto-paper-trader";
 
 const HELP =
   "🤖 *Bot Price Action & Candle Vision (Victor Trading)*\n" +
@@ -17,6 +18,7 @@ const HELP =
   "• `💰 Số Dư Ví MEXC`: Xem số dư USDT ví Futures (`/balance`).\n" +
   "• `💼 Vị Thế MEXC`: Xem PNL các lệnh đang chạy trên sàn (`/status`).\n" +
   "• `📈 Lãi Lỗ Hôm Nay`: Tổng kết PnL các lệnh đã chốt hôm nay (`/daily` hoặc `/pnl`).\n" +
+  "• `🧪 Sổ Lệnh Paper Bot`: Xem hiệu suất Bot tự đánh giả lập $10 trên giá thật (`/paper`).\n" +
   "• `🧭 La Bàn BTC`: Xem hướng đi và tình trạng đáy/đỉnh BTC.\n" +
   "• `👁 Đang Theo Dõi`: Xem các lệnh chờ rình cản.";
 
@@ -31,7 +33,7 @@ async function reply(token: string, chatId: number | string, text: string) {
           keyboard: [
             [{ text: "⚡ Quét Kèo Vào Lệnh" }, { text: "📦 Nến Sắp Vào Mô Hình" }],
             [{ text: "💰 Số Dư Ví MEXC" }, { text: "💼 Vị Thế MEXC" }, { text: "📈 Lãi Lỗ Hôm Nay" }],
-            [{ text: "🧭 La Bàn BTC" }, { text: "👁 Đang Theo Dõi" }]
+            [{ text: "🧪 Sổ Lệnh Paper Bot" }, { text: "🧭 La Bàn BTC" }, { text: "👁 Đang Theo Dõi" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -228,6 +230,14 @@ export async function POST(req: NextRequest) {
       lower === "📈 lãi lỗ hôm nay"
     ) {
       text = await mexcDaily();
+    } else if (
+      lower === "/paper" ||
+      lower.includes("paper") ||
+      lower === "🧪 sổ lệnh paper bot" ||
+      lower.includes("sổ lệnh") ||
+      lower.includes("so lenh")
+    ) {
+      text = getPaperBotSummary();
     } else if (
       lower.includes("vị thế") ||
       lower.includes("vi the") ||

@@ -17,6 +17,7 @@ import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
 import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
+import { openPaperTrade, stepPaperTrades } from "./auto-paper-trader";
 
 export { f };
 
@@ -309,6 +310,13 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
         if (after15m) {
           const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
           stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
+
+          // 🧪 CẬP NHẬT TRẠNG THÁI KHỚP TP/SL CHO PAPER AUTO-TRADER
+          const paperCloseMsgs = stepPaperTrades(coin, bars15m);
+          for (const pmsg of paperCloseMsgs) {
+            await say(pmsg);
+          }
+
           const vision15m = analyzeCandleVision(bars15m);
           const candleSum15m = formatCandleSummary("M15", bars15m, vision15m);
 
@@ -326,6 +334,17 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             if (sent.has(key)) continue;
             sent.add(key);
             addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
+
+            // 🧪 PAPER AUTO-TRADER: Tự động mở lệnh giấy trên dữ liệu thật
+            const { alertMsg: paperAutoMsg } = openPaperTrade({
+              coin,
+              side: g.side,
+              entry: g.trigger,
+              stop: g.stop,
+              tp: g.tp,
+              note: "🔨 High test 15m từ chối râu",
+            });
+            if (paperAutoMsg) await say(paperAutoMsg);
 
             // Điểm Sức mạnh Tương đối (RS Score): đo độ rút chân từ đáy/đỉnh của nến
             const lastB = bars15m.at(-1);
@@ -355,6 +374,17 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               if (!sent.has(sbKey)) {
                 sent.add(sbKey);
                 addLimit(coin, { side: sb15.side, level: sb15.entry, limit: sb15.entry, stop: sb15.stop, tp: sb15.tp, atr: 0, barTime: sb15.barTime, market: true }, HIGHTEST_15M_PAPER);
+
+                // 🧪 PAPER AUTO-TRADER: Tự động mở lệnh giấy phá nền 15m
+                const { alertMsg: paperAutoMsg } = openPaperTrade({
+                  coin,
+                  side: sb15.side,
+                  entry: sb15.entry,
+                  stop: sb15.stop,
+                  tp: sb15.tp,
+                  note: sb15.note,
+                });
+                if (paperAutoMsg) await say(paperAutoMsg);
                 digest.push({
                   rank: 1,
                   coin,
