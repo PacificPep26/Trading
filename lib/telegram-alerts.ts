@@ -44,8 +44,10 @@ function loadSent(): string[] {
 
 declare global {
   var telegramSent: Set<string> | undefined;
+  var telegramCooldown: Map<string, number> | undefined;
 }
 const sent = (globalThis.telegramSent ??= new Set<string>(loadSent()));
+export const cooldownMap = (globalThis.telegramCooldown ??= new Map<string, number>());
 
 function saveSent() {
   try {
@@ -201,6 +203,32 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   const heldShortCount = mexcPositions.filter((p) => p.side === -1).length;
   const MAX_CONCURRENT_POSITIONS = 2; // Tối đa 2 vị thế cùng chiều trên toàn tài khoản để tránh bẫy tương quan đồng loạt
 
+  // 🎯 TRAILING BẢO VỆ LÃI (FREQTRADE / HAASBOT TRAILING STOP):
+  // Soi các vị thế MEXC đang mở. Nếu lãi >= +1.5R hoặc ROI >= +20%, bắn tin nhắn nhắc dời SL về hòa vốn (Entry).
+  for (const p of mexcPositions) {
+    const curTicker = await ticker(`${p.coin}-USDT-SWAP`).catch(() => null);
+    const price = curTicker?.last;
+    if (price && p.entry > 0) {
+      const priceDiff = p.side > 0 ? price - p.entry : p.entry - price;
+      const roi = (priceDiff / p.entry) * p.leverage * 100;
+
+      if (roi >= 20) {
+        const trailingKey = `TRAILING_BE:${p.coin}:${p.side}:${Math.floor(p.entry)}`;
+        if (!sent.has(trailingKey)) {
+          sent.add(trailingKey);
+          await say(
+            `🎯 *[TRAILING BẢO VỆ LÃI] LỆNH ${p.coin} ĐANG LÃI KHỦNG!*\n\n` +
+            `• Vị thế: *${p.side > 0 ? "LONG" : "SHORT"} ${p.coin}* (x${p.leverage})\n` +
+            `• Giá vào (Entry): *${f(p.entry)}* · Giá hiện tại: *${f(price)}*\n` +
+            `• Lợi nhuận: 🟢 *+${roi.toFixed(1)}% ROI* (PnL ~${p.unRealizedPnl.toFixed(2)}$)\n\n` +
+            `👉 *HÀNH ĐỘNG:* DỜI STOP LOSS VỀ GIÁ VÀO (${f(p.entry)}) NGAY ĐỂ BẢO VỆ VỐN!\n` +
+            `📌 *Quy tắc vàng:* Không bao giờ để một lệnh đã lãi lớn biến thành một lệnh thua ngược!`
+          );
+        }
+      }
+    }
+  }
+
   type DigestItem = {
     rank: number;
     coin: string;
@@ -272,8 +300,10 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   for (const coin of COINS) {
     try {
       const isHeld = heldCoins.has(coin);
+      const cdUntil = cooldownMap.get(coin);
+      const isCooldown = cdUntil ? Date.now() < cdUntil : false;
 
-      if (!isHeld && coin !== "BTC" && coin !== "ETH") {
+      if (!isHeld && !isCooldown && coin !== "BTC" && coin !== "ETH") {
         const ownDaily = await dailyTrend(coin);
 
         if (after15m) {

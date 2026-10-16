@@ -1,0 +1,115 @@
+//@version=6
+indicator("Victor Quant Vision & Price Action Engine [v6]", overlay=true, max_boxes_count=50, max_labels_count=50)
+
+// ==============================================================================
+// 1. CẤU HÌNH THAM SỐ (INPUTS)
+// ==============================================================================
+grp_box   = "1. CẤU HÌNH HỘP NỀN TÍCH LŨY (15M MACRO SHELF)"
+boxLen    = input.int(48, "Số nến quét nền lớn (32-56 nến ~ 8-14h)", minval=20, maxval=80, group=grp_box)
+minComp   = input.float(0.3, "Biên độ nén tối thiểu (%)", minval=0.1, step=0.1, group=grp_box)
+maxComp   = input.float(5.5, "Biên độ nén tối đa (%)", minval=1.0, step=0.5, group=grp_box)
+
+grp_vol   = "2. XÁC NHẬN VOLUME (VOLUME CONFIRMATION)"
+volMult   = input.float(1.4, "Hệ số nổ Volume so với trung bình 20 nến", minval=1.1, step=0.1, group=grp_vol)
+volLen    = input.int(20, "Chu kỳ trung bình Volume", group=grp_vol)
+
+grp_trend = "3. XU HƯỚNG VĨ MÔ & BỘ LỌC ATR"
+emaTrendLen = input.int(200, "Chu kỳ EMA Xu Hướng Lớn", group=grp_trend)
+atrLen      = input.int(14, "Chu kỳ ATR Stoploss", group=grp_trend)
+atrMult     = input.float(1.5, "Hệ số dải ATR Stoploss", step=0.1, group=grp_trend)
+
+// ==============================================================================
+// 2. TÍNH TOÁN CÁC CHỈ BÁO KỸ THUẬT CỐT LÕI
+// ==============================================================================
+emaTrend = ta.ema(close, emaTrendLen)
+atrVal   = ta.atr(atrLen)
+avgVol   = ta.sma(volume, volLen)
+isVolSpike = volume >= (avgVol * volMult)
+
+// Đường xu hướng lớn
+plot(emaTrend, "EMA 200 Xu Hướng", color=close >= emaTrend ? color.new(color.teal, 20) : color.new(color.maroon, 20), linewidth=2)
+
+// ==============================================================================
+// 3. TỰ ĐỘNG NHẬN DIỆN HỘP NỀN TÍCH LŨY (CONSOLIDATION SHELF)
+// ==============================================================================
+// Quét biên độ cao nhất và thấp nhất trong N nến trước đó (không tính nến hiện tại)
+boxHigh = ta.highest(high[1], boxLen)
+boxLow  = ta.lowest(low[1], boxLen)
+boxRng  = boxHigh - boxLow
+boxPct  = (boxRng / boxLow) * 100.0
+
+isBoxValid = (boxPct >= minComp) and (boxPct <= maxComp)
+
+// Các phân vùng giá trị bên trong hộp
+reboundZone = boxLow + (0.25 * boxRng)   // Vùng 25% cận đáy (Vùng Đón Đáy Hồi)
+rejectionZone = boxHigh - (0.25 * boxRng) // Vùng 25% cận đỉnh (Vùng Đỉnh Đè)
+
+// Vẽ các đường biên hộp
+p_high = plot(isBoxValid ? boxHigh : na, "Đỉnh Hộp Tích Lũy", color=color.new(color.red, 40), style=plot.style_linebr, linewidth=2)
+p_low  = plot(isBoxValid ? boxLow : na,  "Đáy Hộp Tích Lũy",  color=color.new(color.green, 40), style=plot.style_linebr, linewidth=2)
+
+// Tô màu vùng lơ lửng No Man's Land (ở giữa 25% và 75% hộp)
+p_midHigh = plot(isBoxValid ? rejectionZone : na, "Biên Trên No Man's Land", color=color.new(color.gray, 80), style=plot.style_linebr)
+p_midLow  = plot(isBoxValid ? reboundZone : na,   "Biên Dưới No Man's Land", color=color.new(color.gray, 80), style=plot.style_linebr)
+
+fill(p_midHigh, p_midLow, color=color.new(color.orange, 90), title="Vùng Lơ Lửng Cấm Trade (No Man's Land)")
+fill(p_high, p_midHigh, color=color.new(color.red, 92), title="Vùng Canh Đỉnh Đè (Resistance)")
+fill(p_midLow, p_low, color=color.new(color.green, 92), title="Vùng Canh Đón Đáy Hồi (Support)")
+
+// ==============================================================================
+// 4. LOGIC TÍN HIỆU THỰC CHIẾN (SIGNALS)
+// ==============================================================================
+rng = high - low
+
+// 🟢 TÍN HIỆU 1: ĐÓN ĐÁY HỒI (SUPPORT BOUNCE)
+// Giá chạm vùng <= 25% đáy hộp, xuất hiện nến xanh hoặc rút chân từ đáy
+isAtBottom = isBoxValid and (low <= reboundZone) and (close >= boxLow)
+isBullishCandle = (close > open) or ((close - low) > 0.4 * rng)
+signalRebound = isAtBottom and isBullishCandle and ta.crossover(close, reboundZone)
+
+// 🔴 TÍN HIỆU 2: ĐỈNH ĐÈ (RESISTANCE REJECTION)
+// Giá chạm vùng >= 75% đỉnh hộp, xuất hiện nến đỏ hoặc từ chối tại đỉnh
+isAtTop = isBoxValid and (high >= rejectionZone) and (close <= boxHigh)
+isBearishCandle = (close < open) or ((high - close) > 0.4 * rng)
+signalRejection = isAtTop and isBearishCandle and ta.crossunder(close, rejectionZone)
+
+// 🚀 TÍN HIỆU 3: BÙNG NỔ PHÁ ĐỈNH NỀN (SHELF BREAKOUT LONG)
+// Nến đóng vượt đỉnh hộp kèm nổ Volume
+signalBreakout = isBoxValid and (close > boxHigh) and (close > open) and isVolSpike and (close - open >= 0.5 * rng)
+
+// 🚨 TÍN HIỆU 4: SẬP XẢ THỦNG ĐÁY NỀN (SHELF BREAKDOWN SHORT)
+// Nến đỏ đặc đục thủng đáy hộp kèm nổ Volume
+signalBreakdown = isBoxValid and (close < boxLow) and (close < open) and isVolSpike and (open - close >= 0.5 * rng)
+
+// ==============================================================================
+// 5. HIỂN THỊ NHÃN & DẢI TRAILING STOP LOSS
+// ==============================================================================
+if signalBreakout
+    label.new(bar_index, high, "🚀 BREAKOUT NỀN\nVol: " + str.tostring(volume / avgVol, "#.#") + "x", 
+              color=color.green, textcolor=color.white, style=label.style_label_down, size=size.normal)
+
+if signalBreakdown
+    label.new(bar_index, low, "🚨 THỦNG NỀN XẢ\nVol: " + str.tostring(volume / avgVol, "#.#") + "x", 
+              color=color.red, textcolor=color.white, style=label.style_label_up, size=size.normal)
+
+if signalRebound and not signalBreakout
+    label.new(bar_index, low, "🟢 ĐÓN ĐÁY HỒI\nSL: " + str.tostring(boxLow - 0.5 * atrVal, "#.####"), 
+              color=color.teal, textcolor=color.white, style=label.style_label_up, size=size.small)
+
+if signalRejection and not signalBreakdown
+    label.new(bar_index, high, "🔴 ĐỈNH ĐÈ\nSL: " + str.tostring(boxHigh + 0.5 * atrVal, "#.####"), 
+              color=color.maroon, textcolor=color.white, style=label.style_label_down, size=size.small)
+
+// Dải Stop Loss ATR động
+longStop  = close - (atrMult * atrVal)
+shortStop = close + (atrMult * atrVal)
+plot(signalBreakout or signalRebound ? longStop : na, "Gợi Ý SL Long (ATR)", color=color.aqua, style=plot.style_circles, linewidth=2)
+plot(signalBreakdown or signalRejection ? shortStop : na, "Gợi Ý SL Short (ATR)", color=color.orange, style=plot.style_circles, linewidth=2)
+
+// ==============================================================================
+// 6. CẢNH BÁO TELEGRAM HOẶC TRADINGVIEW ALERTS
+// ==============================================================================
+alertcondition(signalBreakout, "M15 Phá Đỉnh Nền Long", "M15 nổ Vol phá đỉnh nền tích luỹ {{ticker}}")
+alertcondition(signalBreakdown, "M15 Thủng Đáy Nền Short", "M15 xả Vol thủng đáy nền tích luỹ {{ticker}}")
+alertcondition(signalRebound, "M15 Đón Đáy Hồi", "M15 chạm đáy hộp rút chân {{ticker}}")
+alertcondition(signalRejection, "M15 Đỉnh Đè", "M15 chạm đỉnh hộp từ chối {{ticker}}")

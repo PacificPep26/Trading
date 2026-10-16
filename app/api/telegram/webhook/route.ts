@@ -4,7 +4,7 @@ import { loadSwings, swingStats } from "@/lib/swing-4h";
 import { loadWatches, saveWatches, parseWatch } from "@/lib/price-watch";
 import { COINS, ICT_PAPER, HIGHTEST_PAPER, HIGHTEST_15M_PAPER, ST_PAPER, IDM_PAPER, f, soPaper, dailyTrend, scanAndAlert, scanAnticipatingAltcoins } from "@/lib/telegram-alerts";
 import { ticker, candles } from "@/lib/okx";
-import { getMexcOpenPositions } from "@/lib/mexc";
+import { getMexcOpenPositions, getMexcAccountAsset, getMexcTodayOrders } from "@/lib/mexc";
 import { analyseBtcSentinel } from "@/lib/btc-sentinel";
 
 const HELP =
@@ -14,8 +14,10 @@ const HELP =
   "⚡ *Tính năng nhanh:*\n" +
   "• `⚡ Quét Kèo Vào Lệnh`: Kiểm tra nến vừa đóng xem có Altcoin nào đạt điểm vào ngay.\n" +
   "• `📦 Nến Sắp Vào Mô Hình`: Rình trước các Altcoin đang nén hộp chuẩn bị bùng nổ.\n" +
+  "• `💰 Số Dư Ví MEXC`: Xem số dư USDT ví Futures (`/balance`).\n" +
+  "• `💼 Vị Thế MEXC`: Xem PNL các lệnh đang chạy trên sàn (`/status`).\n" +
+  "• `📈 Lãi Lỗ Hôm Nay`: Tổng kết PnL các lệnh đã chốt hôm nay (`/daily` hoặc `/pnl`).\n" +
   "• `🧭 La Bàn BTC`: Xem hướng đi và tình trạng đáy/đỉnh BTC.\n" +
-  "• `💼 Vị Thế MEXC`: Xem PNL các lệnh đang chạy trên sàn.\n" +
   "• `👁 Đang Theo Dõi`: Xem các lệnh chờ rình cản.";
 
 async function reply(token: string, chatId: number | string, text: string) {
@@ -28,7 +30,8 @@ async function reply(token: string, chatId: number | string, text: string) {
         reply_markup: {
           keyboard: [
             [{ text: "⚡ Quét Kèo Vào Lệnh" }, { text: "📦 Nến Sắp Vào Mô Hình" }],
-            [{ text: "🧭 La Bàn BTC" }, { text: "💼 Vị Thế MEXC" }, { text: "👁 Đang Theo Dõi" }]
+            [{ text: "💰 Số Dư Ví MEXC" }, { text: "💼 Vị Thế MEXC" }, { text: "📈 Lãi Lỗ Hôm Nay" }],
+            [{ text: "🧭 La Bàn BTC" }, { text: "👁 Đang Theo Dõi" }]
           ],
           resize_keyboard: true,
           is_persistent: true,
@@ -78,6 +81,47 @@ async function mexcStatus(): Promise<string> {
         );
       })
       .join("\n\n")
+  );
+}
+
+async function mexcBalance(): Promise<string> {
+  const asset = await getMexcAccountAsset();
+  if (!asset) return "⚠️ Không lấy được số dư MEXC (vui lòng kiểm tra API Key).";
+  const pos = await getMexcOpenPositions();
+  return (
+    `💰 *SỐ DƯ VÍ MEXC FUTURES (Victor):*\n\n` +
+    `• Tổng tài sản (Equity): *${asset.equity.toFixed(2)}$ USDT*\n` +
+    `• Khả dụng (Available): *${asset.availableBalance.toFixed(2)}$ USDT*\n` +
+    `• Tiền mặt (Cash): *${asset.cashBalance.toFixed(2)}$ USDT*\n` +
+    `• Ký quỹ đang gồng (Margin): *${asset.positionMargin.toFixed(2)}$ USDT*\n` +
+    `• PnL tạm tính (Unrealized): *${asset.unrealized >= 0 ? "+" : ""}${asset.unrealized.toFixed(2)}$ USDT*\n\n` +
+    `📌 Trạng thái: ${pos.length > 0 ? `🔥 Đang mở ${pos.length} vị thế` : "🟢 100% TIỀN MẶT (FLAT)"}`
+  );
+}
+
+async function mexcDaily(): Promise<string> {
+  const data = await getMexcTodayOrders();
+  if (!data.orders.length) {
+    return "📈 *TỔNG KẾT PnL HÔM NAY (MEXC):*\nChưa có lệnh nào được đóng trong ngày hôm nay trên MEXC.";
+  }
+  const sign = data.netProfit >= 0 ? "+" : "";
+  const icon = data.netProfit >= 0 ? "🟢" : "🔴";
+  const total = data.winCount + data.lossCount;
+  const wr = total > 0 ? ((data.winCount / total) * 100).toFixed(0) : "0";
+
+  const orderLines = data.orders.slice(0, 10).map((o) => {
+    const oSign = o.profit >= 0 ? "+" : "";
+    const oIcon = o.profit >= 0 ? "🟢" : "🔴";
+    const sideStr = o.side === 2 ? "Đóng Long" : o.side === 4 ? "Đóng Short" : "Chốt lệnh";
+    return `• ${oIcon} *${o.coin}* (${sideStr}): *${oSign}${o.profit.toFixed(2)}$* (Phí: -${o.fee.toFixed(2)}$)`;
+  }).join("\n");
+
+  return (
+    `📈 *TỔNG KẾT PnL HÔM NAY (MEXC):*\n\n` +
+    `• Lợi nhuận ròng: ${icon} *${sign}${data.netProfit.toFixed(2)}$ USDT*\n` +
+    `• Tổng lãi: +${data.totalProfit.toFixed(2)}$ · Phí sàn: -${data.totalFee.toFixed(2)}$\n` +
+    `• Thống kê: *${data.winCount} Thắng / ${data.lossCount} Thua* (Tỷ lệ thắng: *${wr}%*)\n\n` +
+    `📝 *Chi tiết lệnh đã chốt:*\n${orderLines}`
   );
 }
 
@@ -168,10 +212,28 @@ export async function POST(req: NextRequest) {
         `• Chiều lệnh Altcoin: ${sentinel.allowLong ? "🟢 CHO PHÉP LONG" : "⛔ CẤM LONG"} · ${sentinel.allowShort ? "🔴 CHO PHÉP SHORT" : "⛔ CẤM SHORT"}\n` +
         (sentinel.sweep ? `• Chi tiết quét: ${sentinel.sweep.note}\n` : "");
     } else if (
+      lower === "/balance" ||
+      lower === "/so_du" ||
+      lower.includes("số dư") ||
+      lower.includes("so du") ||
+      lower === "💰 số dư ví mexc"
+    ) {
+      text = await mexcBalance();
+    } else if (
+      lower === "/daily" ||
+      lower === "/pnl" ||
+      lower === "/profit" ||
+      lower.includes("lãi lỗ") ||
+      lower.includes("lai lo") ||
+      lower === "📈 lãi lỗ hôm nay"
+    ) {
+      text = await mexcDaily();
+    } else if (
       lower.includes("vị thế") ||
       lower.includes("vi the") ||
       lower === "💼 vị thế mexc" ||
       lower === "/positions" ||
+      lower === "/status" ||
       lower === "/pos"
     ) {
       text = await mexcStatus();
