@@ -16,7 +16,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectAccumulationBreakout, formatCandleSummary, detectAnticipatingBox, detect5mEarlyTrigger } from "./candle-vision";
+import { analyzeCandleVision, detectHtfBreakout, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
 
 export { f };
 
@@ -186,11 +186,10 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   }
 
   const minute = new Date(now).getUTCMinutes();
-  const after5m = forceAll || minute % 5 < 2; // nến 5m vừa đóng (trong 2 phút đầu)
   const after15m = forceAll || minute % 15 < 3; // nến 15m vừa đóng (hoặc lệnh quét chủ động)
   const after1h = forceAll || minute < 15; // nến 1H vừa đóng
   const after4h = forceAll || (after1h && new Date(now).getUTCHours() % 4 === 0); // nến 4H vừa đóng
-  if (!after5m && !after15m && !after1h && !forceAll) {
+  if (!after15m && !after1h && !forceAll) {
     saveSent();
     return out;
   }
@@ -254,43 +253,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
       if (!isHeld && coin !== "BTC" && coin !== "ETH") {
         const ownDaily = await dailyTrend(coin);
 
-        // ⚡ KÍCH HOẠT VÀO SỚM 5M DỰA TRÊN NỀN HỘP 15M (ANTI-TRAP: Vol >= 1.8x, Thân >= 60%)
-        if (after5m) {
-          const bars15mShort = await candles(`${coin}-USDT-SWAP`, "15m", 30).catch(() => []);
-          const bars5m = await candles(`${coin}-USDT-SWAP`, "5m", 30).catch(() => []);
-          const early5m = detect5mEarlyTrigger(bars15mShort, bars5m);
-          if (early5m) {
-            const isLongOk = early5m.side > 0 && allowLong && ownDaily >= 0;
-            const isShortOk = early5m.side < 0 && allowShort && ownDaily <= 0;
-            if (isLongOk || isShortOk) {
-              const key5 = `E5M:${coin}:${early5m.side}:${early5m.barTime}`;
-              if (!sent.has(key5)) {
-                sent.add(key5);
-                const vision5m = analyzeCandleVision(bars5m);
-                const candleSum5m = formatCandleSummary("M5", bars5m, vision5m);
-                digest.push({
-                  rank: 0,
-                  coin,
-                  side: early5m.side,
-                  rsScore: 95, // 5M early breakout có RS ưu tiên cao nhất
-                  entry: early5m.entry,
-                  stop: early5m.stop,
-                  tp: early5m.tp,
-                  text: planText(
-                    early5m.side,
-                    coin,
-                    early5m.side > 0 ? "⚡ 5M nổ hộp vào sớm" : "⚡ 5M thủng hộp xả sớm",
-                    early5m.entry,
-                    early5m.stop,
-                    early5m.tp,
-                    candleSum5m
-                  ),
-                });
-              }
-            }
-          }
-        }
-
         if (after15m) {
           const bars15m = await candles(`${coin}-USDT-SWAP`, "15m", 300);
           stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
@@ -328,38 +290,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               tp: g.tp,
               text: planText(g.side, coin, `🔨 High test phá râu`, g.trigger, g.stop, g.tp, candleSum15m),
             });
-          }
-
-          // 📦 Mô hình Nén Hộp Bùng Nổ / Phân Phối Sụp Đổ (Wyckoff Breakout & Breakdown)
-          const ab = detectAccumulationBreakout(bars15m);
-          if (ab) {
-            const isLongOk = ab.side > 0 && allowLong && ownDaily >= 0;
-            const isShortOk = ab.side < 0 && allowShort && ownDaily <= 0;
-            if (isLongOk || isShortOk) {
-              const abKey = `AB15:${coin}:${ab.side}:${ab.barTime}`;
-              if (!sent.has(abKey)) {
-                sent.add(abKey);
-                addLimit(coin, { side: ab.side, level: ab.entry, limit: ab.entry, stop: ab.stop, tp: ab.tp, atr: 0, barTime: ab.barTime, market: true }, HIGHTEST_15M_PAPER);
-                digest.push({
-                  rank: 0,
-                  coin,
-                  side: ab.side,
-                  rsScore: 90, // Nén hộp bùng nổ có độ tin cậy và RS cao nhất
-                  entry: ab.entry,
-                  stop: ab.stop,
-                  tp: ab.tp,
-                  text: planText(
-                    ab.side,
-                    coin,
-                    ab.side > 0 ? "📦 Nén hộp bùng nổ" : "📦 Thủng hộp phân phối",
-                    ab.entry,
-                    ab.stop,
-                    ab.tp,
-                    candleSum15m
-                  ),
-                });
-              }
-            }
           }
         }
       }
@@ -465,6 +395,9 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             if (so.side > 0 && !allowLong) continue;
             if (so.side < 0 && !allowShort) continue;
             if (own !== 0 && so.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
+            // 🚫 BỘ LỌC VÙNG LƠ LỬNG: Nếu giá đang trôi ở giữa không người (No Man's Land) -> ĐỨNG NGOÀI
+            if (isPriceInNoMansLand(bars1h)) continue;
+
             // 👁️ MẮT ĐỌC NẾN 1H:
             if (so.side < 0 && !vision1h.isValidShortCandle) continue;
             if (so.side > 0 && !vision1h.isValidLongCandle) continue;
@@ -483,6 +416,39 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               tp: so.tp,
               text: planText(so.side, coin, "🔁 Hồi đỉnh cũ", so.entry, so.stop, so.tp, candleSum1h, so.tp1),
             });
+          }
+
+          // 📦 Mô hình Nén Hộp Bùng Nổ Khung Lớn 1H (HTF VPA Real Breakout - Ep 7 & 8)
+          const ab1h = detectHtfBreakout(bars1h);
+          if (ab1h) {
+            const isLongOk = ab1h.side > 0 && allowLong && own >= 0;
+            const isShortOk = ab1h.side < 0 && allowShort && own <= 0;
+            if (isLongOk || isShortOk) {
+              const abKey = `AB1H:${coin}:${ab1h.side}:${ab1h.barTime}`;
+              if (!sent.has(abKey)) {
+                sent.add(abKey);
+                addLimit(coin, { side: ab1h.side, level: ab1h.entry, limit: ab1h.entry, stop: ab1h.stop, tp: ab1h.tp, atr: 0, barTime: ab1h.barTime, market: true }, HIGHTEST_15M_PAPER);
+                const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
+                digest.push({
+                  rank: 1,
+                  coin,
+                  side: ab1h.side,
+                  rsScore: 85, // 1H VPA Breakout nổ Vol >= 1.8x
+                  entry: ab1h.entry,
+                  stop: ab1h.stop,
+                  tp: ab1h.tp,
+                  text: planText(
+                    ab1h.side,
+                    coin,
+                    ab1h.side > 0 ? "📦 1H nổ Vol phá đỉnh hộp" : "📦 1H xả Vol thủng đáy hộp",
+                    ab1h.entry,
+                    ab1h.stop,
+                    ab1h.tp,
+                    candleSum1h
+                  ),
+                });
+              }
+            }
           }
 
           // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua

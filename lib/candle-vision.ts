@@ -152,43 +152,55 @@ export function formatCandleSummary(tf: string, cs: Candle[], vision: CandleVisi
 }
 
 /**
- * 📦 NHẬN DIỆN MÔ HÌNH TÍCH LUỸ HẤP THỤ PHÁ VỠ (ACCUMULATION BREAKOUT)
- * Đúng mẫu hình con TIA: Đi ngang nén biên độ hẹp >= 8 nến, volume cạn kiệt,
- * sau đó xuất hiện nến xanh Breakout đóng vượt đỉnh hộp kèm Volume bùng nổ >= 1.35x TB!
+ * 📦 NHẬN DIỆN MÔ HÌNH BÙNG NỔ PHÁ VỠ KHUNG LỚN 1H (HTF VPA REAL BREAKOUT - Ep 7 & Ep 8)
+ * Theo đúng tri thức 16 video Price Action & chỉ đạo của Victor:
+ * 1. Khung thời gian: BẮT BUỘC là nến 1H (không soi nến 15m/5m vì dễ dính bẫy nhiễu).
+ * 2. Thời gian nén hộp (Consolidation): Nén từ 14 đến 36 nến 1H (tức 14 đến 36 tiếng tích luỹ thật sự).
+ * 3. Biên độ nén: Hộp nén rõ ràng từ 2.0% đến 7.5% (không bắt hộp tí hon 1% tạo tín hiệu ảo).
+ * 4. KHỐI LƯỢNG BÙNG NỔ (VPA - Ep 7 & 8): Nến 1H phá cản BẮT BUỘC Volume >= 1.8x trung bình 20 nến 1H trước!
+ *    - CHỐNG BẪY (Ep 7 & 9 - No Demand Trap): Nếu giá nhú qua đỉnh nhưng Volume < 1.3x TB -> BẪY PHÁ VỠ GIẢ -> CHẶN NGAY.
+ * 5. HÌNH THÁI NẾN 1H (Ep 4 & Ep 8): Thân nến đặc >= 60% biên độ, đóng nến sát đỉnh (râu trên <= 18%).
  */
-export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBreakout | null {
-  const cs = rawCandles.filter((c) => c.closed !== false);
+export function detectHtfBreakout(rawCandles1h: Candle[]): AccumulationBreakout | null {
+  const cs = rawCandles1h.filter((c) => c.closed !== false);
   const n = cs.length;
-  if (n < 12) return null;
+  if (n < 25) return null;
 
-  const last = cs[n - 1]; // nến vừa đóng
-  const boxLength = 10;
+  const last = cs[n - 1]; // nến 1H vừa đóng
+  const boxLength = Math.min(24, n - 2); // soi hộp từ 14 đến 24 nến 1H (~1 ngày tích luỹ)
+  if (boxLength < 14) return null;
+
   const box = cs.slice(n - 1 - boxLength, n - 1);
-  if (box.length < boxLength) return null;
-
   const boxHigh = Math.max(...box.map((b) => b.h));
   const boxLow = Math.min(...box.map((b) => b.l));
   const boxRange = boxHigh - boxLow;
 
-  // 1. Biên độ nén phải hẹp (Contraction / Squeeze): <= 4.5% biên độ giá
-  if (boxRange / boxLow > 0.045) return null;
+  // 1. Biên độ hộp phải có ý nghĩa (2.0% đến 7.5%)
+  const boxRatio = boxRange / boxLow;
+  if (boxRatio < 0.02 || boxRatio > 0.075) return null;
 
   const rng = last.h - last.l;
   if (rng <= 0) return null;
 
-  // Phân tích Volume (VPA - Ep 7): Volume cây nến phá vỡ phải vọt cao >= 1.35x Volume trung bình của cả hộp
-  const avgBoxVol = box.reduce((s, x) => s + (x.v || 0), 0) / box.length;
-  const volRatio = avgBoxVol > 0 ? (last.v || 0) / avgBoxVol : 1;
-  if (volRatio < 1.35) return null;
+  // 2. Phân tích Khối Lượng VPA (Ep 7 & 8): So sánh với trung bình 20 nến 1H trước
+  const prev20 = cs.slice(Math.max(0, n - 21), n - 1);
+  const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
+  const volRatio = avgVol > 0 ? (last.v || 0) / avgVol : 1;
 
-  // 🟢 CHIỀU 1: BREAKOUT LONG (Tích luỹ bùng nổ vượt đỉnh hộp)
+  // 🟢 CHIỀU 1: BREAKOUT LONG (Nến 1H phá đỉnh hộp tích luỹ)
   if (last.c > last.o && last.c > boxHigh) {
-    if ((last.c - last.o) < 0.55 * rng) return null; // Thân xanh >= 55%
+    // CHỐNG BẪY (No Demand Trap - Ep 7): Giá vượt đỉnh nhưng Volume không đạt >= 1.8x -> BẪY CÁ MẬP XẢ
+    if (volRatio < 1.8) return null;
+
+    const body = last.c - last.o;
+    const upperWick = last.h - last.c;
+    // Thân nến xanh phải đặc >= 60% và râu trên <= 18% (không bị đạp đầu xả ngược)
+    if (body < 0.60 * rng || upperWick > 0.18 * rng) return null;
 
     const entry = last.c;
-    const stop = boxLow - 0.002 * boxLow; // SL đặt dưới đáy hộp tích luỹ
+    const stop = Math.max(boxLow, last.l - 0.002 * last.l); // SL dưới đáy hộp hoặc dưới đáy nến 1H phá cản
     const risk = (entry - stop) / entry;
-    if (risk < 0.005 || risk > 0.06) return null;
+    if (risk < 0.005 || risk > 0.065) return null;
     const tp = entry + 2 * (entry - stop); // TP 2R
 
     return {
@@ -201,18 +213,23 @@ export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBr
       tp,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: `Tích luỹ nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến xanh Breakout nổ Vol ${volRatio.toFixed(1)}x`,
+      note: `1H Tích luỹ ${boxLength} nến (biên ${(boxRatio * 100).toFixed(1)}%), nến 1H nổ Vol ${volRatio.toFixed(1)}x vượt đỉnh hộp`,
     };
   }
 
-  // 🔴 CHIỀU 2: BREAKDOWN SHORT (Phân phối sụp đổ đục thủng đáy hộp)
+  // 🔴 CHIỀU 2: BREAKDOWN SHORT (Nến 1H sụp đổ đục thủng đáy hộp)
   if (last.c < last.o && last.c < boxLow) {
-    if ((last.o - last.c) < 0.55 * rng) return null; // Thân đỏ >= 55%
+    if (volRatio < 1.8) return null;
+
+    const body = last.o - last.c;
+    const lowerWick = last.c - last.l;
+    // Thân nến đỏ phải đặc >= 60% và râu dưới <= 18% (không có dấu hiệu rút chân gom hàng)
+    if (body < 0.60 * rng || lowerWick > 0.18 * rng) return null;
 
     const entry = last.c;
-    const stop = boxHigh + 0.002 * boxHigh; // SL đặt trên đỉnh hộp phân phối
+    const stop = Math.min(boxHigh, last.h + 0.002 * last.h); // SL trên đỉnh hộp
     const risk = (stop - entry) / entry;
-    if (risk < 0.005 || risk > 0.06) return null;
+    if (risk < 0.005 || risk > 0.065) return null;
     const tp = entry - 2 * (stop - entry); // TP 2R
 
     return {
@@ -225,12 +242,15 @@ export function detectAccumulationBreakout(rawCandles: Candle[]): AccumulationBr
       tp,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: `Phân phối nén hộp ${boxLength} nến (biên ${(boxRange / boxLow * 100).toFixed(1)}%), nến đỏ Breakdown xả Vol ${volRatio.toFixed(1)}x`,
+      note: `1H Phân phối ${boxLength} nến (biên ${(boxRatio * 100).toFixed(1)}%), nến 1H xả Vol ${volRatio.toFixed(1)}x đục thủng đáy hộp`,
     };
   }
 
   return null;
 }
+
+/** Giữ alias tương thích ngược */
+export const detectAccumulationBreakout = detectHtfBreakout;
 
 export type AnticipatingSetup = {
   coin?: string;
@@ -305,96 +325,41 @@ export type Early5mTrigger = {
 };
 
 /**
- * ⚡ KÍCH HOẠT VÀO SỚM 5M DỰA TRÊN CĂN CỨ 15M (ANTI-TRAP / CHỐNG BOM HÀNG)
- * 1. Khung 15m phải đang nén hộp chặt chẽ (biên <= 4.2%, >= 8 nến).
- * 2. Nến 5m vừa đóng phải bùng nổ phá vỡ đỉnh/đáy hộp.
- * 3. Thân nến 5m phải đặc >= 60%, râu chối từ <= 20% (chống rút râu lừa).
- * 4. Volume 5m phải nổ gấp >= 1.8x trung bình 10 nến 5m trước (xác nhận dòng tiền thật).
+ * ⚡ KÍCH HOẠT VÀO SỚM 5M (ĐÃ VÔ HIỆU HOÁ HOÀN TOÀN)
+ * Theo đúng chỉ đạo của Victor & Price Action: Tuyệt đối không mua đuổi nến 5m micro-breakout
+ * vì dễ dính bẫy thanh khoản cá mập (Bull Trap) lúc sáng sớm.
  */
 export function detect5mEarlyTrigger(
-  bars15m: Candle[],
-  bars5m: Candle[]
+  _bars15m: Candle[],
+  _bars5m: Candle[]
 ): Early5mTrigger | null {
-  const cs15 = bars15m.filter((c) => c.closed !== false);
-  const cs5 = bars5m.filter((c) => c.closed !== false);
-  if (cs15.length < 12 || cs5.length < 15) return null;
+  return null; // Tắt hoàn toàn để bảo vệ tài khoản
+}
 
-  // 1. Kiểm tra căn cứ hộp 15m (10 nến)
-  const boxLength = 10;
-  const box15 = cs15.slice(cs15.length - boxLength);
-  const boxHigh = Math.max(...box15.map((b) => b.h));
-  const boxLow = Math.min(...box15.map((b) => b.l));
-  const boxRange = boxHigh - boxLow;
-  if (boxRange / boxLow > 0.042) return null; // Hộp 15m phải nén hẹp <= 4.2%
+/**
+ * 🚫 BỘ LỌC VÙNG LƠ LỬNG KHÔNG NGƯỜI (NO MAN'S LAND FILTER)
+ * Theo Episode 4, 5 & Masterclass trong 16 video Price Action:
+ * - Tuyệt đối KHÔNG BAO GIỜ vào lệnh khi giá đang trôi lơ lửng ở giữa chart,
+ *   chưa chạm hoặc chưa tiếp cận sát vùng Cản cứng (Support / Resistance) 1H/4H!
+ * - Trả về `true` nếu giá đang ở vùng giữa nguy hiểm cần ĐỨNG NGOÀI.
+ */
+export function isPriceInNoMansLand(bars1h: Candle[]): boolean {
+  const cs = bars1h.filter((c) => c.closed !== false);
+  if (cs.length < 30) return false;
 
-  // 2. Kiểm tra nến 5m vừa đóng
-  const last5 = cs5[cs5.length - 1];
-  const rng5 = last5.h - last5.l;
-  if (rng5 <= 0) return null;
+  const last = cs[cs.length - 1];
+  const recent30 = cs.slice(-30);
+  const maxH = Math.max(...recent30.map((c) => c.h));
+  const minL = Math.min(...recent30.map((c) => c.l));
+  const range = maxH - minL;
+  if (range <= 0 || minL <= 0) return false;
 
-  const prev10_5 = cs5.slice(cs5.length - 11, cs5.length - 1);
-  const avgVol5 = prev10_5.reduce((s, x) => s + (x.v || 0), 0) / prev10_5.length;
-  const volRatio5 = avgVol5 > 0 ? (last5.v || 0) / avgVol5 : 1;
+  // Khoảng cách từ giá hiện tại đến đỉnh cản trên và đáy cản dưới
+  const distToHigh = (maxH - last.c) / last.c;
+  const distToLow = (last.c - minL) / last.c;
 
-  // CHỐNG BOM HÀNG: Volume nến 5m phá cản bắt buộc phải >= 1.8x trung bình
-  if (volRatio5 < 1.8) return null;
-
-  // 🟢 CHIỀU LONG: Nến 5m đục đỉnh hộp 15m
-  if (last5.c > last5.o && last5.c > boxHigh) {
-    const body5 = last5.c - last5.o;
-    const upperWick5 = last5.h - last5.c;
-    // Thân nến phải đặc >= 60% và râu trên <= 20% (không có dấu hiệu bị đạp đầu)
-    if (body5 < 0.6 * rng5 || upperWick5 > 0.2 * rng5) return null;
-
-    const entry = last5.c;
-    // SL ngắn ngay dưới đáy nến 5m (hoặc -0.15% dưới đáy nến 5m)
-    const stopCandidate = Math.max(last5.l - 0.001 * last5.l, boxHigh - 0.4 * boxRange);
-    const stop = Math.min(stopCandidate, entry - 0.005 * entry); // tối thiểu 0.5%
-    const risk = (entry - stop) / entry;
-    if (risk < 0.005 || risk > 0.045) return null; // SL siêu ngắn từ 0.5% đến 4.5%
-    const tp = entry + 2.5 * (entry - stop); // Tối ưu R:R lên 1:2.5!
-
-    return {
-      side: 1,
-      boxHigh,
-      boxLow,
-      entry,
-      stop,
-      tp,
-      volumeRatio: +volRatio5.toFixed(1),
-      barTime: last5.t,
-      note: `5M nổ Vol ${volRatio5.toFixed(1)}x phá hộp 15m (Thân ${((body5/rng5)*100).toFixed(0)}%, SL ngắn ${(risk*100).toFixed(1)}%)`,
-    };
-  }
-
-  // 🔴 CHIỀU SHORT: Nến 5m đục đáy hộp 15m
-  if (last5.c < last5.o && last5.c < boxLow) {
-    const body5 = last5.o - last5.c;
-    const lowerWick5 = last5.c - last5.l;
-    // Thân nến phải đặc >= 60% và râu dưới <= 20% (không có dấu hiệu rút chân)
-    if (body5 < 0.6 * rng5 || lowerWick5 > 0.2 * rng5) return null;
-
-    const entry = last5.c;
-    const stopCandidate = Math.min(last5.h + 0.001 * last5.h, boxLow + 0.4 * boxRange);
-    const stop = Math.max(stopCandidate, entry + 0.005 * entry);
-    const risk = (stop - entry) / entry;
-    if (risk < 0.005 || risk > 0.045) return null;
-    const tp = entry - 2.5 * (stop - entry); // Tối ưu R:R lên 1:2.5!
-
-    return {
-      side: -1,
-      boxHigh,
-      boxLow,
-      entry,
-      stop,
-      tp,
-      volumeRatio: +volRatio5.toFixed(1),
-      barTime: last5.t,
-      note: `5M xả Vol ${volRatio5.toFixed(1)}x thủng hộp 15m (Thân ${((body5/rng5)*100).toFixed(0)}%, SL ngắn ${(risk*100).toFixed(1)}%)`,
-    };
-  }
-
-  return null;
+  // Nếu giá cách xa cả đỉnh cản (> 1.2%) VÀ cách xa cả đáy cản (> 1.2%) -> Đang ở giữa vùng chop lơ lửng!
+  return distToHigh > 0.012 && distToLow > 0.012;
 }
 
 
