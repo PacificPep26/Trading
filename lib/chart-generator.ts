@@ -280,6 +280,22 @@ export async function generateCandleChartPng(params: {
     elements.push(`<text x="${width - paddingRight + 8}" y="${ytp + 3}" fill="#ffffff" font-size="10" font-weight="bold">TP ${tp.toFixed(tp > 100 ? 1 : 4)}</text>`);
   }
 
+  // KHUNG SUB-PANEL KHỐI LƯỢNG (VOLUME PANEL)
+  elements.push(`<rect x="${paddingLeft}" y="${volTop}" width="${chartWidth}" height="${volHeight}" fill="#171b26" stroke="#252934"/>`);
+  elements.push(`<text x="${paddingLeft + 6}" y="${volTop + 14}" fill="#787b86" font-size="10" font-weight="bold">VOL / SMA20</text>`);
+
+  // Tính MA20 của Volume
+  const vols = candles.map((c) => c.v || 0);
+  const volMa20: (number | null)[] = [];
+  for (let i = 0; i < displayCount; i++) {
+    if (i < 4) {
+      volMa20.push(null);
+    } else {
+      const slice = vols.slice(Math.max(0, i - 19), i + 1);
+      volMa20.push(slice.reduce((s, x) => s + x, 0) / slice.length);
+    }
+  }
+
   // VẼ TỪNG CÂY NẾN NHẬT (CANDLESTICKS VỚI ĐẦY ĐỦ THÂN VÀ RÂU NÉT CĂNG)
   for (let i = 0; i < displayCount; i++) {
     const c = candles[i];
@@ -302,9 +318,29 @@ export async function generateCandleChartPng(params: {
 
     elements.push(`<rect x="${x - candleBodyWidth / 2}" y="${topY}" width="${candleBodyWidth}" height="${bHeight}" fill="${color}" stroke="${color}" stroke-width="1" rx="0.5"/>`);
 
-    // 3. Cột Volume ở sub-panel
-    const vHeight = Math.max(1, ((c.v || 0) / maxVol) * volHeight);
-    elements.push(`<rect x="${x - candleBodyWidth / 2}" y="${volBottom - vHeight}" width="${candleBodyWidth}" height="${vHeight}" fill="${color}" opacity="0.45"/>`);
+    // 3. Cột Volume ở sub-panel: làm nổi bật các cột Volume đột biến
+    const v = c.v || 0;
+    const vHeight = Math.max(2, (v / maxVol) * (volHeight - 6));
+    const maV = volMa20[i] || 1;
+    const isHighVol = v >= 1.5 * maV;
+    const volOpacity = isHighVol ? "0.95" : "0.50";
+    const volStroke = isHighVol ? (isBull ? "#00ffcc" : "#ff5252") : "none";
+
+    elements.push(`<rect x="${x - candleBodyWidth / 2}" y="${volBottom - vHeight}" width="${candleBodyWidth}" height="${vHeight}" fill="${color}" opacity="${volOpacity}" stroke="${volStroke}" stroke-width="1"/>`);
+  }
+
+  // Đường MA20 Volume (Màu cam sáng)
+  const volMaPoints: string[] = [];
+  for (let i = 0; i < displayCount; i++) {
+    const m = volMa20[i];
+    if (m !== null) {
+      const x = paddingLeft + i * step + step / 2;
+      const y = volBottom - (m / maxVol) * (volHeight - 6);
+      volMaPoints.push(`${x},${y}`);
+    }
+  }
+  if (volMaPoints.length > 1) {
+    elements.push(`<polyline points="${volMaPoints.join(" ")}" fill="none" stroke="#ff9800" stroke-width="1.3"/>`);
   }
 
   // Khung Sub-panel RSI(14)
