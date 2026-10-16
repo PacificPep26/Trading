@@ -376,6 +376,13 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     }
   }
 
+  // ⚡ TÍNH SỨC MẠNH TƯƠNG QUAN THỰC TẾ (REAL RELATIVE STRENGTH VS BTC):
+  // Lấy % thay đổi 24h của BTC làm mốc chuẩn
+  const btcTicker = await ticker("BTC-USDT-SWAP").catch(() => null);
+  const btc24hChange = btcTicker && btcTicker.open24h > 0
+    ? ((btcTicker.last - btcTicker.open24h) / btcTicker.open24h) * 100
+    : 0;
+
   for (const coin of COINS) {
     try {
       const isHeld = heldCoins.has(coin);
@@ -394,6 +401,13 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           for (const pmsg of paperCloseMsgs) {
             await say(pmsg);
           }
+
+          const coinTick = await ticker(`${coin}-USDT-SWAP`).catch(() => null);
+          const coin24hChange = coinTick && coinTick.open24h > 0
+            ? ((coinTick.last - coinTick.open24h) / coinTick.open24h) * 100
+            : 0;
+          // Alpha = Chênh lệch % tăng trưởng so với BTC (Ví dụ INJ +27% vs BTC +1% -> Alpha = +26%)
+          const alphaVsBtc = coin24hChange - btc24hChange;
 
           const vision15m = analyzeCandleVision(bars15m);
           const candleSum15m = formatCandleSummary("M15", bars15m, vision15m);
@@ -424,11 +438,16 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             });
             if (paperAutoMsg) await say(paperAutoMsg);
 
-            // Điểm Sức mạnh Tương đối (RS Score): đo độ rút chân từ đáy/đỉnh của nến
+            // Điểm Sức mạnh Tương đối Thật Sự (Real Relative Strength vs BTC):
+            // Alpha chiếm 70% trọng số, Rebound nến chiếm 30%
+            // Con nào xanh mạnh hơn BTC (như INJ, TIA) sẽ có RS vượt trội 80-120 điểm!
             const lastB = bars15m.at(-1);
             const r15 = lastB ? lastB.h - lastB.l : 1;
             const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
-            const rsScore = r15 > 0 ? (rebound / r15) * 100 : 50;
+            const candleReboundPct = r15 > 0 ? (rebound / r15) * 100 : 50;
+            const rsScore = g.side > 0
+              ? 50 + alphaVsBtc * 2.5 + candleReboundPct * 0.3
+              : 50 - alphaVsBtc * 2.5 + candleReboundPct * 0.3;
 
             digest.push({
               rank: 0,
@@ -524,11 +543,12 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                   }
                 }
 
+                const baseRs = sb15.side > 0 ? 80 + alphaVsBtc * 2.0 : 80 - alphaVsBtc * 2.0;
                 digest.push({
                   rank: 1,
                   coin,
                   side: sb15.side,
-                  rsScore: 90, // Tín hiệu Phá/Thủng Nền Lớn 15m có trọng số ưu tiên cao nhất
+                  rsScore: baseRs,
                   entry: sb15.entry,
                   stop: sb15.stop,
                   tp: sb15.tp,
@@ -619,11 +639,12 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 }
               }
 
+              const bounceRs = 85 + alphaVsBtc * 2.0;
               digest.push({
                 rank: 2,
                 coin,
                 side: 1,
-                rsScore: 95,
+                rsScore: bounceRs,
                 entry: bounce15.entry,
                 stop: bounce15.stop,
                 tp: bounce15.tp,
