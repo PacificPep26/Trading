@@ -5,7 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { f } from "./format";
-import { getMexcOpenPositions, submitMexcOrder } from "./mexc";
+import { getMexcOpenPositions, submitMexcOrder, calculateMexcVolForMargin } from "./mexc";
 import { analyseBtcSentinel } from "./btc-sentinel";
 import { analyse, restingLimit, ictSweepShort } from "./patterns";
 import { candles, ticker, funding, type Candle } from "./okx";
@@ -394,7 +394,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                   try {
                     const currentPositions = await getMexcOpenPositions();
                     if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
-                      const vol = Math.max(1, Math.round((10 * 10) / sb15.entry));
+                      const vol = await calculateMexcVolForMargin(`${coin}_USDT`, sb15.entry, 10.0, 10);
                       const liveOrder = await submitMexcOrder({
                         symbol: `${coin}_USDT`,
                         side: sb15.side > 0 ? 1 : 3,
@@ -467,7 +467,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 try {
                   const currentPositions = await getMexcOpenPositions();
                   if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
-                    const vol = Math.max(1, Math.round((10 * 10) / bounce15.entry));
+                    const vol = await calculateMexcVolForMargin(`${coin}_USDT`, bounce15.entry, 10.0, 10);
                     const liveOrder = await submitMexcOrder({
                       symbol: `${coin}_USDT`,
                       side: 1,

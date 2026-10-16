@@ -242,6 +242,45 @@ export type SubmitMexcOrderParams = {
   leverage?: number;
 };
 
+const contractDetailCache: Record<string, { contractSize: number; minVol: number; ts: number }> = {};
+
+/**
+ * Lấy contractSize của coin để tính toán số hợp đồng chính xác ứng với số tiền Margin mong muốn.
+ */
+export async function getMexcContractSize(symbol: string): Promise<number> {
+  const cached = contractDetailCache[symbol];
+  if (cached && Date.now() - cached.ts < 3600_000) {
+    return cached.contractSize;
+  }
+  try {
+    const res = await fetch(`https://contract.mexc.com/api/v1/contract/detail?symbol=${symbol}`);
+    const data = await res.json();
+    if (data.success && data.data?.contractSize) {
+      const size = Number(data.data.contractSize);
+      contractDetailCache[symbol] = { contractSize: size, minVol: Number(data.data.minVol || 1), ts: Date.now() };
+      return size;
+    }
+  } catch (err) {
+    console.error(`[MEXC] Lỗi lấy contract detail cho ${symbol}:`, err);
+  }
+  return 1;
+}
+
+/**
+ * Tính số hợp đồng (vol) chuẩn xác để đảm bảo ký quỹ bằng đúng targetMargin (Mặc định 10$ USDT đòn bẩy x10).
+ */
+export async function calculateMexcVolForMargin(
+  symbol: string,
+  price: number,
+  targetMarginUsdt: number = 10.0,
+  leverage: number = 10
+): Promise<number> {
+  const contractSize = await getMexcContractSize(symbol);
+  const notional = targetMarginUsdt * leverage; // 10 * 10 = 100 USDT
+  const vol = Math.max(1, Math.round(notional / (price * contractSize)));
+  return vol;
+}
+
 /**
  * Đặt lệnh Futures trực tiếp trên MEXC (Isolated, đòn bẩy tự cấu hình).
  */
