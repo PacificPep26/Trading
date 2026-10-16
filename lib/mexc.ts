@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
 export type MexcPosition = {
+  positionId: number;
   symbol: string;
   coin: string;
   side: 1 | -1;
@@ -13,6 +14,7 @@ export type MexcPosition = {
 };
 
 type RawMexcPosition = {
+  positionId?: number | string;
   symbol?: string;
   positionType?: number;
   state?: number;
@@ -65,6 +67,7 @@ export async function getMexcOpenPositions(): Promise<MexcPosition[]> {
         const coin = symbol.replace(/_USDT$/, "").replace(/-USDT$/, "");
         const side: 1 | -1 = p.positionType === 1 ? 1 : -1;
         return {
+          positionId: Number(p.positionId || 0),
           symbol,
           coin,
           side,
@@ -355,4 +358,146 @@ export async function cancelMexcOrder(orderId: string): Promise<boolean> {
     return false;
   }
 }
+
+export type MexcStopOrder = {
+  id: number;
+  symbol: string;
+  positionId: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+  state: number;
+  volType: number;
+};
+
+/**
+ * Lấy danh sách lệnh Stop-Loss / Take-Profit đang mở trên sàn MEXC.
+ */
+export async function getMexcOpenStopOrders(symbol?: string): Promise<MexcStopOrder[]> {
+  const apiKey = process.env.MEXC_API_KEY;
+  const secret = process.env.MEXC_SECRET_KEY;
+  if (!apiKey || !secret) return [];
+
+  try {
+    const ts = Date.now().toString();
+    const query = symbol ? `symbol=${symbol}` : "";
+    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + query).digest("hex");
+    const url = `https://contract.mexc.com/api/v1/private/stoporder/open_orders${query ? `?${query}` : ""}`;
+    const res = await fetch(url, {
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": ts,
+        Signature: sign,
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) return [];
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.data)) return [];
+
+    return json.data.map((o: any) => ({
+      id: Number(o.id),
+      symbol: String(o.symbol),
+      positionId: Number(o.positionId || 0),
+      stopLossPrice: o.stopLossPrice ? Number(o.stopLossPrice) : undefined,
+      takeProfitPrice: o.takeProfitPrice ? Number(o.takeProfitPrice) : undefined,
+      state: Number(o.state),
+      volType: Number(o.volType),
+    }));
+  } catch (err) {
+    console.error("[MEXC] getMexcOpenStopOrders error:", err);
+    return [];
+  }
+}
+
+export type MexcStopOrderParams = {
+  positionId: number;
+  symbol: string;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+  vol?: number;
+};
+
+/**
+ * Đặt Stop-Loss và Take-Profit gắn thẳng vào vị thế trên sàn MEXC.
+ */
+export async function setMexcPositionStop(
+  params: MexcStopOrderParams
+): Promise<{ success: boolean; stopId?: number; error?: string }> {
+  const apiKey = process.env.MEXC_API_KEY;
+  const secret = process.env.MEXC_SECRET_KEY;
+  if (!apiKey || !secret) return { success: false, error: "Chưa cấu hình API Key" };
+
+  try {
+    const body: Record<string, any> = {
+      positionId: params.positionId,
+      lossTrend: 1,
+      profitTrend: 1,
+      vol: params.vol || 0,
+      volType: 2, // 2: Toàn bộ vị thế (position TP/SL)
+      stopLossType: 0, // Market SL
+      takeProfitType: 0, // Market TP
+    };
+    if (params.stopLossPrice && params.stopLossPrice > 0) body.stopLossPrice = params.stopLossPrice;
+    if (params.takeProfitPrice && params.takeProfitPrice > 0) body.takeProfitPrice = params.takeProfitPrice;
+
+    const ts = Date.now().toString();
+    const bodyStr = JSON.stringify(body);
+    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + bodyStr).digest("hex");
+
+    const res = await fetch("https://contract.mexc.com/api/v1/private/stoporder/place", {
+      method: "POST",
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": ts,
+        Signature: sign,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
+    });
+
+    const data = await res.json();
+    if (data.success && data.data) {
+      return { success: true, stopId: Number(data.data) };
+    }
+    return { success: false, error: data.message || `Mã lỗi ${data.code}` };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Huỷ tất cả lệnh TP/SL của một vị thế trên sàn MEXC để dời hoặc cập nhật Stop mới.
+ */
+export async function cancelAllMexcStopOrders(symbol: string, positionId?: number): Promise<boolean> {
+  const apiKey = process.env.MEXC_API_KEY;
+  const secret = process.env.MEXC_SECRET_KEY;
+  if (!apiKey || !secret) return false;
+
+  try {
+    const body: Record<string, any> = { symbol };
+    if (positionId) body.positionId = positionId;
+
+    const ts = Date.now().toString();
+    const bodyStr = JSON.stringify(body);
+    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + bodyStr).digest("hex");
+
+    const res = await fetch("https://contract.mexc.com/api/v1/private/stoporder/cancel_all", {
+      method: "POST",
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": ts,
+        Signature: sign,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
+    });
+
+    const data = await res.json();
+    return Boolean(data.success);
+  } catch {
+    return false;
+  }
+}
+
 
