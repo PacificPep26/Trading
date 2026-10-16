@@ -23,7 +23,7 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
+import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand, extractMacro4HContext } from "./candle-vision";
 import { openPaperTrade, stepPaperTrades, isSessionPrime } from "./auto-paper-trader";
 
 export { f };
@@ -440,7 +440,11 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           }
 
           // 📦 Mô hình Phá Vỡ / Thủng Nền Lớn 15m (32 - 56 nến ~ 8-14 tiếng)
-          const sb15 = detect15mShelfBreakout(bars15m);
+          // 🛡️ BẮT BUỘC TOP-DOWN: Fetch nến 4H (lookback 7-14 ngày) để quét trước Cản Đỉnh 7D và Bearish FVG
+          const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 90).catch(() => []);
+          const macro4h = bars4h.length >= 10 ? extractMacro4HContext(bars4h, bars15m.at(-1)?.c || 0) : undefined;
+
+          const sb15 = detect15mShelfBreakout(bars15m, macro4h);
           if (sb15) {
             const isLongOk = sb15.side > 0 && allowLong && ownDaily >= 0;
             const isShortOk = sb15.side < 0 && allowShort && ownDaily <= 0;

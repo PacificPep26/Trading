@@ -251,21 +251,81 @@ export function detectHtfBreakout(rawCandles1h: Candle[]): AccumulationBreakout 
   return null;
 }
 
+export type Macro4HContext = {
+  high7d: number; // Đỉnh cao nhất 7-14 ngày qua trên khung 4H
+  low7d: number; // Đáy thấp nhất 7-14 ngày qua trên khung 4H
+  nearestBearishFvg?: { top: number; bottom: number }; // Khối FVG giảm chưa lấp trên đầu
+  nearestBullishFvg?: { top: number; bottom: number }; // Khối FVG tăng chưa lấp dưới chân
+};
+
+/**
+ * Quét cấu trúc nến 4H để đánh dấu Kháng cự / Hỗ trợ và FVG chưa lấp trong 7-14 ngày qua.
+ */
+export function extractMacro4HContext(candles4h: Candle[], currentPrice: number): Macro4HContext {
+  const cs = candles4h.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 10) return { high7d: currentPrice * 1.1, low7d: currentPrice * 0.9 };
+
+  // 1. Quét đỉnh đáy 7-14 ngày qua (42 đến 84 nến 4H)
+  const lookback = cs.slice(Math.max(0, n - 84));
+  const high7d = Math.max(...lookback.map((c) => c.h));
+  const low7d = Math.min(...lookback.map((c) => c.l));
+
+  // 2. Tìm khối Bearish FVG gần nhất trên đầu (chưa bị lấp)
+  // Bearish FVG: nến [i-2].low > nến [i].high (có khoảng trống giảm)
+  let nearestBearishFvg: { top: number; bottom: number } | undefined;
+  for (let i = n - 1; i >= Math.max(2, n - 42); i--) {
+    const top = cs[i - 2].l;
+    const bottom = cs[i].h;
+    if (top > bottom) {
+      // Có Bearish FVG giữa [i-2] và [i]
+      // Kiểm tra xem các nến sau đó đã đóng qua hoặc lấp hết FVG này chưa
+      const laterBars = cs.slice(i + 1);
+      const isMitigated = laterBars.some((b) => b.h >= top);
+      if (!isMitigated && bottom > currentPrice * 0.99) {
+        if (!nearestBearishFvg || bottom < nearestBearishFvg.bottom) {
+          nearestBearishFvg = { top, bottom };
+        }
+      }
+    }
+  }
+
+  // 3. Tìm khối Bullish FVG gần nhất dưới chân (chưa bị lấp)
+  let nearestBullishFvg: { top: number; bottom: number } | undefined;
+  for (let i = n - 1; i >= Math.max(2, n - 42); i--) {
+    const top = cs[i].l;
+    const bottom = cs[i - 2].h;
+    if (top > bottom) {
+      const laterBars = cs.slice(i + 1);
+      const isMitigated = laterBars.some((b) => b.l <= bottom);
+      if (!isMitigated && top < currentPrice * 1.01) {
+        if (!nearestBullishFvg || top > nearestBullishFvg.top) {
+          nearestBullishFvg = { top, bottom };
+        }
+      }
+    }
+  }
+
+  return { high7d, low7d, nearestBearishFvg, nearestBullishFvg };
+}
+
 /**
  * 📦 NHẬN DIỆN THỦNG NỀN / PHÁ NỀN LỚN KHUNG 15M (15M SHELF BREAKOUT / BREAKDOWN)
- * Dựa trên đúng phát hiện và chỉ đạo thực chiến của Victor:
- * 1. Khung thời gian: 15m.
- * 2. Phạm vi nhìn: Quét toàn bộ bức tranh lớn từ 28 đến 60 nến 15m (~7 đến 15 tiếng tích luỹ nền đi ngang).
- * 3. Thủng đáy hộp (Breakdown Short): Nến 15m xả đục thủng cạnh dưới của nền lớn kèm Volume >= 1.4x TB.
- * 4. Phá đỉnh hộp (Breakout Long): Nến 15m bùng nổ vượt cạnh trên nền lớn kèm Volume >= 1.4x TB.
+ * ĐÃ TUÂN THỦ NGHIÊM NGẶT TOP-DOWN ANALYSIS (KHUNG LỚN 4H / DAILY SO VỚI 15M):
+ * 1. Khung 4H đánh dấu trước: Cản đỉnh 7 ngày (7D Swing High) và Bearish FVG.
+ * 2. CẤM LONG khi đụng đầu cản 7 ngày (< 2.5%) hoặc đụng Bearish FVG 4H.
+ * 3. CẤM SHORT khi đụng đáy 7 ngày (< 2.5%) hoặc đụng Bullish FVG 4H.
  */
-export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBreakout | null {
+export function detect15mShelfBreakout(
+  rawCandles15m: Candle[],
+  macro4h?: Macro4HContext
+): AccumulationBreakout | null {
   const cs = rawCandles15m.filter((c) => c.closed !== false);
   const n = cs.length;
   if (n < 35) return null;
 
   const last = cs[n - 1]; // nến 15m vừa đóng
-  const boxLength = Math.min(56, n - 2); // soi nền lớn từ 28 đến 56 nến (~7 đến 14 tiếng)
+  const boxLength = Math.min(56, n - 2); // soi nền từ 28 đến 56 nến (~7 đến 14 tiếng)
   if (boxLength < 28) return null;
 
   const box = cs.slice(n - 1 - boxLength, n - 1);
@@ -274,7 +334,6 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
   const boxRange = boxHigh - boxLow;
 
   const boxRatio = boxRange / boxLow;
-  // Hộp nén tích luỹ biên độ thực tế từ 0.2% (BTC nén siêu chặt) đến 5.5% (Altcoins)
   if (boxRatio < 0.002 || boxRatio > 0.055) return null;
 
   const rng = last.h - last.l;
@@ -284,10 +343,6 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
   const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
   const volRatio = avgVol > 0 ? (last.v || 0) / avgVol : 1;
 
-  // Định vị cản lớn khung 1H (Đỉnh cao nhất 36 tiếng qua / 144 nến)
-  const priorHighLookback = cs.slice(Math.max(0, n - 145), n - 1);
-  const priorHigh = Math.max(...priorHighLookback.map((b) => b.h));
-
   // 🟢 CHIỀU 1: PHÁ ĐỈNH NỀN 15M (BREAKOUT LONG)
   if (last.c > last.o && last.c > boxHigh) {
     if (volRatio < 1.4) return null;
@@ -295,13 +350,24 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     const upperWick = last.h - last.c;
     if (body < 0.50 * rng || upperWick > 0.25 * rng) return null;
 
-    // Định vị cản lớn và phá đỉnh chu kỳ (Blue Sky Breakout - theo chỉ đạo thực chiến của Victor)
-    const isNewHighBreakout = last.c >= priorHigh * 0.998 || boxHigh >= priorHigh * 0.995;
-    const distToResistance = (priorHigh - last.c) / last.c;
+    // 🛡️ BỘ LỌC CẢN LỚN KHUNG 4H / 7 NGÀY (TOP-DOWN RESISTANCE FILTER)
+    if (macro4h) {
+      // 1. Kiểm tra đỉnh cản lớn 7-14 ngày
+      const distTo7dHigh = (macro4h.high7d - last.c) / last.c;
+      // Nếu đỉnh 7 ngày nằm ngay sát sạt trên đầu (< 2.5%) và giá chưa vượt hẳn đỉnh 7 ngày -> CẤM LONG!
+      if (macro4h.high7d > last.c && distTo7dHigh < 0.025) {
+        return null; // Chặn đâm đầu vào kháng cự ngày 11/10!
+      }
 
-    // Chỉ chặn nếu là hộp nhỏ nằm dưới mà cản lớn 36h nằm quá gần ngay trên đầu (< 1.5%)
-    // Nếu giá phá chính đỉnh chu kỳ 36h thì KHÔNG CHẶN vì phía trên là bầu trời trống (Blue Sky)
-    if (!isNewHighBreakout && distToResistance > 0 && distToResistance < 0.015) return null;
+      // 2. Kiểm tra khối Bearish FVG 4H chưa lấp trên đầu
+      if (macro4h.nearestBearishFvg) {
+        const distToFvg = (macro4h.nearestBearishFvg.bottom - last.c) / last.c;
+        // Nếu giá đâm thẳng vào bụng FVG hoặc cách FVG < 2.0% -> CẤM LONG!
+        if (last.c <= macro4h.nearestBearishFvg.top && (distToFvg < 0.02 || last.c >= macro4h.nearestBearishFvg.bottom)) {
+          return null; // Chặn đâm đầu vào Bearish FVG 4H!
+        }
+      }
+    }
 
     const entry = last.c;
     const stop = Math.max(last.l - 0.001 * last.l, boxHigh - 0.010 * boxHigh);
@@ -309,9 +375,7 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     if (risk < 0.003 || risk > 0.035) return null;
 
     const tp1 = entry + 1.4 * (entry - stop);
-    const tp2 = isNewHighBreakout
-      ? entry + 2.5 * (entry - stop)
-      : Math.max(entry + 2.5 * (entry - stop), priorHigh);
+    const tp2 = entry + 2.5 * (entry - stop);
 
     return {
       side: 1,
@@ -325,9 +389,7 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
       tp2,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: isNewHighBreakout
-        ? `M15 Nền ${boxLength} nến, nến 15m nổ Vol ${volRatio.toFixed(1)}x PHÁ ĐỈNH CHU KỲ (Blue Sky Breakout)`
-        : `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền (Còn cản +${(distToResistance * 100).toFixed(1)}%)`,
+      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền (Khung 4H thông thoáng, không vướng cản 7D/FVG)`,
     };
   }
 
@@ -337,6 +399,23 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     const body = last.o - last.c;
     const lowerWick = last.c - last.l;
     if (body < 0.50 * rng || lowerWick > 0.25 * rng) return null;
+
+    // 🛡️ BỘ LỌC HỖ TRỢ LỚN KHUNG 4H / 7 NGÀY
+    if (macro4h) {
+      // 1. Kiểm tra đáy hỗ trợ lớn 7 ngày
+      const distTo7dLow = (last.c - macro4h.low7d) / last.c;
+      if (macro4h.low7d < last.c && distTo7dLow < 0.025) {
+        return null; // Chặn Short ngay trên đầu hỗ trợ cứng 7 ngày!
+      }
+
+      // 2. Kiểm tra khối Bullish FVG 4H dưới chân
+      if (macro4h.nearestBullishFvg) {
+        const distToFvg = (last.c - macro4h.nearestBullishFvg.top) / last.c;
+        if (last.c >= macro4h.nearestBullishFvg.bottom && (distToFvg < 0.02 || last.c <= macro4h.nearestBullishFvg.top)) {
+          return null; // Chặn Short đâm vào vùng cầu Bullish FVG 4H!
+        }
+      }
+    }
 
     const entry = last.c;
     const stop = Math.min(boxHigh, boxLow + 0.008 * boxLow);
@@ -358,7 +437,7 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
       tp2,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m xả Vol ${volRatio.toFixed(1)}x đục thủng đáy nền`,
+      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), xả Vol ${volRatio.toFixed(1)}x đục đáy nền (Khung 4H thông thoáng, không vướng đáy 7D/FVG)`,
     };
   }
 
