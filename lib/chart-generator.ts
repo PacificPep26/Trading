@@ -99,6 +99,7 @@ export async function generateCandleChartPng(params: {
   entry?: number;
   stop?: number;
   tp?: number;
+  zone?: { top: number; bottom: number; label: string; side?: 1 | -1 };
   width?: number;
   height?: number;
 }): Promise<Buffer | null> {
@@ -110,6 +111,7 @@ export async function generateCandleChartPng(params: {
     entry,
     stop,
     tp,
+    zone,
     width = 920,
     height = 580,
   } = params;
@@ -189,6 +191,20 @@ export async function generateCandleChartPng(params: {
     const y = yPrice(p);
     elements.push(`<line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#202430" stroke-width="1" stroke-dasharray="2 3"/>`);
     elements.push(`<text x="${width - paddingRight + 8}" y="${y + 4}" fill="#787b86" font-size="11" font-family="monospace">${p.toFixed(p > 100 ? 1 : 4)}</text>`);
+  }
+
+  // 🟦 HỘP FVG / ORDER BLOCK / VÙNG CUNG CẦU (SHADED BUY/SELL ZONE)
+  if (zone && zone.top && zone.bottom) {
+    const yTop = yPrice(Math.max(zone.top, zone.bottom));
+    const yBottom = yPrice(Math.min(zone.top, zone.bottom));
+    const boxHeight = Math.max(4, yBottom - yTop);
+    const isBullZone = zone.side === 1 || zone.label.toLowerCase().includes("buy") || zone.label.toLowerCase().includes("cầu");
+    const fillColor = isBullZone ? "rgba(8, 153, 129, 0.18)" : "rgba(242, 54, 69, 0.18)";
+    const strokeColor = isBullZone ? "#089981" : "#f23645";
+
+    elements.push(`<rect x="${paddingLeft}" y="${yTop}" width="${chartWidth}" height="${boxHeight}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.2" stroke-dasharray="3 3"/>`);
+    elements.push(`<rect x="${paddingLeft + 8}" y="${yTop + 4}" width="160" height="18" fill="${strokeColor}" rx="3" opacity="0.85"/>`);
+    elements.push(`<text x="${paddingLeft + 14}" y="${yTop + 16}" fill="#ffffff" font-size="10" font-weight="bold">${zone.label} (${zone.bottom.toFixed(zone.bottom > 100 ? 1 : 4)} - ${zone.top.toFixed(zone.top > 100 ? 1 : 4)})</text>`);
   }
 
   // Kháng cự & Hỗ trợ (Resistance / Support)

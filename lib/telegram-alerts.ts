@@ -326,6 +326,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     entry?: number;
     stop?: number;
     tp?: number;
+    zone?: import("./macro-hunter").MacroZone;
     isMacroReversal?: boolean;
     rrRatio?: number;
   };
@@ -479,6 +480,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 entry: hunterSig.entry,
                 stop: hunterSig.stop,
                 tp: hunterSig.tp,
+                zone: hunterSig.zone,
                 isMacroReversal: true,
                 rrRatio: hunterSig.rrRatio,
                 text: planText(
@@ -950,7 +952,16 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
         const topItem = finalDigest[0];
         const topCoin = topItem.coin;
         const tf = topItem.text.includes("15m") ? "15m" : "1H";
-        const c = await candles(`${topCoin}-USDT-SWAP`, tf, 45);
+        const c = await candles(`${topCoin}-USDT-SWAP`, tf, 60);
+        const zoneInfo = topItem.zone
+          ? {
+              top: topItem.zone.top,
+              bottom: topItem.zone.bottom,
+              label: topItem.zone.type === "BEARISH_FVG_4H" ? "Bearish FVG 4H (Sell Zone)" : topItem.zone.type === "BULLISH_FVG_4H" ? "Bullish FVG 4H (Buy Zone)" : "Cản Macro 4H",
+              side: (topItem.side > 0 ? 1 : -1) as 1 | -1,
+            }
+          : undefined;
+
         chartBuf = await generateCandleChartPng({
           symbol: `${topCoin}/USDT`,
           timeframe: tf,
@@ -959,6 +970,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           entry: topItem.entry,
           stop: topItem.stop,
           tp: topItem.tp,
+          zone: zoneInfo,
         });
       } catch (e) {
         console.error("[CHART_ERR]", e);
