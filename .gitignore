@@ -15,3 +15,7 @@ data/
 service/telegram-sent.json
 .repo-mind.json
 *.tsbuildinfo
+quant_lab/venv/
+quant_lab/data/
+quant_lab/models/
+docs/research/

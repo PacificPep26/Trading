@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { f } from "./format";
-import { cooldownMap } from "./telegram-alerts";
+import { f } from "./format.ts";
+import { cooldownMap } from "./cooldown.ts";
 
 export type PaperTrade = {
   id: string;
@@ -10,6 +10,10 @@ export type PaperTrade = {
   entry: number;
   stop: number;
   tp: number;
+  tp1?: number;
+  tp2?: number;
+  tp1Hit?: boolean;
+  pnlTp1?: number;
   margin: number;
   leverage: number;
   openTime: number;
@@ -20,6 +24,20 @@ export type PaperTrade = {
   status: "open" | "closed_tp" | "closed_sl" | "cancelled";
   note: string;
 };
+
+/**
+ * Kiểm tra xem thời điểm hiện tại có thuộc Khung Giờ Vàng (Prime Liquidity Session) hay không.
+ * Cắt bỏ các giờ rác thanh khoản mỏng phiên Á (00:00 - 08:45) chống dính bẫy quét SL.
+ */
+export function isSessionPrime(timestampMs: number = Date.now()): boolean {
+  const vnHour = (Math.floor(timestampMs / 3600_000) + 7) % 24;
+  const vnMin = Math.floor(timestampMs / 60_000) % 60;
+  const tVal = vnHour + vnMin / 60.0;
+  if (tVal >= 19.5 && tVal <= 23.75) return true; // Phiên Mỹ (19:30 - 23:45)
+  if (tVal >= 14.0 && tVal <= 18.0) return true;  // Phiên Âu (14:00 - 18:00)
+  if (tVal >= 9.0 && tVal <= 11.5) return true;   // Phiên Á sáng (09:00 - 11:30)
+  return false;
+}
 
 const PAPER_FILE = path.join(process.cwd(), "data", "paper-auto-bot.json");
 const DEFAULT_MARGIN = 10.0; // Vốn giả lập 10$ mỗi lệnh đúng như cách Victor trade
@@ -54,6 +72,8 @@ export function openPaperTrade(params: {
   entry: number;
   stop: number;
   tp: number;
+  tp1?: number;
+  tp2?: number;
   note: string;
 }): { trade: PaperTrade | null; alertMsg: string | null } {
   const trades = loadPaperTrades();
@@ -77,6 +97,10 @@ export function openPaperTrade(params: {
     entry: params.entry,
     stop: params.stop,
     tp: params.tp,
+    tp1: params.tp1,
+    tp2: params.tp2,
+    tp1Hit: false,
+    pnlTp1: 0,
     margin: DEFAULT_MARGIN,
     leverage: DEFAULT_LEVERAGE,
     openTime: Date.now(),
@@ -88,11 +112,15 @@ export function openPaperTrade(params: {
   savePaperTrades(trades);
 
   const sideText = params.side > 0 ? "🟢 LONG" : "🔴 SHORT";
+  const tpText = params.tp1 && params.tp2
+    ? `TP1 (50%): *${f(params.tp1)}* | TP2 Runner (50%): *${f(params.tp2)}*`
+    : `TP: *${f(params.tp)}*`;
+
   const alertMsg =
     `🧪 *[PAPER BOT TỰ ĐẶT LỆNH]*\n\n` +
     `• Vị thế: *${sideText} ${params.coin}* (x${DEFAULT_LEVERAGE})\n` +
     `• Giá vào (Entry): *${f(params.entry)}*\n` +
-    `• Chốt lời (TP): *${f(params.tp)}* (Mục tiêu +2R)\n` +
+    `• ${tpText}\n` +
     `• Cắt lỗ (SL): *${f(params.stop)}*\n` +
     `• Ký quỹ giả lập: *$${DEFAULT_MARGIN.toFixed(2)} USDT*\n` +
     `📌 *Lý do:* ${params.note}\n` +
@@ -115,55 +143,133 @@ export function stepPaperTrades(coin: string, candles: { h: number; l: number; c
   for (const bar of closedCandles.slice(-10)) {
     const isLong = trade.side > 0;
 
-    // Kiểm tra chạm Chốt Lời (TP)
-    const hitTp = isLong ? bar.h >= trade.tp : bar.l <= trade.tp;
-    if (hitTp) {
-      trade.status = "closed_tp";
-      trade.closeTime = Date.now();
-      trade.exitPrice = trade.tp;
+    // A. NẾU CÓ CHẾ ĐỘ MULTI-TP (TP1 50% + TP2 RUNNER 50%)
+    if (trade.tp1 && trade.tp2) {
+      if (!trade.tp1Hit) {
+        const hitTp1 = isLong ? bar.h >= trade.tp1 : bar.l <= trade.tp1;
+        if (hitTp1) {
+          trade.tp1Hit = true;
+          const priceDiff = isLong ? trade.tp1 - trade.entry : trade.entry - trade.tp1;
+          const rawRoi = (priceDiff / trade.entry) * trade.leverage;
+          trade.pnlTp1 = Number(((trade.margin * 0.5) * rawRoi - 0.008).toFixed(2));
+          // Dời SL Runner về vùng đệm an toàn 0.5% (tránh bị râu retest quét sớm)
+          const buffer = 0.005 * trade.entry;
+          trade.stop = isLong ? trade.entry - buffer : trade.entry + buffer;
+          savePaperTrades(trades);
 
-      const priceDiff = isLong ? trade.tp - trade.entry : trade.entry - trade.tp;
-      const rawRoi = (priceDiff / trade.entry) * trade.leverage;
-      trade.roiPct = Number((rawRoi * 100).toFixed(1));
-      trade.pnlUsdt = Number((trade.margin * rawRoi - 0.01).toFixed(2)); // trừ 0.01$ phí trượt
+          msgs.push(
+            `💰 *[PAPER BOT CHỐT LỜI TP1 (50%)]*\n\n` +
+            `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+            `• Chốt 50% tại TP1: *${f(trade.tp1)}* -> Đút túi: *+${trade.pnlTp1.toFixed(2)}$ USDT*\n` +
+            `🛡️ *Bảo vệ:* Đã dời SL 50% Runner còn lại về vùng đệm an toàn (*${f(trade.stop)}*)!`
+          );
+        }
+      }
 
-      savePaperTrades(trades);
+      const hitTp2 = isLong ? bar.h >= trade.tp2 : bar.l <= trade.tp2;
+      const hitSl = isLong ? bar.l <= trade.stop : bar.h >= trade.stop;
 
-      msgs.push(
-        `✅ *[PAPER BOT CHỐT LỜI THÀNH CÔNG]*\n\n` +
-        `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
-        `• Giá vào: ${f(trade.entry)} → Chốt tại TP: *${f(trade.tp)}*\n` +
-        `• Lợi nhuận: 🟢 *+${trade.pnlUsdt.toFixed(2)}$ USDT (+${trade.roiPct}% ROI)*\n` +
-        `🎉 Tự động đóng lệnh an toàn trên sổ Paper!`
-      );
-      break;
-    }
+      if (hitTp2) {
+        trade.status = "closed_tp";
+        trade.closeTime = Date.now();
+        trade.exitPrice = trade.tp2;
+        const priceDiff = isLong ? trade.tp2 - trade.entry : trade.entry - trade.tp2;
+        const rawRoi = (priceDiff / trade.entry) * trade.leverage;
+        const runnerMargin = trade.tp1Hit ? trade.margin * 0.5 : trade.margin;
+        const pnlRunner = runnerMargin * rawRoi - (trade.tp1Hit ? 0.008 : 0.016);
+        trade.pnlUsdt = Number(((trade.pnlTp1 || 0) + pnlRunner).toFixed(2));
+        trade.roiPct = Number((rawRoi * 100).toFixed(1));
+        savePaperTrades(trades);
 
-    // Kiểm tra chạm Cắt Lỗ (SL)
-    const hitSl = isLong ? bar.l <= trade.stop : bar.h >= trade.stop;
-    if (hitSl) {
-      trade.status = "closed_sl";
-      trade.closeTime = Date.now();
-      trade.exitPrice = trade.stop;
+        msgs.push(
+          `🏆 *[PAPER BOT ĂN TRỌN SÓNG TP2 RUNNER]*\n\n` +
+          `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+          `• 50% Runner chạm đỉnh TP2: *${f(trade.tp2)}*\n` +
+          `• Tổng lợi nhuận trọn gói: 🟢 *+${trade.pnlUsdt.toFixed(2)}$ USDT (+${trade.roiPct}% ROI)*\n` +
+          `🎉 Đóng lệnh hoàn tất với tỷ lệ R:R đỉnh cao!`
+        );
+        break;
+      } else if (hitSl) {
+        trade.closeTime = Date.now();
+        trade.exitPrice = trade.stop;
+        if (trade.tp1Hit) {
+          trade.status = "closed_tp";
+          trade.pnlUsdt = Number(((trade.pnlTp1 || 0) - 0.008).toFixed(2));
+          trade.roiPct = 0;
+          savePaperTrades(trades);
 
-      const priceDiff = isLong ? trade.stop - trade.entry : trade.entry - trade.stop;
-      const rawRoi = (priceDiff / trade.entry) * trade.leverage;
-      trade.roiPct = Number((rawRoi * 100).toFixed(1));
-      trade.pnlUsdt = Number((trade.margin * rawRoi - 0.01).toFixed(2));
+          msgs.push(
+            `🛡️ *[PAPER BOT RUNNER CHẠM ENTRY]*\n\n` +
+            `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+            `• 50% Runner thoát tại Entry: *${f(trade.stop)}*\n` +
+            `• Tổng kết lệnh: 🟢 *Vẫn LÃI RÒNG +${trade.pnlUsdt.toFixed(2)}$ USDT*!`
+          );
+        } else {
+          trade.status = "closed_sl";
+          const priceDiff = isLong ? trade.stop - trade.entry : trade.entry - trade.stop;
+          const rawRoi = (priceDiff / trade.entry) * trade.leverage;
+          trade.roiPct = Number((rawRoi * 100).toFixed(1));
+          trade.pnlUsdt = Number((trade.margin * rawRoi - 0.016).toFixed(2));
+          cooldownMap.set(trade.coin, Date.now() + 60 * 60_000);
+          savePaperTrades(trades);
 
-      // Kích hoạt Cooldown 60 phút cho coin này
-      cooldownMap.set(trade.coin, Date.now() + 60 * 60_000);
+          msgs.push(
+            `❌ *[PAPER BOT CẮT LỖ BẢO VỆ]*\n\n` +
+            `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+            `• Cắt tại SL: *${f(trade.stop)}* | Lỗ: 🔴 *${trade.pnlUsdt.toFixed(2)}$ USDT*\n` +
+            `🛡️ Đã tự động kích hoạt Cooldown cách ly 60 phút cho ${trade.coin}!`
+          );
+        }
+        break;
+      }
+    } else {
+      // B. CHẾ ĐỘ TP CỐ ĐỊNH (BACKWARD COMPATIBLE)
+      const hitTp = isLong ? bar.h >= trade.tp : bar.l <= trade.tp;
+      if (hitTp) {
+        trade.status = "closed_tp";
+        trade.closeTime = Date.now();
+        trade.exitPrice = trade.tp;
 
-      savePaperTrades(trades);
+        const priceDiff = isLong ? trade.tp - trade.entry : trade.entry - trade.tp;
+        const rawRoi = (priceDiff / trade.entry) * trade.leverage;
+        trade.roiPct = Number((rawRoi * 100).toFixed(1));
+        trade.pnlUsdt = Number((trade.margin * rawRoi - 0.016).toFixed(2));
 
-      msgs.push(
-        `❌ *[PAPER BOT CẮT LỖ BẢO VỆ]*\n\n` +
-        `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
-        `• Giá vào: ${f(trade.entry)} → Cắt tại SL: *${f(trade.stop)}*\n` +
-        `• Thua lỗ: 🔴 *${trade.pnlUsdt.toFixed(2)}$ USDT (${trade.roiPct}% ROI)*\n` +
-        `🛡️ Đã tự động kích hoạt Cooldown cách ly 60 phút cho ${trade.coin}!`
-      );
-      break;
+        savePaperTrades(trades);
+
+        msgs.push(
+          `✅ *[PAPER BOT CHỐT LỜI THÀNH CÔNG]*\n\n` +
+          `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+          `• Giá vào: ${f(trade.entry)} → Chốt tại TP: *${f(trade.tp)}*\n` +
+          `• Lợi nhuận: 🟢 *+${trade.pnlUsdt.toFixed(2)}$ USDT (+${trade.roiPct}% ROI)*\n` +
+          `🎉 Tự động đóng lệnh an toàn trên sổ Paper!`
+        );
+        break;
+      }
+
+      const hitSl = isLong ? bar.l <= trade.stop : bar.h >= trade.stop;
+      if (hitSl) {
+        trade.status = "closed_sl";
+        trade.closeTime = Date.now();
+        trade.exitPrice = trade.stop;
+
+        const priceDiff = isLong ? trade.stop - trade.entry : trade.entry - trade.stop;
+        const rawRoi = (priceDiff / trade.entry) * trade.leverage;
+        trade.roiPct = Number((rawRoi * 100).toFixed(1));
+        trade.pnlUsdt = Number((trade.margin * rawRoi - 0.016).toFixed(2));
+
+        cooldownMap.set(trade.coin, Date.now() + 60 * 60_000);
+        savePaperTrades(trades);
+
+        msgs.push(
+          `❌ *[PAPER BOT CẮT LỖ BẢO VỆ]*\n\n` +
+          `• Vị thế: *${isLong ? "🟢 LONG" : "🔴 SHORT"} ${trade.coin}*\n` +
+          `• Giá vào: ${f(trade.entry)} → Cắt tại SL: *${f(trade.stop)}*\n` +
+          `• Thua lỗ: 🔴 *${trade.pnlUsdt.toFixed(2)}$ USDT (${trade.roiPct}% ROI)*\n` +
+          `🛡️ Đã tự động kích hoạt Cooldown cách ly 60 phút cho ${trade.coin}!`
+        );
+        break;
+      }
     }
   }
 

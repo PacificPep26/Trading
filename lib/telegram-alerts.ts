@@ -5,7 +5,7 @@
 import fs from "fs";
 import path from "path";
 import { f } from "./format";
-import { getMexcOpenPositions } from "./mexc";
+import { getMexcOpenPositions, submitMexcOrder } from "./mexc";
 import { analyseBtcSentinel } from "./btc-sentinel";
 import { analyse, restingLimit, ictSweepShort } from "./patterns";
 import { candles, ticker, funding, type Candle } from "./okx";
@@ -16,8 +16,8 @@ import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-wat
 import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
-import { openPaperTrade, stepPaperTrades } from "./auto-paper-trader";
+import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand } from "./candle-vision";
+import { openPaperTrade, stepPaperTrades, isSessionPrime } from "./auto-paper-trader";
 
 export { f };
 
@@ -43,12 +43,13 @@ function loadSent(): string[] {
   return [];
 }
 
+import { cooldownMap } from "./cooldown.ts";
+export { cooldownMap };
+
 declare global {
   var telegramSent: Set<string> | undefined;
-  var telegramCooldown: Map<string, number> | undefined;
 }
 const sent = (globalThis.telegramSent ??= new Set<string>(loadSent()));
-export const cooldownMap = (globalThis.telegramCooldown ??= new Map<string, number>());
 
 function saveSent() {
   try {
@@ -375,16 +376,50 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 sent.add(sbKey);
                 addLimit(coin, { side: sb15.side, level: sb15.entry, limit: sb15.entry, stop: sb15.stop, tp: sb15.tp, atr: 0, barTime: sb15.barTime, market: true }, HIGHTEST_15M_PAPER);
 
-                // 🧪 PAPER AUTO-TRADER: Tự động mở lệnh giấy phá nền 15m
+                // 🧪 PAPER AUTO-TRADER: Tự động mở lệnh giấy phá nền 15m (TP1 50% + Runner 50%)
                 const { alertMsg: paperAutoMsg } = openPaperTrade({
                   coin,
                   side: sb15.side,
                   entry: sb15.entry,
                   stop: sb15.stop,
                   tp: sb15.tp,
+                  tp1: sb15.tp1,
+                  tp2: sb15.tp2,
                   note: sb15.note,
                 });
                 if (paperAutoMsg) await say(paperAutoMsg);
+
+                // 🚀 LIVE TRADING TRÊN MEXC (KHI BẬT MEXC_LIVE_TRADING=true)
+                if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true") {
+                  try {
+                    const currentPositions = await getMexcOpenPositions();
+                    if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
+                      const vol = Math.max(1, Math.round((10 * 10) / sb15.entry));
+                      const liveOrder = await submitMexcOrder({
+                        symbol: `${coin}_USDT`,
+                        side: sb15.side > 0 ? 1 : 3,
+                        type: 5, // Market order vào ngay
+                        vol,
+                        openType: 1, // Isolated
+                        leverage: 10,
+                      });
+                      if (liveOrder.success) {
+                        await say(
+                          `🚀 *[MEXC LIVE: ĐÃ VÀO LỆNH THỰC TẾ]*\n\n` +
+                          `• Vị thế: *${sb15.side > 0 ? "🟢 LONG" : "🔴 SHORT"} ${coin}* (x10 Isolated)\n` +
+                          `• Khối lượng: *${vol} hợp đồng* (~$10 ký quỹ thật)\n` +
+                          `• Mã lệnh sàn: \`${liveOrder.orderId}\`\n` +
+                          `• TP1: *${f(sb15.tp1 ?? sb15.tp)}* | SL: *${f(sb15.stop)}*`
+                        );
+                      } else {
+                        await say(`⚠️ *[MEXC LIVE LỖI ĐẶT LỆNH]*: ${liveOrder.error}`);
+                      }
+                    }
+                  } catch (e) {
+                    console.error("[MEXC LIVE ERROR]", e);
+                  }
+                }
+
                 digest.push({
                   rank: 1,
                   coin,
@@ -404,6 +439,70 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                   ),
                 });
               }
+            }
+          }
+
+          // 🎯 Kèo 2: Săn Đáy Hỗ Trợ / S/R Reclaim (Support Bounce)
+          const bounce15 = detect15mSupportBounce(bars15m);
+          if (bounce15 && allowLong && ownDaily >= 0) {
+            const bounceKey = `BOUNCE15:${coin}:${bounce15.barTime}`;
+            if (!sent.has(bounceKey)) {
+              sent.add(bounceKey);
+              addLimit(coin, { side: 1, level: bounce15.entry, limit: bounce15.entry, stop: bounce15.stop, tp: bounce15.tp, atr: 0, barTime: bounce15.barTime, market: true }, HIGHTEST_15M_PAPER);
+
+              const { alertMsg: paperMsg } = openPaperTrade({
+                coin,
+                side: 1,
+                entry: bounce15.entry,
+                stop: bounce15.stop,
+                tp: bounce15.tp,
+                tp1: bounce15.tp1,
+                tp2: bounce15.tp2,
+                note: bounce15.note,
+              });
+              if (paperMsg) await say(paperMsg);
+
+              // 🚀 LIVE TRADING TRÊN MEXC
+              if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true") {
+                try {
+                  const currentPositions = await getMexcOpenPositions();
+                  if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
+                    const vol = Math.max(1, Math.round((10 * 10) / bounce15.entry));
+                    const liveOrder = await submitMexcOrder({
+                      symbol: `${coin}_USDT`,
+                      side: 1,
+                      type: 5,
+                      vol,
+                      openType: 1,
+                      leverage: 10,
+                    });
+                    if (liveOrder.success) {
+                      await say(
+                        `🚀 *[MEXC LIVE: ĐÃ VÀO LỆNH THỰC TẾ]*\n\n` +
+                        `• Vị thế: *🟢 LONG ${coin}* (x10 Isolated)\n` +
+                        `• Khối lượng: *${vol} hợp đồng* (~$10 ký quỹ thật)\n` +
+                        `• Mã lệnh sàn: \`${liveOrder.orderId}\`\n` +
+                        `• TP1: *${f(bounce15.tp1)}* | TP2: *${f(bounce15.tp2)}* | SL: *${f(bounce15.stop)}*`
+                      );
+                    } else {
+                      await say(`⚠️ *[MEXC LIVE LỖI ĐẶT LỆNH]*: ${liveOrder.error}`);
+                    }
+                  }
+                } catch (e) {
+                  console.error("[MEXC LIVE ERROR]", e);
+                }
+              }
+
+              digest.push({
+                rank: 2,
+                coin,
+                side: 1,
+                rsScore: 95,
+                entry: bounce15.entry,
+                stop: bounce15.stop,
+                tp: bounce15.tp,
+                text: planText(1, coin, "🎯 Săn đáy hỗ trợ rút chân", bounce15.entry, bounce15.stop, bounce15.tp, candleSum15m),
+              });
             }
           }
         }

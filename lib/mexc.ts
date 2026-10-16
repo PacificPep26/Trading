@@ -232,3 +232,88 @@ export async function getMexcTodayOrders(): Promise<{
   }
 }
 
+export type SubmitMexcOrderParams = {
+  symbol: string;
+  side: 1 | 2 | 3 | 4; // 1: Open Long, 2: Close Short, 3: Open Short, 4: Close Long
+  type: 1 | 5; // 1: Limit, 5: Market
+  vol: number;
+  price?: number;
+  openType?: 1 | 2; // 1: Isolated, 2: Cross (mặc định 1)
+  leverage?: number;
+};
+
+/**
+ * Đặt lệnh Futures trực tiếp trên MEXC (Isolated, đòn bẩy tự cấu hình).
+ */
+export async function submitMexcOrder(params: SubmitMexcOrderParams): Promise<{ success: boolean; orderId?: string; error?: string }> {
+  const apiKey = process.env.MEXC_API_KEY;
+  const secret = process.env.MEXC_SECRET_KEY;
+  if (!apiKey || !secret) return { success: false, error: "Chưa cấu hình API Key" };
+
+  try {
+    const ts = Date.now().toString();
+    const body: Record<string, any> = {
+      symbol: params.symbol,
+      side: params.side,
+      type: params.type,
+      vol: params.vol,
+      openType: params.openType ?? 1,
+    };
+    if (params.price !== undefined) body.price = params.price;
+    if (params.leverage !== undefined) body.leverage = params.leverage;
+
+    const bodyStr = JSON.stringify(body);
+    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + bodyStr).digest("hex");
+
+    const res = await fetch("https://contract.mexc.com/api/v1/private/order/submit", {
+      method: "POST",
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": ts,
+        Signature: sign,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
+    });
+
+    const data = await res.json();
+    if (data.success && data.data) {
+      return { success: true, orderId: String(data.data) };
+    }
+    return { success: false, error: data.message || `Mã lỗi ${data.code}` };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Huỷ lệnh trên sàn MEXC theo orderId.
+ */
+export async function cancelMexcOrder(orderId: string): Promise<boolean> {
+  const apiKey = process.env.MEXC_API_KEY;
+  const secret = process.env.MEXC_SECRET_KEY;
+  if (!apiKey || !secret) return false;
+
+  try {
+    const ts = Date.now().toString();
+    const bodyStr = JSON.stringify([orderId]);
+    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + bodyStr).digest("hex");
+
+    const res = await fetch("https://contract.mexc.com/api/v1/private/order/cancel", {
+      method: "POST",
+      headers: {
+        ApiKey: apiKey,
+        "Request-Time": ts,
+        Signature: sign,
+        "Content-Type": "application/json",
+      },
+      body: bodyStr,
+    });
+
+    const data = await res.json();
+    return Boolean(data.success);
+  } catch {
+    return false;
+  }
+}
+

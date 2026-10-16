@@ -26,6 +26,8 @@ export type AccumulationBreakout = {
   entry: number;
   stop: number;
   tp: number;
+  tp1?: number;
+  tp2?: number;
   volumeRatio: number;
   barTime: number;
   note: string;
@@ -272,8 +274,8 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
   const boxRange = boxHigh - boxLow;
 
   const boxRatio = boxRange / boxLow;
-  // Hộp nén tích luỹ biên độ thực tế từ 0.3% (BTC nén siêu chặt) đến 5.5% (Altcoins)
-  if (boxRatio < 0.003 || boxRatio > 0.055) return null;
+  // Hộp nén tích luỹ biên độ thực tế từ 0.2% (BTC nén siêu chặt) đến 5.5% (Altcoins)
+  if (boxRatio < 0.002 || boxRatio > 0.055) return null;
 
   const rng = last.h - last.l;
   if (rng <= 0) return null;
@@ -282,6 +284,10 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
   const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
   const volRatio = avgVol > 0 ? (last.v || 0) / avgVol : 1;
 
+  // Định vị cản lớn khung 1H (Đỉnh cao nhất 36 tiếng qua / 144 nến)
+  const priorHighLookback = cs.slice(Math.max(0, n - 145), n - 1);
+  const priorHigh = Math.max(...priorHighLookback.map((b) => b.h));
+
   // 🟢 CHIỀU 1: PHÁ ĐỈNH NỀN 15M (BREAKOUT LONG)
   if (last.c > last.o && last.c > boxHigh) {
     if (volRatio < 1.4) return null;
@@ -289,11 +295,17 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     const upperWick = last.h - last.c;
     if (body < 0.50 * rng || upperWick > 0.25 * rng) return null;
 
+    // Chống mua đỉnh cản: Yêu cầu còn địa dư tăng trưởng >= 2.0% tới đỉnh cũ 36h
+    const distToResistance = (priorHigh - last.c) / last.c;
+    if (distToResistance < 0.020) return null;
+
     const entry = last.c;
-    const stop = Math.max(boxLow, boxHigh - 0.008 * boxHigh);
+    const stop = Math.max(last.l - 0.001 * last.l, boxHigh - 0.010 * boxHigh);
     const risk = (entry - stop) / entry;
     if (risk < 0.003 || risk > 0.035) return null;
-    const tp = entry + 2 * (entry - stop);
+
+    const tp1 = entry + 1.4 * (entry - stop);
+    const tp2 = Math.max(entry + 3.0 * (entry - stop), priorHigh);
 
     return {
       side: 1,
@@ -302,10 +314,12 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
       breakoutPrice: boxHigh,
       entry,
       stop,
-      tp,
+      tp: tp2,
+      tp1,
+      tp2,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
-      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền`,
+      note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m nổ Vol ${volRatio.toFixed(1)}x phá đỉnh nền (Còn cản +${(distToResistance * 100).toFixed(1)}%)`,
     };
   }
 
@@ -320,7 +334,9 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
     const stop = Math.min(boxHigh, boxLow + 0.008 * boxLow);
     const risk = (stop - entry) / entry;
     if (risk < 0.003 || risk > 0.035) return null;
-    const tp = entry - 2 * (stop - entry);
+
+    const tp1 = entry - 1.4 * (stop - entry);
+    const tp2 = entry - 3.0 * (stop - entry);
 
     return {
       side: -1,
@@ -329,7 +345,9 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
       breakoutPrice: boxLow,
       entry,
       stop,
-      tp,
+      tp: tp2,
+      tp1,
+      tp2,
       volumeRatio: +volRatio.toFixed(1),
       barTime: last.t,
       note: `M15 Nền ${boxLength} nến (~${(boxLength / 4).toFixed(0)}h), nến 15m xả Vol ${volRatio.toFixed(1)}x đục thủng đáy nền`,
@@ -337,6 +355,74 @@ export function detect15mShelfBreakout(rawCandles15m: Candle[]): AccumulationBre
   }
 
   return null;
+}
+
+export type SupportBounceSetup = {
+  side: 1;
+  entry: number;
+  stop: number;
+  tp: number;
+  tp1: number;
+  tp2: number;
+  recentHigh: number;
+  volumeRatio: number;
+  barTime: number;
+  note: string;
+};
+
+/**
+ * 🎯 SĂN ĐÁY HỖ TRỢ / S/R FLIP RETEST (KÈO SĂN RÚT CHÂN PHIÊN Á / SÁNG SỚM)
+ * Nhận diện Altcoin hồi về hỗ trợ sau đợt tăng, rút chân nến búa hoặc đóng nến xanh giữ đáy.
+ */
+export function detect15mSupportBounce(rawCandles15m: Candle[]): SupportBounceSetup | null {
+  const cs = rawCandles15m.filter((c) => c.closed !== false);
+  const n = cs.length;
+  if (n < 45) return null;
+
+  const last = cs[n - 1];
+  const rng = last.h - last.l;
+  if (rng <= 0) return null;
+
+  const recentLookback = cs.slice(Math.max(0, n - 41), n - 1);
+  const recentHigh = Math.max(...recentLookback.map((b) => b.h));
+  const pullbackPct = (recentHigh - last.c) / recentHigh;
+  if (pullbackPct < 0.03) return null; // Đã chiết khấu ít nhất 3% từ đỉnh
+
+  const lowerWick = Math.min(last.o, last.c) - last.l;
+  const isHammerOrGreen = (lowerWick >= 0.30 * rng) || (last.c > last.o && last.c > cs[n - 2].c);
+  if (!isHammerOrGreen) return null;
+
+  const localLowLookback = cs.slice(Math.max(0, n - 9), n - 1);
+  const localSwingLow = Math.min(...localLowLookback.map((b) => b.l));
+
+  // Yêu cầu nến hiện tại đóng xanh và giá thấp nhất chạm/quét vùng swing low
+  if (last.c < last.o) return null;
+  if (last.l > localSwingLow * 1.004) return null;
+
+  const entry = last.c;
+  const stop = Math.min(localSwingLow, last.l) - 0.002 * last.l;
+  const risk = (entry - stop) / entry;
+  if (risk < 0.004 || risk > 0.025) return null;
+
+  const tp1 = entry + 1.4 * (entry - stop);
+  const tp2 = recentHigh;
+
+  const prev20 = cs.slice(Math.max(0, n - 21), n - 1);
+  const avgVol = prev20.reduce((s, x) => s + (x.v || 0), 0) / prev20.length;
+  const volRatio = avgVol > 0 ? (last.v || 0) / avgVol : 1;
+
+  return {
+    side: 1,
+    entry,
+    stop,
+    tp: tp2,
+    tp1,
+    tp2,
+    recentHigh,
+    volumeRatio: +volRatio.toFixed(1),
+    barTime: last.t,
+    note: `M15 Săn đáy hỗ trợ rút chân (hồi ${(pullbackPct * 100).toFixed(1)}% từ đỉnh), bật tăng mục tiêu đỉnh cũ`,
+  };
 }
 
 /** Giữ alias tương thích ngược */
