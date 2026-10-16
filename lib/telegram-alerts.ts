@@ -839,8 +839,9 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
 
   const finalDigest = [...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
 
-  // 🚀 LIVE TRADING TRÊN MEXC: CHẠY TRÊN DANH MỤC FINAL DIGEST ĐÃ ĐƯỢC CHỌN LỌC KỸ CÀNG
-  if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true" && finalDigest.length > 0) {
+  // 🚀 LIVE TRADING TRÊN MEXC: CHỈ BẬT KHI CÓ CỜ RÕ RÀNG (HIỆN TẠI ĐÃ TẮT HOÀN TOÀN THEO YÊU CẦU CỦA VICTOR)
+  const isMexcLiveTradingEnabled = process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN === "false";
+  if (isMexcLiveTradingEnabled && finalDigest.length > 0) {
     try {
       let livePositions: import("./mexc").MexcPosition[] = await getMexcOpenPositions().catch(() => []);
       for (const item of finalDigest) {
