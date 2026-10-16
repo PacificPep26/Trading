@@ -251,47 +251,57 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
       const priceDiff = p.side > 0 ? price - p.entry : p.entry - price;
       const roi = (priceDiff / p.entry) * p.leverage * 100;
 
-      // Mức 1: Khi ROI >= 15%: Tự động dời SL về Entry trên sàn MEXC
-      if (roi >= 15) {
-        const trailingKey = `TRAILING_BE:${p.coin}:${p.side}:${Math.floor(p.entry)}`;
+      // Lấy TP hiện tại nếu có để không bị mất khi dời SL
+      const currentStops = await getMexcOpenStopOrders(p.symbol).catch(() => []);
+      const posStop = currentStops.find((s) => s.positionId === p.positionId && s.state === 1);
+      const existingTp = posStop?.takeProfitPrice;
+
+      // 🛡️ Mức 1: Khi ROI >= 4.0% (giá chạy +0.4% ở đòn bẩy x10): Tự động dời SL về Hòa Vốn (Break-even)
+      if (roi >= 4.0) {
+        const trailingKey = `TRAILING_BE:${p.coin}:${p.side}:${p.positionId}`;
         if (!sent.has(trailingKey)) {
           sent.add(trailingKey);
           await cancelAllMexcStopOrders(p.symbol, p.positionId);
+          // Đặt SL hòa vốn nhích nhẹ +0.05% để bù phí sàn Taker
+          const bePrice = p.side > 0 ? p.entry * 1.0005 : p.entry * 0.9995;
           const stopRes = await setMexcPositionStop({
             positionId: p.positionId,
             symbol: p.symbol,
-            stopLossPrice: p.entry,
+            stopLossPrice: bePrice,
+            takeProfitPrice: existingTp,
             vol: p.vol,
           });
           await say(
             `🛡️ *[MEXC TRAILING TỰ ĐỘNG: ĐÃ DỜI SL VỀ HÒA VỐN]*\n\n` +
-            `• Vị thế: *${p.side > 0 ? "LONG" : "SHORT"} ${p.coin}* (x${p.leverage})\n` +
+            `• Vị thế: *${p.side > 0 ? "🟢 LONG" : "🔴 SHORT"} ${p.coin}* (x${p.leverage})\n` +
             `• Giá vào (Entry): *${f(p.entry)}* · Giá hiện tại: *${f(price)}*\n` +
-            `• Lợi nhuận: 🟢 *+${roi.toFixed(1)}% ROI* (PnL ~${p.unRealizedPnl.toFixed(2)}$)\n` +
-            `• Trạng thái sàn MEXC: ${stopRes.success ? "✅ Đã dời SL về " + f(p.entry) : "⚠️ Lỗi: " + stopRes.error}\n\n` +
-            `📌 *Lệnh này đã hoàn toàn không còn rủi ro mất tiền! Thoải mái gồng lãi tới TP!*`
+            `• Lợi nhuận: 🟢 *+${roi.toFixed(1)}% ROI*\n` +
+            `• Trạng thái sàn MEXC: ${stopRes.success ? "✅ Đã dời SL về " + f(bePrice) : "⚠️ Lỗi: " + stopRes.error}\n` +
+            `• Chốt lời (TP) giữ nguyên: *${f(existingTp ?? 0)}*\n\n` +
+            `🔒 *KÈO ĐÃ HOÀN TOÀN KHÔNG CÒN RỦI RO (FREE RISK)! Thoải mái gồng tới TP!*`
           );
         }
       }
 
-      // Mức 2: Khi ROI >= 30%: Tự động nâng SL khóa chắc chắn +15% ROI lợi nhuận
-      if (roi >= 30) {
-        const lockKey = `TRAILING_LOCK30:${p.coin}:${p.side}:${Math.floor(p.entry)}`;
+      // 💰 Mức 2: Khi ROI >= 12.0%: Tự động nâng SL khóa chắc chắn +6% ROI lợi nhuận
+      if (roi >= 12.0) {
+        const lockKey = `TRAILING_LOCK12:${p.coin}:${p.side}:${p.positionId}`;
         if (!sent.has(lockKey)) {
           sent.add(lockKey);
-          const lockPrice = p.side > 0 ? p.entry * 1.015 : p.entry * 0.985;
+          const lockPrice = p.side > 0 ? p.entry * 1.006 : p.entry * 0.994;
           await cancelAllMexcStopOrders(p.symbol, p.positionId);
           const stopRes = await setMexcPositionStop({
             positionId: p.positionId,
             symbol: p.symbol,
             stopLossPrice: lockPrice,
+            takeProfitPrice: existingTp,
             vol: p.vol,
           });
           await say(
-            `💰 *[MEXC TRAILING TỰ ĐỘNG: ĐÃ KHÓA +15% LỢI NHUẬN]*\n\n` +
-            `• Vị thế: *${p.side > 0 ? "LONG" : "SHORT"} ${p.coin}*\n` +
+            `💰 *[MEXC TRAILING TỰ ĐỘNG: ĐÃ KHÓA +6% LỢI NHUẬN BỎ TÚI]*\n\n` +
+            `• Vị thế: *${p.side > 0 ? "🟢 LONG" : "🔴 SHORT"} ${p.coin}*\n` +
             `• Lợi nhuận hiện tại: 🚀 *+${roi.toFixed(1)}% ROI*\n` +
-            `• Stop Loss mới trên sàn: *${f(lockPrice)}* (Khóa chặt +15% ROI tối thiểu bỏ túi!)\n`
+            `• Stop Loss mới trên sàn: *${f(lockPrice)}* (Đảm bảo chắc chắn có lãi mang về!)\n`
           );
         }
       }
