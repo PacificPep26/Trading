@@ -1,6 +1,6 @@
 # 📖 ĐẠI TỔNG THƯ TINH HOA ĐẦU TƯ & TRADING TOÀN DIỆN
 > **Bản đúc kết bách khoa chuyên sâu từ kho tàng 138 cuốn sách kinh điển của phố Wall và các Phù thủy Thị trường**  
-> *Lưu trữ: `docs/TONG-HOP-TINH-HOA-DAU-TU-TRADING.md`*  
+> *Lưu trữ: `docs/research/TONG-HOP-TINH-HOA-DAU-TU-TRADING.md`*  
 > *Dành riêng cho hệ thống giao dịch định lượng & thực chiến của Victor*
 
 ---
