@@ -159,16 +159,19 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
     const top = cs[i - 2].l;
     const bottom = cs[i].h;
     if (top > bottom && (top - bottom) / bottom >= 0.004) {
-      // Kiểm tra xem đã bị lấp hoàn toàn (mitigated) chưa
+      // Kiểm tra xem đã bị lấp hoàn toàn (mitigated) chưa:
+      // Trong SMC/ICT, nếu giá sau đó đã thò lên quá 50% FVG (hoặc đóng nến vượt qua bottom)
+      // thì FVG đó đã được hấp thụ/mitigated, không còn giá trị chặn đảo chiều nữa!
       const later = cs.slice(i + 1);
-      const isMitigated = later.some((b) => b.h >= top);
+      const fvgMid = (top + bottom) / 2;
+      const isMitigated = later.some((b) => b.h >= fvgMid || b.c >= bottom);
       if (!isMitigated && bottom >= currentPrice * 0.985) {
         const { touchCount, isBroken } = calculateDebouncedTouchCount(cs, top, bottom, i);
         zones.push({
           type: "BEARISH_FVG_4H",
           top,
           bottom,
-          center: (top + bottom) / 2,
+          center: fvgMid,
           timeframe: "4H",
           touchCount,
           status: isBroken ? "EXHAUSTED" : touchCount <= 2 ? "FRESH" : "TESTED",
@@ -185,14 +188,15 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
     const bottom = cs[i - 2].h;
     if (top > bottom && (top - bottom) / bottom >= 0.004) {
       const later = cs.slice(i + 1);
-      const isMitigated = later.some((b) => b.l <= bottom);
+      const fvgMid = (top + bottom) / 2;
+      const isMitigated = later.some((b) => b.l <= fvgMid || b.c <= top);
       if (!isMitigated && top <= currentPrice * 1.015) {
         const { touchCount, isBroken } = calculateDebouncedTouchCount(cs, top, bottom, i);
         zones.push({
           type: "BULLISH_FVG_4H",
           top,
           bottom,
-          center: (top + bottom) / 2,
+          center: fvgMid,
           timeframe: "4H",
           touchCount,
           status: isBroken ? "EXHAUSTED" : touchCount <= 2 ? "FRESH" : "TESTED",
@@ -291,6 +295,14 @@ export function detectMacroHunterSignal(
 
       // Volume xác nhận lực bán
       const isVolConfirmed = isVolumeCrossingZone;
+
+      // 🛡️ BẮT BUỘC QUY CHUẨN CẮT NỀN / PHỦ NHẬN LỰC TĂNG:
+      // "Chưa cắt nền gì mà sao lại Short?":
+      // Đúng theo Price Action: Nến 15m từ chối tại cản phải đóng nến đỏ (last15.c < last15.o)
+      // VÀ phải đóng cửa dưới giá đóng cửa nến trước (last15.c < prev15.c) để xác nhận đảo chiều,
+      // HOẶC nuốt trọn nến trước (isEngulfing).
+      const confirmsDownturn = isEngulfing || (last15.c < prev15.c && isPinbarRejection);
+      if (!confirmsDownturn) continue;
 
       if ((isPinbarRejection || isEngulfing) && isVolConfirmed) {
         // Giá đóng cửa phải rút về dưới đỉnh cản rz.top
