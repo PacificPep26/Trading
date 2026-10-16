@@ -304,47 +304,12 @@ export async function calculateMexcVolForMargin(
 }
 
 /**
- * Đặt lệnh Futures trực tiếp trên MEXC (Isolated, đòn bẩy tự cấu hình).
+ * Đặt lệnh Futures trực tiếp trên MEXC (ĐÃ BỊ KHÓA CHẶT 100% - CHỈ XEM BÁO CÁO, CẤM VÀO TIỀN THẬT).
  */
 export async function submitMexcOrder(params: SubmitMexcOrderParams): Promise<{ success: boolean; orderId?: string; error?: string }> {
-  const apiKey = process.env.MEXC_API_KEY;
-  const secret = process.env.MEXC_SECRET_KEY;
-  if (!apiKey || !secret) return { success: false, error: "Chưa cấu hình API Key" };
-
-  try {
-    const ts = Date.now().toString();
-    const body: Record<string, any> = {
-      symbol: params.symbol,
-      side: params.side,
-      type: params.type,
-      vol: params.vol,
-      openType: params.openType ?? 1,
-    };
-    if (params.price !== undefined) body.price = params.price;
-    if (params.leverage !== undefined) body.leverage = params.leverage;
-
-    const bodyStr = JSON.stringify(body);
-    const sign = crypto.createHmac("sha256", secret).update(apiKey + ts + bodyStr).digest("hex");
-
-    const res = await fetch("https://contract.mexc.com/api/v1/private/order/submit", {
-      method: "POST",
-      headers: {
-        ApiKey: apiKey,
-        "Request-Time": ts,
-        Signature: sign,
-        "Content-Type": "application/json",
-      },
-      body: bodyStr,
-    });
-
-    const data = await res.json();
-    if (data.success && data.data) {
-      return { success: true, orderId: String(data.data) };
-    }
-    return { success: false, error: data.message || `Mã lỗi ${data.code}` };
-  } catch (err: any) {
-    return { success: false, error: err.message };
-  }
+  // 🔒 KHÓA TỬ THỦ (HARD KILL SWITCH): Tuyệt đối không cho phép bất kỳ lệnh nào bắn lên sàn!
+  console.log("[MEXC LIVE BLOCKED] Tính năng tự động vào lệnh đã bị khóa hoàn toàn:", params.symbol);
+  return { success: false, error: "TÍNH NĂNG TỰ ĐỘNG VÀO LỆNH ĐÃ BỊ TẮT HOÀN TOÀN THEO YÊU CẦU CỦA VICTOR" };
 }
 
 /**
