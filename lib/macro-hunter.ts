@@ -257,17 +257,26 @@ export function detectMacroHunterSignal(
       const touchedZone = last15.h >= rz.bottom - 0.4 * atr15 && last15.l <= rz.top + 0.4 * atr15;
       if (!touchedZone) continue;
 
+      // 🛡️ LỌC NẾN RÁC: Biên độ nến 15m kích hoạt (Range) phải đạt tối thiểu >= 0.55%
+      const candleRangePct = (rng15 / last15.l) * 100;
+      if (candleRangePct < 0.55) continue;
+
+      // 🛡️ BẮT BUỘC QUY CHUẨN PRICE ACTION:
+      // Muốn Short đảo chiều thì NẾN 15M BẮT BUỘC PHẢI ĐÓNG ĐỎ (last15.c < last15.o)!
+      // Tuyệt đối CẤM SHORT khi nến vẫn kết thúc màu XANH (phe mua vẫn đang rướn)
+      const isRedCandle = last15.c < last15.o;
+      if (!isRedCandle) continue;
+
       // Nhận diện nến từ chối (Rejection Candlestick):
-      // 1. Shooting Star / Bearish Pinbar: Râu trên dài >= 50% biên độ nến
+      // 1. Shooting Star / Bearish Pinbar: Râu trên dài >= 45% biên độ nến
       const upperWick = last15.h - Math.max(last15.o, last15.c);
-      const isPinbarRejection = upperWick >= 0.50 * rng15;
+      const isPinbarRejection = upperWick >= 0.45 * rng15;
 
       // 2. Bearish Engulfing: Nến đỏ thân đặc phủ nhận hoàn toàn nến xanh trước đó
       const isEngulfing =
-        last15.c < last15.o &&
         prev15.c > prev15.o &&
         last15.c <= prev15.o &&
-        (last15.o - last15.c) >= 0.55 * rng15;
+        (last15.o - last15.c) >= 0.50 * rng15;
 
       // Volume xác nhận lực bán >= 1.25x
       const isVolConfirmed = volRatio >= 1.25;
