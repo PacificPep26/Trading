@@ -14,16 +14,11 @@ import {
   getMexcOpenStopOrders,
 } from "./mexc";
 import { analyseBtcSentinel } from "./btc-sentinel";
-import { analyse, restingLimit, ictSweepShort } from "./patterns";
 import { candles, ticker, funding, type Candle } from "./okx";
-import { isSwingSetupOk } from "./trading-policy";
-import { openSwing, stepSwing } from "./swing-4h";
-import { addLimit, stepLimits } from "./resting-limit";
 import { loadWatches, saveWatches, evaluateWatches, addWatch } from "./price-watch";
 import { US_EVENTS, newsMessages } from "./us-events";
-import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
-import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand, extractMacro4HContext } from "./candle-vision";
+import { analyzeCandleVision, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, extractMacro4HContext } from "./candle-vision";
 import { detectMacroHunterSignal, type HunterSignal } from "./macro-hunter";
 import { detectDarvasSignal, type DarvasSignal } from "./darvas-box";
 import { openPaperTrade, stepPaperTrades, isSessionPrime } from "./auto-paper-trader";
@@ -38,13 +33,14 @@ export const COINS = [
 const H = 3_600_000;
 // data/ là Railway volume → chống trùng và sổ paper sống qua redeploy
 const DEDUP_FILE = path.join(process.cwd(), "data", "telegram-sent.json");
+export const DARVAS_PAPER = path.join(process.cwd(), "data", "paper-darvas.json");
+export const HUNTER_PAPER = path.join(process.cwd(), "data", "paper-hunter.json");
 export const ICT_PAPER = path.join(process.cwd(), "data", "paper-ict.json");
-// 4 kèo SO Trading: chủ dự án chọn báo cả 4 kèm số backtest (chỉ "hồi đỉnh cũ" đạt chuẩn) — mỗi kèo 1 sổ paper
-export const soPaper = (k: SoKind) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 export const HIGHTEST_PAPER = path.join(process.cwd(), "data", "paper-hightest.json");
 export const HIGHTEST_15M_PAPER = path.join(process.cwd(), "data", "paper-hightest-15m.json");
 export const ST_PAPER = path.join(process.cwd(), "data", "paper-st.json");
 export const IDM_PAPER = path.join(process.cwd(), "data", "paper-idm.json");
+export const soPaper = (k: string) => path.join(process.cwd(), "data", `paper-so-${k}.json`);
 
 function loadSent(): string[] {
   try {
@@ -411,8 +407,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           const bars15m = raw15m.filter((c) => c.closed);
           if (bars15m.length < 35) continue;
 
-          stepLimits(coin, bars15m, HIGHTEST_15M_PAPER); // paper chạy ngầm, không spam tin huỷ/khớp lên chat
-
           // 🧪 CẬP NHẬT TRẠNG THÁI KHỚP TP/SL CHO PAPER AUTO-TRADER
           const paperCloseMsgs = stepPaperTrades(coin, bars15m);
           for (const pmsg of paperCloseMsgs) {
@@ -565,7 +559,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               const sbKey = `SB15:${coin}:${sb15.side}:${sb15.barTime}`;
               if (!sent.has(sbKey)) {
                 sent.add(sbKey);
-                addLimit(coin, { side: sb15.side, level: sb15.entry, limit: sb15.entry, stop: sb15.stop, tp: sb15.tp, atr: 0, barTime: sb15.barTime, market: true }, HIGHTEST_15M_PAPER);
 
                 const { alertMsg: paperAutoMsg } = openPaperTrade({
                   coin,
@@ -611,7 +604,6 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             const bounceKey = `BOUNCE15:${coin}:${bounce15.barTime}`;
             if (!sent.has(bounceKey)) {
               sent.add(bounceKey);
-              addLimit(coin, { side: 1, level: bounce15.entry, limit: bounce15.entry, stop: bounce15.stop, tp: bounce15.tp, atr: 0, barTime: bounce15.barTime, market: true }, HIGHTEST_15M_PAPER);
 
               const { alertMsg: paperMsg } = openPaperTrade({
                 coin,
@@ -643,192 +635,13 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
         }
       }
 
+      // Giữ chu kỳ nến 4H và 1H để cập nhật trạng thái nếu cần
       if (after4h) {
-        const bars4h = await candles(`${coin}-USDT-SWAP`, "4H", 300);
-        stepSwing(coin, bars4h); // 📊 chỉ paper im lặng
-        stepLimits(coin, bars4h, HIGHTEST_PAPER); // paper im lặng
-        stepSwing(coin, bars4h, ST_PAPER); // paper im lặng
-
-        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
-          const own = await dailyTrend(coin);
-          const vision4h = analyzeCandleVision(bars4h);
-
-          // 🔨 nến high test (Jason Graystone) → lệnh chờ phá râu, 3 nến 4H, TP 2R
-          for (const g of highTestSetup(bars4h)) {
-            if (g.side > 0 && !allowLong) continue;
-            if (g.side < 0 && !allowShort) continue;
-            if (own !== 0 && g.side !== own) continue;
-
-            // 👁️ BỘ MẮT ĐỌC NẾN 4H:
-            if (g.side < 0 && !vision4h.isValidShortCandle) continue;
-            if (g.side > 0 && !vision4h.isValidLongCandle) continue;
-            const key = `HT:${coin}:${g.side}:${g.barTime}`;
-            if (sent.has(key)) continue;
-            sent.add(key);
-            addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 4 * H }, HIGHTEST_PAPER);
-
-            const lastB = bars4h.at(-1);
-            const r4 = lastB ? lastB.h - lastB.l : 1;
-            const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
-            const rsScore = r4 > 0 ? (rebound / r4) * 100 : 50;
-
-            const candleSum4h = formatCandleSummary("4H", bars4h, vision4h);
-            digest.push({
-              rank: 0,
-              coin,
-              side: g.side,
-              rsScore,
-              entry: g.trigger,
-              stop: g.stop,
-              tp: g.tp,
-              text: planText(g.side, coin, "🔨 High test 4H", g.trigger, g.stop, g.tp, candleSum4h),
-            });
-          }
-          // 📈 Supertrend 4H đổi màu (Wysetrade) → vào ngay, không TP, SL dời theo dải
-          const st = stFlipSetup(bars4h);
-          if (st && !sent.has(`ST:${coin}:${st.barTime}`)) {
-            if ((st.side > 0 && allowLong) || (st.side < 0 && allowShort)) {
-              sent.add(`ST:${coin}:${st.barTime}`);
-              if (openSwing(coin, { side: st.side, entry: st.entry, stop: st.stop, entryTime: st.barTime + 4 * H, trail: "st" }, ST_PAPER))
-                digest.push({
-                  rank: 0,
-                  coin,
-                  side: st.side,
-                  rsScore: 75,
-                  entry: st.entry,
-                  stop: st.stop,
-                  text: planText(st.side, coin, "📈 Supertrend 4H", st.entry, st.stop),
-                });
-            }
-          }
-          const a4 = analyse(bars4h);
-          const live = (await ticker(`${coin}-USDT-SWAP`).catch(() => null))?.last;
-          const fundingRate = (await funding(`${coin}-USDT-SWAP`).catch(() => null))?.rate;
-          for (const s of a4.setups) {
-            const key = `4H:${coin}:${s.side}:${a4.lastBarTime}`;
-            if (sent.has(key) || !isSwingSetupOk(s, { ownDaily: own, btcDaily, lastBarTime: a4.lastBarTime, now, btc1h, fundingRate, livePrice: live })) continue;
-            sent.add(key);
-            const entry = live ?? s.entry;
-            openSwing(coin, { side: s.side, entry, stop: s.stop, entryTime: a4.lastBarTime + 4 * H });
-          }
-        }
+        // Đã dọn dẹp các kèo 4H cũ (Supertrend, High Test) để tập trung 100% vào Macro Hunter & Darvas Box
       }
 
       if (after1h) {
-        // 1H: 300 nến cho kèo SO Trading; 📌 và 🎯 dùng 100 nến cuối như backtest (ICT cần trọn ngày hôm qua, có khi cả hôm kia)
-        const bars300 = await candles(`${coin}-USDT-SWAP`, "1H", 300);
-        const bars1h = bars300.slice(-100);
-        stepLimits(coin, bars1h); // 📌 chỉ paper im lặng
-        stepLimits(coin, bars1h, ICT_PAPER); // paper im lặng
-        stepLimits(coin, bars1h, soPaper("pullback")); // paper im lặng
-        stepLimits(coin, bars1h, IDM_PAPER); // paper im lặng
-
-        if (!isHeld && coin !== "BTC" && coin !== "ETH") {
-          const own = await dailyTrend(coin);
-          const vision1h = analyzeCandleVision(bars1h);
-          // 🧲 TradingLab: đỉnh/đáy B là mồi nhử (chỉ chạy paper ngầm, không spam tin Telegram vì cạnh mỏng)
-          for (const g of inducementSetup(bars300)) {
-            if (g.side > 0 && !allowLong) continue;
-            if (g.side < 0 && !allowShort) continue;
-            if (own !== 0 && g.side !== own) continue;
-            const curP = bars1h.at(-1)?.c;
-            if (curP && Math.abs(g.limit - curP) / curP > 0.025) continue;
-
-            const key = `IDM:${coin}:${g.side}:${g.barTime}`;
-            if (sent.has(key)) continue;
-            sent.add(key);
-            addLimit(coin, { side: g.side, level: g.limit, limit: g.limit, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime }, IDM_PAPER, true);
-          }
-          // Kèo SO Trading: chỉ giữ 🔁 Hồi đỉnh cũ (đạt chuẩn)
-          for (const so of soSetups(bars300).filter((s) => s.kind === "pullback")) {
-            if (so.side > 0 && !allowLong) continue;
-            if (so.side < 0 && !allowShort) continue;
-            if (own !== 0 && so.side !== own) continue; // CẤM ĐÁNH NGƯỢC TREND NGÀY CỦA COIN
-            // 🚫 BỘ LỌC VÙNG LƠ LỬNG: Nếu giá đang trôi ở giữa không người (No Man's Land) -> ĐỨNG NGOÀI
-            if (isPriceInNoMansLand(bars1h)) continue;
-
-            // 👁️ MẮT ĐỌC NẾN 1H:
-            if (so.side < 0 && !vision1h.isValidShortCandle) continue;
-            if (so.side > 0 && !vision1h.isValidLongCandle) continue;
-            const key = `SO:${so.kind}:${coin}:${so.side}:${so.barTime}`;
-            if (sent.has(key)) continue;
-            sent.add(key);
-            addLimit(coin, { side: so.side, level: so.entry, limit: so.entry, stop: so.stop, tp: so.tp, atr: 0, barTime: so.barTime, market: !so.limit }, soPaper(so.kind));
-            const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
-            digest.push({
-              rank: 3,
-              coin,
-              side: so.side,
-              rsScore: 60,
-              entry: so.entry,
-              stop: so.stop,
-              tp: so.tp,
-              text: planText(so.side, coin, "🔁 Hồi đỉnh cũ", so.entry, so.stop, so.tp, candleSum1h, so.tp1),
-            });
-          }
-
-          // 📦 Mô hình Nén Hộp Bùng Nổ Khung Lớn 1H (HTF VPA Real Breakout - Ep 7 & 8)
-          const ab1h = detectHtfBreakout(bars1h);
-          if (ab1h) {
-            const isLongOk = ab1h.side > 0 && allowLong && own >= 0;
-            const isShortOk = ab1h.side < 0 && allowShort && own <= 0;
-            if (isLongOk || isShortOk) {
-              const abKey = `AB1H:${coin}:${ab1h.side}:${ab1h.barTime}`;
-              if (!sent.has(abKey)) {
-                sent.add(abKey);
-                addLimit(coin, { side: ab1h.side, level: ab1h.entry, limit: ab1h.entry, stop: ab1h.stop, tp: ab1h.tp, atr: 0, barTime: ab1h.barTime, market: true }, HIGHTEST_15M_PAPER);
-                const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
-                digest.push({
-                  rank: 1,
-                  coin,
-                  side: ab1h.side,
-                  rsScore: 85, // 1H VPA Breakout nổ Vol >= 1.8x
-                  entry: ab1h.entry,
-                  stop: ab1h.stop,
-                  tp: ab1h.tp,
-                  text: planText(
-                    ab1h.side,
-                    coin,
-                    ab1h.side > 0 ? "📦 1H nổ Vol phá đỉnh hộp" : "📦 1H xả Vol thủng đáy hộp",
-                    ab1h.entry,
-                    ab1h.stop,
-                    ab1h.tp,
-                    candleSum1h
-                  ),
-                });
-              }
-            }
-          }
-
-          // 🎯 ICT quét đỉnh hôm qua → ChoCh → Sell Limit giữa FVG, TP đáy hôm qua
-          const ict = ictSweepShort(bars1h);
-          const ictKey = ict && `ICT:${coin}:${ict.barTime}`;
-          if (ict && ictKey && !sent.has(ictKey)) {
-            if (allowShort) {
-              sent.add(ictKey);
-              addLimit(coin, ict, ICT_PAPER);
-              const candleSum1h = formatCandleSummary("1H", bars1h, vision1h);
-              digest.push({
-                rank: 1,
-                coin,
-                side: -1,
-                rsScore: 70,
-                entry: ict.limit,
-                stop: ict.stop,
-                tp: ict.tp,
-                text: planText(-1, coin, "🎯 ICT FVG Limit", ict.limit, ict.stop, ict.tp, candleSum1h),
-              });
-              markAlerted(coin, -1);
-            }
-          }
-
-          // 📌 Limit dưới đáy 1H: CHỈ PAPER
-          const rl = own > 0 ? restingLimit(bars1h, 1) : null;
-          if (rl && !sent.has(`RL:${coin}:${rl.barTime}`)) {
-            sent.add(`RL:${coin}:${rl.barTime}`);
-            addLimit(coin, rl, undefined, true);
-          }
-        }
+        // Đã dọn dẹp các kèo 1H cũ (SO pullback, ICT sweep) để tránh báo lệnh rườm rà
       }
     } catch (e) {
       console.error(`[SCAN] ${coin}:`, e);

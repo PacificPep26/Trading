@@ -38,3 +38,4 @@
    - Khi nến hồi test giữ vững giá trên đỉnh hộp cũ -> Vào lệnh theo chiếc hộp mới (Hộp bậc thang cao hơn).
    - **Stop Loss:** Dưới đỉnh hộp cũ (`boxHigh - 0.3%`).
    - **Take Profit:** Chiều cao của hộp mới tương đương biên độ hộp cũ ($TP = Entry + BoxHeight$).
+
