@@ -24,6 +24,7 @@ import { US_EVENTS, newsMessages } from "./us-events";
 import { soSetups, SO_LABEL, highTestSetup, stFlipSetup, inducementSetup, type SoKind } from "./so-setups";
 import { generateCandleChartPng } from "./chart-generator";
 import { analyzeCandleVision, detectHtfBreakout, detect15mShelfBreakout, detect15mSupportBounce, formatCandleSummary, detectAnticipatingBox, isPriceInNoMansLand, extractMacro4HContext } from "./candle-vision";
+import { detectMacroHunterSignal, type HunterSignal } from "./macro-hunter";
 import { openPaperTrade, stepPaperTrades, isSessionPrime } from "./auto-paper-trader";
 
 export { f };
@@ -314,6 +315,8 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
     entry?: number;
     stop?: number;
     tp?: number;
+    isMacroReversal?: boolean;
+    rrRatio?: number;
   };
   const digest: DigestItem[] = [];
 
@@ -628,6 +631,115 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               });
             }
           }
+
+          // 🏛️ SĂN THANH KHOẢN 2 CHIỀU TẠI CẢN LỚN 4H & FVG (MACRO HUNTER MATRIX)
+          const bars1h = await candles(`${coin}-USDT-SWAP`, "1H", 60).catch(() => []);
+          const isBtcPump = btc15m.length >= 3 && btc15m.slice(-3).every(b => b.c > b.o && (b.c - b.o) > 100);
+          const hunterSig = detectMacroHunterSignal(coin, bars15m, bars4h, bars1h, {
+            allowShort,
+            allowLong,
+            isBtcStrongPump: isBtcPump,
+          });
+
+          if (hunterSig) {
+            const hKey = `HUNTER:${coin}:${hunterSig.kind}:${hunterSig.barTime}`;
+            if (!sent.has(hKey)) {
+              sent.add(hKey);
+
+              // 🧪 PAPER TRADER
+              const { alertMsg: paperHMsg } = openPaperTrade({
+                coin,
+                side: hunterSig.side,
+                entry: hunterSig.entry,
+                stop: hunterSig.stop,
+                tp: hunterSig.tp,
+                tp1: hunterSig.tp1,
+                tp2: hunterSig.tp,
+                note: hunterSig.note,
+              });
+              if (paperHMsg) await say(paperHMsg);
+
+              // 🚀 LIVE TRADING MEXC
+              if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true") {
+                try {
+                  const currentPositions = await getMexcOpenPositions();
+                  if (currentPositions.length < 3 && !currentPositions.some((p) => p.coin === coin)) {
+                    const vol = await calculateMexcVolForMargin(`${coin}_USDT`, hunterSig.entry, 10.0, 10);
+                    const liveOrder = await submitMexcOrder({
+                      symbol: `${coin}_USDT`,
+                      side: hunterSig.side > 0 ? 1 : 3,
+                      type: 5,
+                      vol,
+                      openType: 1,
+                      leverage: 10,
+                    });
+                    if (liveOrder.success) {
+                      await new Promise((r) => setTimeout(r, 800));
+                      const newPositions = await getMexcOpenPositions();
+                      const createdPos = newPositions.find((p) => p.coin === coin);
+                      let stopNote = "";
+                      if (createdPos && createdPos.positionId) {
+                        const sl = hunterSig.stop;
+                        const tp = hunterSig.tp1 ?? hunterSig.tp;
+                        const stopRes = await setMexcPositionStop({
+                          positionId: createdPos.positionId,
+                          symbol: `${coin}_USDT`,
+                          stopLossPrice: sl,
+                          takeProfitPrice: tp,
+                          vol: createdPos.vol,
+                        });
+                        if (stopRes.success) {
+                          stopNote = `\n🎯 *[TP/SL SÀN ĐÃ KÍCH HOẠT]*: TP ${f(tp)} · SL ${f(sl)}`;
+                        } else {
+                          stopNote = `\n⚠️ *[LỖI GẮN TP/SL SÀN]*: ${stopRes.error}`;
+                        }
+                      }
+
+                      await say(
+                        `🏛️ *[MEXC LIVE: HUNTER SETUPS TẠI CẢN LỚN]*\n\n` +
+                        `• Vị thế: *${hunterSig.side > 0 ? "🟢 LONG" : "🔴 SHORT"} ${coin}* (x10 Isolated)\n` +
+                        `• Khối lượng: *${vol} hợp đồng* (~$10 ký quỹ thật)\n` +
+                        `• Mã lệnh sàn: \`${liveOrder.orderId}\`\n` +
+                        `• Setup: *${hunterSig.note}*\n` +
+                        `• TP1: *${f(hunterSig.tp1)}* | TP2: *${f(hunterSig.tp)}* | SL: *${f(hunterSig.stop)}*` +
+                        stopNote
+                      );
+                    } else {
+                      await say(`⚠️ *[MEXC LIVE LỖI ĐẶT LỆNH]*: ${liveOrder.error}`);
+                    }
+                  }
+                } catch (e) {
+                  console.error("[MEXC LIVE HUNTER ERROR]", e);
+                }
+              }
+
+              digest.push({
+                rank: 0, // Ưu tiên hàng đầu
+                coin,
+                side: hunterSig.side,
+                rsScore: 98,
+                entry: hunterSig.entry,
+                stop: hunterSig.stop,
+                tp: hunterSig.tp,
+                isMacroReversal: true,
+                rrRatio: hunterSig.rrRatio,
+                text: planText(
+                  hunterSig.side,
+                  coin,
+                  hunterSig.kind === "REJECTION_SHORT"
+                    ? "🎯 Săn Đảo Chiều Short tại Cản 4H/FVG"
+                    : hunterSig.kind === "RETEST_LONG"
+                    ? "🚀 Săn Retest Long sau phá cản"
+                    : "🟢 Săn Đáy Hỗ Trợ 4H/FVG",
+                  hunterSig.entry,
+                  hunterSig.stop,
+                  hunterSig.tp,
+                  candleSum15m,
+                  hunterSig.tp1
+                ),
+              });
+            }
+          }
         }
       }
 
@@ -824,12 +936,15 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   }
 
   // 🛡️ LỌC BẪY TƯƠNG QUAN ĐỒNG LOẠT (CORRELATED PORTFOLIO RISK):
-  // Altcoin mỗi chiều chỉ giữ lại TOP 2 coin có Sức mạnh tương đối (RS) cao nhất
-  const longAltcoins = digest.filter((d) => d.side > 0).sort((a, b) => b.rsScore - a.rsScore);
-  const shortAltcoins = digest.filter((d) => d.side < 0).sort((a, b) => b.rsScore - a.rsScore);
+  // 1. Phân loại Hunter Reversal Signals (có cờ isMacroReversal) vs Standard Setups
+  const hunterLongs = digest.filter((d) => d.side > 0 && d.isMacroReversal).sort((a, b) => (b.rrRatio || 0) - (a.rrRatio || 0));
+  const stdLongs = digest.filter((d) => d.side > 0 && !d.isMacroReversal).sort((a, b) => b.rsScore - a.rsScore);
+  const topLongs = [...hunterLongs, ...stdLongs].slice(0, 2);
 
-  const topLongs = longAltcoins.slice(0, 2);
-  const topShorts = shortAltcoins.slice(0, 2);
+  // 2. Short: Cho phép Hunter Reversal Short bypass RS, nhưng khống chế tối đa 2 kèo Short đẹp nhất
+  const hunterShorts = digest.filter((d) => d.side < 0 && d.isMacroReversal).sort((a, b) => (b.rrRatio || 0) - (a.rrRatio || 0));
+  const stdShorts = digest.filter((d) => d.side < 0 && !d.isMacroReversal).sort((a, b) => a.rsScore - b.rsScore);
+  const topShorts = [...hunterShorts, ...stdShorts].slice(0, 2);
 
   const finalDigest = [...topLongs, ...topShorts].sort((a, b) => a.rank - b.rank);
 
