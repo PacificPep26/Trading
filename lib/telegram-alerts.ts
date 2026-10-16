@@ -186,7 +186,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
   const heldCoins = new Set(mexcPositions.map((p) => p.coin));
   const heldLongCount = mexcPositions.filter((p) => p.side === 1).length;
   const heldShortCount = mexcPositions.filter((p) => p.side === -1).length;
-  const MAX_CONCURRENT_POSITIONS = 2; // Tối đa 2 vị thế cùng chiều trên toàn tài khoản để tránh bẫy tương quan đồng loạt
+  const MAX_CONCURRENT_POSITIONS = 3; // Tối đa 3 vị thế trên toàn tài khoản theo yêu cầu của Victor
 
   // Theo dõi giá chủ tài khoản đặt qua Telegram ("theo dõi SUI 1.041 1.029 1.085 btc 82750")
   const rawWatches = loadWatches();
@@ -467,7 +467,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true") {
                   try {
                     const currentPositions = await getMexcOpenPositions();
-                    if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
+                    if (currentPositions.length < 3 && !currentPositions.some((p) => p.coin === coin)) {
                       const vol = await calculateMexcVolForMargin(`${coin}_USDT`, sb15.entry, 10.0, 10);
                       const liveOrder = await submitMexcOrder({
                         symbol: `${coin}_USDT`,
@@ -563,7 +563,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               if (process.env.MEXC_LIVE_TRADING === "true" && process.env.MEXC_DRY_RUN !== "true") {
                 try {
                   const currentPositions = await getMexcOpenPositions();
-                  if (currentPositions.length < 2 && !currentPositions.some((p) => p.coin === coin)) {
+                  if (currentPositions.length < 3 && !currentPositions.some((p) => p.coin === coin)) {
                     const vol = await calculateMexcVolForMargin(`${coin}_USDT`, bounce15.entry, 10.0, 10);
                     const liveOrder = await submitMexcOrder({
                       symbol: `${coin}_USDT`,
