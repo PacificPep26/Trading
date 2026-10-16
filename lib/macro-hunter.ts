@@ -159,7 +159,7 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
     const top = cs[i - 2].l;
     const bottom = cs[i].h;
     if (top > bottom && (top - bottom) / bottom >= 0.004) {
-      // Kiểm tra xem đã bị lấp hoàn toàn (mitigated) chưa:
+      // Kiểm tra xem đã bị lấp (mitigated) chưa:
       // Trong SMC/ICT, nếu giá sau đó đã thò lên quá 50% FVG (hoặc đóng nến vượt qua bottom)
       // thì FVG đó đã được hấp thụ/mitigated, không còn giá trị chặn đảo chiều nữa!
       const later = cs.slice(i + 1);
@@ -187,6 +187,9 @@ export function extractMacroZones(candles4h: Candle[], currentPrice: number): Ma
     const top = cs[i].l;
     const bottom = cs[i - 2].h;
     if (top > bottom && (top - bottom) / bottom >= 0.004) {
+      // Kiểm tra xem đã bị lấp (mitigated) chưa:
+      // Nếu giá sau đó đã thò xuống chạm quá 50% FVG (hoặc đóng nến dưới đỉnh FVG)
+      // thì vùng cầu này đã được test/hấp thụ xong, không còn là vùng tươi mới
       const later = cs.slice(i + 1);
       const fvgMid = (top + bottom) / 2;
       const isMitigated = later.some((b) => b.l <= fvgMid || b.c <= top);
@@ -296,7 +299,7 @@ export function detectMacroHunterSignal(
       // Volume xác nhận lực bán
       const isVolConfirmed = isVolumeCrossingZone;
 
-      // 🛡️ BẮT BUỘC QUY CHUẨN CẮT NỀN / PHỦ NHẬN LỰC TĂNG:
+      // 🛡️ BẮT BUỘC QUY CHUẨN CẮT NỀN / PHỦ NHẬN LỰC TĂNG (LOCAL CONFIRMATION):
       // "Chưa cắt nền gì mà sao lại Short?":
       // Đúng theo Price Action: Nến 15m từ chối tại cản phải đóng nến đỏ (last15.c < last15.o)
       // VÀ phải đóng cửa dưới giá đóng cửa nến trước (last15.c < prev15.c) để xác nhận đảo chiều,
