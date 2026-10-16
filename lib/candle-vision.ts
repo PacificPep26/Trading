@@ -474,14 +474,26 @@ export type SupportBounceSetup = {
  * 🎯 SĂN ĐÁY HỖ TRỢ / S/R FLIP RETEST (KÈO SĂN RÚT CHÂN PHIÊN Á / SÁNG SỚM)
  * Nhận diện Altcoin hồi về hỗ trợ sau đợt tăng, rút chân nến búa hoặc đóng nến xanh giữ đáy.
  */
-export function detect15mSupportBounce(rawCandles15m: Candle[]): SupportBounceSetup | null {
+export function detect15mSupportBounce(
+  rawCandles15m: Candle[],
+  macro4h?: Macro4HContext
+): SupportBounceSetup | null {
   const cs = rawCandles15m.filter((c) => c.closed !== false);
   const n = cs.length;
   if (n < 45) return null;
 
+  // 🛡️ BẮT BUỘC TOP-DOWN 4H: Chỉ bắt đáy rút chân nếu giá đang chạm vào Vùng Hỗ Trợ Đáy 7D hoặc Bullish FVG 4H
+  if (!macro4h) return null;
   const last = cs[n - 1];
   const rng = last.h - last.l;
   if (rng <= 0) return null;
+
+  const touches7dLow = Math.abs(last.l - macro4h.low7d) / macro4h.low7d <= 0.012;
+  const touchesBullFvg = macro4h.nearestBullishFvg
+    ? last.l <= macro4h.nearestBullishFvg.top * 1.008 && last.h >= macro4h.nearestBullishFvg.bottom * 0.992
+    : false;
+
+  if (!touches7dLow && !touchesBullFvg) return null; // Không ở vùng hỗ trợ lớn 4H -> ĐỨNG NGOÀI!
 
   const recentLookback = cs.slice(Math.max(0, n - 41), n - 1);
   const recentHigh = Math.max(...recentLookback.map((b) => b.h));
@@ -489,20 +501,18 @@ export function detect15mSupportBounce(rawCandles15m: Candle[]): SupportBounceSe
   if (pullbackPct < 0.03) return null; // Đã chiết khấu ít nhất 3% từ đỉnh
 
   const lowerWick = Math.min(last.o, last.c) - last.l;
-  const isHammerOrGreen = (lowerWick >= 0.30 * rng) || (last.c > last.o && last.c > cs[n - 2].c);
+  // Bắt buộc nến xanh và râu dưới rút chân tối thiểu 40% biên độ
+  const isHammerOrGreen = last.c > last.o && (lowerWick >= 0.40 * rng || (last.c - last.o) >= 0.50 * rng);
   if (!isHammerOrGreen) return null;
 
   const localLowLookback = cs.slice(Math.max(0, n - 9), n - 1);
   const localSwingLow = Math.min(...localLowLookback.map((b) => b.l));
 
-  // Yêu cầu nến hiện tại đóng xanh và giá thấp nhất chạm/quét vùng swing low
-  if (last.c < last.o) return null;
-  if (last.l > localSwingLow * 1.004) return null;
-
   const entry = last.c;
-  const stop = Math.min(localSwingLow, last.l) - 0.002 * last.l;
+  const supportRef = touches7dLow ? macro4h.low7d : macro4h.nearestBullishFvg!.bottom;
+  const stop = Math.min(supportRef, last.l) - 0.002 * last.l;
   const risk = (entry - stop) / entry;
-  if (risk < 0.004 || risk > 0.025) return null;
+  if (risk < 0.004 || risk > 0.035) return null;
 
   const tp1 = entry + 1.4 * (entry - stop);
   const tp2 = recentHigh;

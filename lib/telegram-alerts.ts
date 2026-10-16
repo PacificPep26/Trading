@@ -554,7 +554,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           // -------------------------------------------------------------------------
           // --- SETUP 3: SUPPORT BOUNCE ---
           // -------------------------------------------------------------------------
-          const bounce15 = detect15mSupportBounce(bars15m);
+          const bounce15 = detect15mSupportBounce(bars15m, macro4h);
           // Hỗ trợ rút chân: Cho phép đánh nếu hệ thống cho Long và coin có sức mạnh tương đối không quá yếu
           if (bounce15 && allowLong && (ownDaily >= 0 || alphaVsBtc >= -2.0)) {
             const bounceKey = `BOUNCE15:${coin}:${bounce15.barTime}`;
