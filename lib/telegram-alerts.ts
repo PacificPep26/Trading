@@ -501,7 +501,8 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
           // -------------------------------------------------------------------------
           const darvasSig = detectDarvasSignal(coin, bars15m, {
             allowLong: btcSentinel.allowLong && heldLongCount < MAX_CONCURRENT_POSITIONS,
-            isBtcStrongPump: isBtcPump,
+            allowShort: btcSentinel.allowShort && heldShortCount < MAX_CONCURRENT_POSITIONS && !isBtcPump && !isExtremeBull,
+            isBtcStrongPump: isBtcPump || !btcSentinel.allowShort,
           });
 
           if (darvasSig) {
@@ -511,7 +512,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
 
               const { alertMsg: paperDMsg } = openPaperTrade({
                 coin,
-                side: 1,
+                side: darvasSig.side,
                 entry: darvasSig.entry,
                 stop: darvasSig.stop,
                 tp: darvasSig.tp,
@@ -524,7 +525,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
               digest.push({
                 rank: 0, // Ưu tiên số 1 ngang hàng Macro Hunter
                 coin,
-                side: 1,
+                side: darvasSig.side,
                 rsScore: 97,
                 entry: darvasSig.entry,
                 stop: darvasSig.stop,
@@ -541,11 +542,13 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
                 },
                 rrRatio: darvasSig.rrRatio,
                 text: planText(
-                  1,
+                  darvasSig.side,
                   coin,
                   darvasSig.kind === "DARVAS_2ND_BOUNCE"
                     ? "📦 Săn Đáy Hộp Darvas Lần 2 (Rút Chân)"
-                    : "🚀 Bứt Phá Hộp Darvas (Retest)",
+                    : darvasSig.kind === "DARVAS_BREAKOUT"
+                    ? "🚀 Bứt Phá Hộp Darvas (Retest)"
+                    : "🩸 Thủng Đáy Hộp Darvas (Short Retest)",
                   darvasSig.entry,
                   darvasSig.stop,
                   darvasSig.tp,

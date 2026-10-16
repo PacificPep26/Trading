@@ -69,3 +69,4 @@ const chartBuf = await generateCandleChartPng({
 const outPath = "C:/Users/HP/.gemini/antigravity/brain/b41f11af-1e9c-4f79-b5d6-13d28014757c/darvas_box_simulation.png";
 fs.writeFileSync(outPath, chartBuf);
 console.log(`\n🎉 ĐÃ XUẤT ẢNH BIỂU ĐỒ MINH HỌA TẠI: ${outPath}`);
+
