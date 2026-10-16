@@ -441,14 +441,16 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             : 0;
           const isBtcPump = (lastBtc ? ((lastBtc.c - lastBtc.o) / lastBtc.o) * 100 > 0.6 : false) || btc3BarsGain > 1.2;
 
-          // 🛡️ BẢO VỆ CHỐNG CHẶN ĐẦU XE LỬA: CẤM SHORT những đồng coin đang có dòng tiền Fomo cực đại (Alpha vs BTC > +12%)
+          // 🛡️ BẢO VỆ CHỐNG CHẶN ĐẦU XE LỬA:
+          // 1. Nếu BTC đang trong xu hướng Tăng / vừa phá cản (btcSentinel.allowShort === false) -> CẤM ĐÁNH SHORT TOÀN DIỆN!
+          // 2. CẤM SHORT những đồng coin đang có dòng tiền Fomo cực đại (Alpha vs BTC > +12%)
           const isExtremeBull = alphaVsBtc > 12.0;
 
           const hunterSig = detectMacroHunterSignal(coin, bars15m, bars4h, bars1h, {
-            // Hunter Reversal tại cản lớn được phép đánh Short nếu chưa kẹt vị thế, BTC không giật pump VÀ coin không phải là siêu sóng dẫn đầu
-            allowShort: heldShortCount < MAX_CONCURRENT_POSITIONS && !isBtcPump && !isExtremeBull,
-            allowLong: heldLongCount < MAX_CONCURRENT_POSITIONS,
-            isBtcStrongPump: isBtcPump,
+            // Hunter Reversal tại cản lớn BẮT BUỘC tuân thủ La Bàn BTC (btcSentinel.allowShort)
+            allowShort: btcSentinel.allowShort && heldShortCount < MAX_CONCURRENT_POSITIONS && !isBtcPump && !isExtremeBull,
+            allowLong: btcSentinel.allowLong && heldLongCount < MAX_CONCURRENT_POSITIONS,
+            isBtcStrongPump: isBtcPump || !btcSentinel.allowShort,
           });
 
           if (hunterSig) {

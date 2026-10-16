@@ -114,12 +114,12 @@ export async function generateCandleChartPng(params: {
     height = 580,
   } = params;
 
-  // Lấy 36 nến gần nhất để nến to, rõ thân và râu
+  // Lấy 60 nến gần nhất (15 giờ trên M15) để bao quát toàn bộ cấu trúc nền và bối cảnh thị trường
   const closed = rawCandles.filter((c) => c.closed !== false);
   const n = closed.length;
   if (n < 15) return null;
 
-  const displayCount = Math.min(36, n);
+  const displayCount = Math.min(60, n);
   const candles = closed.slice(-displayCount);
   const ind = calculateSeriesIndicators(closed);
 
