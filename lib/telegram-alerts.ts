@@ -32,6 +32,7 @@ export { f };
 export const COINS = [
   "BTC", "ETH", "SOL", "HYPE", "XRP", "BNB", "ADA", "AVAX", "LINK",
   "DOT", "LTC", "SUI", "ARB", "OP", "NEAR", "APT", "INJ", "TIA", "ZEC",
+  "SEI", "FET", "RENDER", "TAO", "WIF", "PEPE", "FLOKI", "PENDLE", "ENA", "UNI", "AAVE"
 ];
 const H = 3_600_000;
 // data/ là Railway volume → chống trùng và sổ paper sống qua redeploy
