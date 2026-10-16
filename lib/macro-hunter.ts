@@ -261,11 +261,22 @@ export function detectMacroHunterSignal(
       const candleRangePct = (rng15 / last15.l) * 100;
       if (candleRangePct < 0.55) continue;
 
-      // 🛡️ BẮT BUỘC QUY CHUẨN PRICE ACTION:
-      // Muốn Short đảo chiều thì NẾN 15M BẮT BUỘC PHẢI ĐÓNG ĐỎ (last15.c < last15.o)!
+      // 🛡️ BẮT BUỘC QUY CHUẨN PRICE ACTION & VOLUME TẠI VÙNG (VPA Ep 7-9):
+      // 1. Muốn Short đảo chiều thì NẾN 15M BẮT BUỘC PHẢI ĐÓNG ĐỎ (last15.c < last15.o)!
       // Tuyệt đối CẤM SHORT khi nến vẫn kết thúc màu XANH (phe mua vẫn đang rướn)
       const isRedCandle = last15.c < last15.o;
       if (!isRedCandle) continue;
+
+      // 2. Volume Crossing Check: Xác nhận Volume cắt qua vùng (Volume Expansion)
+      // Khối lượng tại nến từ chối hoặc nến đâm cản trước đó phải bùng nổ vượt trội (>= 1.3x SMA20)
+      const prevVolRatio = avgVol > 0 ? (prev15.v || 0) / avgVol : 1;
+      const isVolumeCrossingZone = volRatio >= 1.3 || (prevVolRatio >= 1.5 && volRatio >= 1.0);
+      if (!isVolumeCrossingZone) continue;
+
+      // 3. Chống bẫy Churning / Climax Buying: Nếu Volume quá khủng (> 2.5x) mà thân nến đỏ quá bé (< 25% range)
+      // tức là lực mua hấp thụ (Absorption) vẫn đang nuốt hàng -> chưa Short ngay!
+      const redBodyPct = ((last15.o - last15.c) / rng15) * 100;
+      if (volRatio >= 2.5 && redBodyPct < 25) continue;
 
       // Nhận diện nến từ chối (Rejection Candlestick):
       // 1. Shooting Star / Bearish Pinbar: Râu trên dài >= 45% biên độ nến
@@ -278,8 +289,8 @@ export function detectMacroHunterSignal(
         last15.c <= prev15.o &&
         (last15.o - last15.c) >= 0.50 * rng15;
 
-      // Volume xác nhận lực bán >= 1.25x
-      const isVolConfirmed = volRatio >= 1.25;
+      // Volume xác nhận lực bán
+      const isVolConfirmed = isVolumeCrossingZone;
 
       if ((isPinbarRejection || isEngulfing) && isVolConfirmed) {
         // Giá đóng cửa phải rút về dưới đỉnh cản rz.top
