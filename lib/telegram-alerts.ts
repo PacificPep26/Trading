@@ -588,51 +588,7 @@ export async function scanAndAlert(forceAll = false): Promise<string[]> {
             }
           }
 
-          // -------------------------------------------------------------------------
-          // --- SETUP 4: HIGH TEST SWING 15M ---
-          // -------------------------------------------------------------------------
-          for (const g of highTestSetup(bars15m, "swing")) {
-            if (g.side > 0 && !allowLong) continue;
-            if (g.side < 0 && !allowShort) continue;
-            if (ownDaily !== 0 && g.side !== ownDaily) continue;
-
-            if (g.side < 0 && !vision15m.isValidShortCandle) continue;
-            if (g.side > 0 && !vision15m.isValidLongCandle) continue;
-
-            const key = `HT15:${coin}:${g.side}:${g.barTime}`;
-            if (sent.has(key)) continue;
-            sent.add(key);
-            addLimit(coin, { side: g.side, level: g.trigger, limit: g.trigger, stop: g.stop, tp: g.tp, atr: 0, barTime: g.barTime, stopEntry: true, barMs: 15 * 60_000 }, HIGHTEST_15M_PAPER);
-
-            const { alertMsg: paperAutoMsg } = openPaperTrade({
-              coin,
-              side: g.side,
-              entry: g.trigger,
-              stop: g.stop,
-              tp: g.tp,
-              note: "🔨 High test 15m từ chối râu",
-            });
-            if (paperAutoMsg) await say(paperAutoMsg);
-
-            const lastB = bars15m.at(-1);
-            const r15 = lastB ? lastB.h - lastB.l : 1;
-            const rebound = lastB ? (g.side > 0 ? (lastB.c - lastB.l) : (lastB.h - lastB.c)) : 0;
-            const candleReboundPct = r15 > 0 ? (rebound / r15) * 100 : 50;
-            const rsScore = g.side > 0
-              ? 50 + alphaVsBtc * 2.5 + candleReboundPct * 0.3
-              : 50 - alphaVsBtc * 2.5 + candleReboundPct * 0.3;
-
-            digest.push({
-              rank: 3,
-              coin,
-              side: g.side,
-              rsScore,
-              entry: g.trigger,
-              stop: g.stop,
-              tp: g.tp,
-              text: planText(g.side, coin, `🔨 High test phá râu`, g.trigger, g.stop, g.tp, candleSum15m),
-            });
-          }
+          // Setup 4: High test 15m đã được tắt hoàn toàn để tránh mua đuổi nến đỏ/vol yếu (như APT lúc 17:01)
         }
       }
 
