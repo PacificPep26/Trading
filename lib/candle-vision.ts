@@ -3,6 +3,7 @@ import type { Candle } from "./okx";
 export type CandleVision = {
   isBullishMomentum: boolean; // 1-2 nến gần nhất là nến xanh xung lực lớn (bơm mạnh)
   isBearishMomentum: boolean; // 1-2 nến gần nhất là nến đỏ xung lực lớn (xả mạnh)
+  warningNote?: string; // Cảnh báo bẫy tâm lý / hành vi (mua đuổi đỉnh nến, quét râu, v.v.)
   lastCandle: {
     isGreen: boolean;
     isRed: boolean;
@@ -108,9 +109,22 @@ export function analyzeCandleVision(rawCandles: Candle[]): CandleVision {
   // - Muốn Long: Nến phải đóng xanh HOẶC có râu dưới rút chân rõ ràng (lowerWickPct >= 50%)
   const isValidLongCandle = !isBearishMomentum && !isMarubozuBearish && (isGreen || lowerWickPct >= 50);
 
+  // 5. Cảnh báo hành vi & bẫy cá mập (Đúc kết từ chuỗi Video Price Action & Yin TP Trade):
+  let warningNote: string | undefined = undefined;
+  if (isGreen && upperWickPct >= 40 && bodyPct >= 30) {
+    warningNote = "⚠️ Bẫy mua đuổi đỉnh nến (FOMO Trap) - Râu trên dài";
+  } else if (isRed && lowerWickPct >= 40 && bodyPct >= 30) {
+    warningNote = "⚠️ Bẫy bán tháo đáy nến - Rút chân gom hàng ngầm";
+  } else if (isBullishMomentum && isMarubozuBullish) {
+    warningNote = "🚀 Xung lực tăng mạnh - CẤM CHẶN ĐẦU SHORT";
+  } else if (isBearishMomentum && isMarubozuBearish) {
+    warningNote = "🩸 Xung lực xả mạnh - CẤM BẮT ĐÁY LONG";
+  }
+
   return {
     isBullishMomentum,
     isBearishMomentum,
+    warningNote,
     lastCandle: {
       isGreen,
       isRed,
@@ -150,7 +164,9 @@ export function formatCandleSummary(tf: string, cs: Candle[], vision: CandleVisi
     ? `Râu dưới ${vision.lastCandle.lowerWickPct.toFixed(0)}%`
     : `Râu trên ${vision.lastCandle.upperWickPct.toFixed(0)}%`;
 
-  return `${tf} [${timeStr}]: ${color} (${body} · ${wick}${volRatio ? ` · ${volRatio}` : ""})`;
+  const warning = vision.warningNote ? `\n⚠️ ${vision.warningNote}` : "";
+
+  return `${tf} [${timeStr}]: ${color} (${body} · ${wick}${volRatio ? ` · ${volRatio}` : ""})${warning}`;
 }
 
 /**
