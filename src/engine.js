@@ -106,9 +106,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const curM15CloseTime = currentM15.ts + M15_MS;
 
   // QUY TẮC ĐỘ TƯƠI MỚI (FRESHNESS):
-  // Tín hiệu xác nhận M15 chỉ có giá trị trong vòng 1-4 nến M15 (1 giờ) ngay sau khi nến H4 đóng!
+  // Chấp nhận ngay từ thời điểm nến H4 vừa đóng (bar 0) cho đến tối đa 4 nến M15 (1 giờ sau khi H4 đóng)
   const barsSinceH4Close = Math.round((curM15CloseTime - lastH4CloseTime) / M15_MS);
-  if (barsSinceH4Close < 1 || barsSinceH4Close > 4) {
+  if (barsSinceH4Close < 0 || barsSinceH4Close > 4) {
     return null;
   }
 

@@ -335,9 +335,9 @@ export async function runScanCycle() {
     const symbol = instId.replace('-SWAP', '');
 
     try {
-      // Tải nến H4, H1, M15
+      // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15
       const [candlesH4, candlesH1, candlesM15] = await Promise.all([
-        fetchOkxCandles(instId, '4H', 50),
+        fetchOkxCandles(instId, '4H', 100),
         fetchOkxCandles(instId, '1H', 30),
         fetchOkxCandles(instId, '15m', 30)
       ]);
