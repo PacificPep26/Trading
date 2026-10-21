@@ -35,7 +35,7 @@ const CONFIG = {
   topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
   pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
   okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
-  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,LINK-USDT,SOL-USDT,WLD-USDT,SUI-USDT')
+  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,LINK-USDT,SOL-USDT')
     .split(',')
     .map(s => s.trim().toUpperCase())
 };

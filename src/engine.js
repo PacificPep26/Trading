@@ -25,7 +25,8 @@ export const DEFAULT_CONFIG = {
   beBufferRate: 0.0008,     // Đệm phí hòa vốn (0.08%)
   timeStopBars: 48,         // 48 nến M15 (12 tiếng)
   wickRatioThreshold: 0.35,
-  atrBufferMultiplier: 0.25
+  atrBufferMultiplier: 0.25,
+  maxSlDistanceRate: 0.025  // SMC No-Chasing Rule: Không vào nếu giá đã trôi xa cản SMC > 2.5%
 };
 
 const H4_MS = 4 * 60 * 60 * 1000;
@@ -171,6 +172,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
           const entry = currentM15.close;
           const stopLoss = lastH4.low - (config.atrBufferMultiplier * atrH1);
 
+          // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đáy cản kỹ thuật
+          const slDistanceRate = Math.abs(entry - stopLoss) / entry;
+          if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
+            continue;
+          }
+
           // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
           if (isNgocTrend) {
             const rrToEma34 = (ema34 - entry) / (entry - stopLoss);
@@ -239,6 +246,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
         if (isM15Red && isM15Breakdown) {
           const entry = currentM15.close;
           const stopLoss = lastH4.high + (config.atrBufferMultiplier * atrH1);
+
+          // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đỉnh cản kỹ thuật
+          const slDistanceRate = Math.abs(entry - stopLoss) / entry;
+          if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
+            continue;
+          }
 
           // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
           if (isNgocTrend) {
