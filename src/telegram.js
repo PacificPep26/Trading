@@ -66,18 +66,18 @@ ${icon} <b>${dirText} 10X: ${signal.symbol}</b>
 }
 
 /**
- * Thông báo khi vị thế đạt +1.5R và tự động Dời SL về Hòa vốn
+ * Thông báo khi vị thế đạt +1.5R và tự động Kéo SL lên khóa +1.0R
  * @param {object} position
  * @param {number} newSL
  */
 export async function notifyBreakevenTriggered(position, newSL) {
   const msg = `
-🛡️ <b>KÍCH HOẠT DỜI HÒA VỐN (+1.5R): ${position.symbol}</b>
+🔒 <b>KÍCH HOẠT KHÓA LỢI NHUẬN (+1.5R ➔ SL +1.0R): ${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 📈 Lợi nhuận tạm tính đã chạm mốc <b>+1.5R</b>!
-🔒 <b>Hành động:</b> Đã tự động dời Stop Loss về <code>${newSL}</code> (Đệm phí sàn 0.08%).
-💎 <b>Trạng thái:</b> <b>GIỮ NGUYÊN 100% VỊ THẾ</b> để gồng tới Take Profit: <code>${position.takeProfit}</code>.
-✨ Vị thế hiện tại đã an toàn tuyệt đối (Risk-Free)!
+🔒 <b>Hành động:</b> Đã kéo Stop Loss lên mức <b>DƯƠNG +1.0R</b> (<code>${newSL}</code>) để khóa chắc 1R lợi nhuận!
+💎 <b>Trạng thái:</b> <b>GIỮ NGUYÊN 100% VỊ THẾ</b> để gồng tiếp tới Take Profit: <code>${position.takeProfit}</code>.
+✨ Dù thị trường quay đầu, bạn chắc chắn vẫn bỏ túi +1.0R lợi nhuận!
 `.trim();
 
   await sendTelegramMessage(msg);
@@ -104,7 +104,7 @@ export async function notifyTakeProfit(position, exitPrice, pnlR, netPnlUsd) {
 }
 
 /**
- * Thông báo Dừng Lỗ hoặc Chạm Hòa vốn
+ * Thông báo Dừng Lỗ hoặc Chốt Lời Khóa Lợi Nhuận
  * @param {object} position
  * @param {number} exitPrice
  * @param {number} pnlR
@@ -112,7 +112,9 @@ export async function notifyTakeProfit(position, exitPrice, pnlR, netPnlUsd) {
  * @param {boolean} isBE
  */
 export async function notifyStopLoss(position, exitPrice, pnlR, netPnlUsd, isBE = false) {
-  const title = isBE ? '🛡️ THOÁT VỊ THẾ HÒA VỐN (BE HIT)' : '🛑 CẮT LỖ (STOP LOSS HIT)';
+  const title = isBE
+    ? (pnlR > 0.5 ? '🎯 CHỐT LỜI KHÓA LỢI NHUẬN (+1.0R HIT)' : '🛡️ THOÁT VỊ THẾ HÒA VỐN (BE HIT)')
+    : '🛑 CẮT LỖ (STOP LOSS HIT)';
   const msg = `
 ${title}: <b>${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━

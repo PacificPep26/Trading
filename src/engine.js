@@ -21,7 +21,8 @@ export const DEFAULT_CONFIG = {
   leverage: 10,
   feeRate: 0.0008,          // 0.08% Taker roundtrip
   minRR: 2.0,
-  beTriggerR: 1.5,
+  beTriggerR: 1.5,          // Mốc kích hoạt kéo SL (+1.5R)
+  lockProfitR: 1.0,         // Kéo SL lên dương +1.0R (khóa chắc 1R lợi nhuận, gồng tới 2R)
   beBufferRate: 0.0008,     // Đệm phí hòa vốn (0.08%)
   timeStopBars: 16,         // 16 nến M15 (4 tiếng)
   wickRatioThreshold: 0.35,

@@ -56,7 +56,7 @@ Tài liệu này quy định các nguyên tắc thiết kế bất biến và k�
 - **Kỷ luật Fixed 1R:**
   - Ký quỹ tính theo công thức: $\text{Size} = \frac{\text{Risk USD}}{|\text{Entry} - \text{SL}|}$.
   - Đòn bẩy tài khoản: Isolated 10X.
-  - Trailing Break-Even: Tự động dời SL về hòa vốn (+0.08% đệm phí) ngay khi giá chạm $+1.5R$.
+  - Trailing Khóa Lợi Nhuận: Tự động kéo SL lên mức DƯƠNG +1.0R ngay khi giá chạm +1.5R, gồng tiếp 100% vị thế tới Take Profit (>= 2.0R). Dù thị trường đảo chiều vẫn bảo đảm bỏ túi +1.0R.
 
 ---
 

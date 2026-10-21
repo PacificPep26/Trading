@@ -30,6 +30,7 @@ const CONFIG = {
   feeRate: parseFloat(process.env.FEE_RATE || '0.0008'),
   minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
   beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.5'),
+  lockProfitR: parseFloat(process.env.LOCK_PROFIT_R || '1.0'), // Kéo SL lên dương +1.0R khi đạt +1.5R, gồng tới 2R
   timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
   minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'), // Chặn triệt để coin giá 0.xx (< 1.0 USDT)
   maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
@@ -219,19 +220,21 @@ export async function updateOpenPositions(instId, candleOrPrice) {
   const elapsedMs = Date.now() - (pos.openedAt || Date.now());
   pos.currentBarsM15 = Math.floor(elapsedMs / (15 * 60 * 1000));
 
-  // 1. Kiểm tra kích hoạt Dời Stop Loss về Hòa vốn (+1.5R) dựa trên giá thuận lợi nhất (Wick-level)
+  // 1. Kiểm tra kích hoạt Dời Stop Loss khóa lợi nhuận (+1.5R -> Kéo SL lên +1.0R, gồng tới 2.0R)
   const favorablePrice = isLong ? highPrice : lowPrice;
   const curMaxR = riskDist > 0
     ? (isLong ? (favorablePrice - pos.entry) : (pos.entry - favorablePrice)) / riskDist
     : 0;
 
-  if (!pos.isBreakevenMoved && curMaxR >= CONFIG.beTriggerR) {
+  if (!pos.isProfitLocked && curMaxR >= CONFIG.beTriggerR) {
+    pos.isProfitLocked = true;
     pos.isBreakevenMoved = true;
+    const lockR = CONFIG.lockProfitR !== undefined ? CONFIG.lockProfitR : 1.0;
     const newSL = isLong
-      ? pos.entry * (1 + CONFIG.beBufferRate)
-      : pos.entry * (1 - CONFIG.beBufferRate);
+      ? pos.entry + (lockR * riskDist)
+      : pos.entry - (lockR * riskDist);
     pos.stopLoss = parseFloat(newSL.toFixed(4));
-    console.log(`[PROTECTION] ${pos.symbol} đạt +${curMaxR.toFixed(2)}R -> Dời SL về Hòa vốn: ${pos.stopLoss}`);
+    console.log(`[PROFIT LOCK] ${pos.symbol} đạt +${curMaxR.toFixed(2)}R -> Kéo SL lên khóa +${lockR}R: ${pos.stopLoss} (Gồng tới TP ${pos.takeProfit})`);
     await notifyBreakevenTriggered(pos, pos.stopLoss);
     savePositions();
   }
@@ -246,10 +249,11 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     const grossPnl = pnlPrice * pos.sizing.size;
     const fee = pos.sizing.notional * CONFIG.feeRate;
     const netPnl = grossPnl - fee;
-    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : (pos.isBreakevenMoved ? 0 : -1);
+    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : (pos.isProfitLocked ? (CONFIG.lockProfitR || 1.0) : -1);
 
-    console.log(`[STOP LOSS] ${pos.symbol} closed at ${pos.stopLoss} (${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
-    await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isBreakevenMoved);
+    const logPrefix = pos.isProfitLocked ? `[LOCKED PROFIT HIT]` : `[STOP LOSS]`;
+    console.log(`${logPrefix} ${pos.symbol} closed at ${pos.stopLoss} (${finalR >= 0 ? '+' : ''}${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
+    await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isProfitLocked);
     activePositions.splice(posIndex, 1);
     savePositions();
     return;

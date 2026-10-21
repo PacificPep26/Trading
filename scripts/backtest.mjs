@@ -68,17 +68,18 @@ async function backtestSymbol(instId, btcH1Candles) {
       const isLong = activeTrade.direction === 'LONG';
       const riskDist = Math.abs(activeTrade.entry - activeTrade.initialStopLoss);
 
-      // Trailing Break-Even: Lợi nhuận chạm +1.5R -> Dời SL về hòa vốn (+0.08% phí)
+      // Trailing Khóa Lợi Nhuận: Khi chạm +1.5R -> Kéo SL lên dương +1.0R (khóa 1R, gồng tới 2R)
       const favorablePrice = isLong ? currentM15.high : currentM15.low;
       const curMaxR = isLong
         ? (favorablePrice - activeTrade.entry) / riskDist
         : (activeTrade.entry - favorablePrice) / riskDist;
 
-      if (!activeTrade.isBreakevenMoved && curMaxR >= CONFIG.beTriggerR) {
-        activeTrade.isBreakevenMoved = true;
+      if (!activeTrade.isProfitLocked && curMaxR >= CONFIG.beTriggerR) {
+        activeTrade.isProfitLocked = true;
+        const lockR = CONFIG.lockProfitR !== undefined ? CONFIG.lockProfitR : 1.0;
         activeTrade.stopLoss = isLong
-          ? activeTrade.entry * (1 + CONFIG.beBufferRate)
-          : activeTrade.entry * (1 - CONFIG.beBufferRate);
+          ? activeTrade.entry + (lockR * riskDist)
+          : activeTrade.entry - (lockR * riskDist);
       }
 
       // Kiểm tra chạm SL và TP
@@ -93,13 +94,13 @@ async function backtestSymbol(instId, btcH1Candles) {
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
         const fee = activeTrade.sizing.notional * CONFIG.feeRate;
         const netPnl = grossPnl - fee;
-        const netR = activeTrade.isBreakevenMoved ? 0 : -1;
+        const netR = activeTrade.isProfitLocked ? (CONFIG.lockProfitR || 1.0) : -1;
 
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
-          outcome: activeTrade.isBreakevenMoved ? 'BE' : 'SL',
+          outcome: activeTrade.isProfitLocked ? 'LOCK_+1R' : 'SL',
           netR,
           netUsd: netPnl
         });
@@ -163,6 +164,7 @@ function calculateMetrics(trades) {
     return {
       totalTrades: 0,
       wins: 0,
+      locks: 0,
       be: 0,
       losses: 0,
       winRate: '0.0%',
@@ -173,10 +175,11 @@ function calculateMetrics(trades) {
   }
 
   const wins = trades.filter(t => t.outcome === 'TP');
+  const locks = trades.filter(t => t.outcome === 'LOCK_+1R');
   const be = trades.filter(t => t.outcome === 'BE');
   const losses = trades.filter(t => t.outcome === 'SL');
 
-  const winRate = ((wins.length / trades.length) * 100).toFixed(1) + '%';
+  const winRate = (((wins.length + locks.length) / trades.length) * 100).toFixed(1) + '%';
   const grossProfit = trades.filter(t => t.netUsd > 0).reduce((acc, t) => acc + t.netUsd, 0);
   const grossLoss = Math.abs(trades.filter(t => t.netUsd < 0).reduce((acc, t) => acc + t.netUsd, 0));
   const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : (grossProfit > 0 ? 'INF' : '0.00');
@@ -187,6 +190,7 @@ function calculateMetrics(trades) {
   return {
     totalTrades: trades.length,
     wins: wins.length,
+    locks: locks.length,
     be: be.length,
     losses: losses.length,
     winRate,
@@ -236,7 +240,7 @@ async function runBacktest() {
   allTrades.forEach(t => {
     const timeStr = new Date(t.entryTime).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
     const stratShort = t.strategy.replace('_LONG', '').replace('_SHORT', '');
-    const resIcon = t.outcome === 'TP' ? '🎯 TP' : (t.outcome === 'BE' ? '🛡️ BE' : '🛑 SL');
+    const resIcon = t.outcome === 'TP' ? '🎯 TP' : (t.outcome === 'LOCK_+1R' ? '🔒 +1R' : (t.outcome === 'BE' ? '🛡️ BE' : '🛑 SL'));
     console.log(
       timeStr.padEnd(20) +
       t.symbol.padEnd(10) +
