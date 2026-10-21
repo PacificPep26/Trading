@@ -1,0 +1,26 @@
+{
+  "name": "crypto-futures-quant-bot",
+  "version": "1.0.0",
+  "description": "Crypto Futures Quant Bot (H4/M15 Swing & Liquidity)",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node scripts/check.mjs",
+    "backtest": "node scripts/backtest.mjs"
+  },
+  "keywords": [
+    "crypto",
+    "futures",
+    "trading-bot",
+    "liquidity-sweep",
+    "quant",
+    "okx"
+  ],
+  "author": "Victor Quant",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
+

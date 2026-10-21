@@ -1,0 +1,153 @@
+/**
+ * TELEGRAM.JS
+ * Module định dạng và phát thông báo Telegram thời gian thực.
+ * Hỗ trợ chế độ Fallback in log trực quan ra Console khi chưa có Token.
+ */
+
+import dotenv from 'dotenv';
+dotenv.config();
+
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+/**
+ * Gửi tin nhắn thô qua Telegram Bot API
+ * @param {string} text - Nội dung tin nhắn (hỗ trợ HTML)
+ * @returns {Promise<boolean>}
+ */
+export async function sendTelegramMessage(text) {
+  if (!BOT_TOKEN || !CHAT_ID) {
+    console.log('\n[TELEGRAM CONSOLE LOG] -----------------------------');
+    console.log(text.replace(/<[^>]*>?/gm, '')); // Strip HTML tags
+    console.log('----------------------------------------------------\n');
+    return false;
+  }
+
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true
+      })
+    });
+    const data = await res.json();
+    return data.ok;
+  } catch (err) {
+    console.error('Lỗi gửi Telegram:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Thông báo khi phát hiện Tín hiệu vào lệnh mới
+ * @param {object} signal
+ */
+export async function notifyNewSignal(signal) {
+  const isLong = signal.direction === 'LONG';
+  const icon = isLong ? '🟢' : '🔴';
+  const dirText = isLong ? 'MUA (LONG)' : 'BÁN (SHORT)';
+
+  const msg = `
+${icon} <b>TÍN HIỆU ĐỊNH LƯỢNG MỚI: ${signal.symbol}</b>
+━━━━━━━━━━━━━━━━━━━━
+📊 <b>Chiến lược:</b> <code>${signal.strategy}</code>
+🎯 <b>Hướng lệnh:</b> <b>${dirText}</b> (Isolated 10X)
+💵 <b>Giá Vào (Entry):</b> <code>${signal.entry}</code>
+🛑 <b>Dừng Lỗ (SL):</b> <code>${signal.stopLoss}</code>
+🎯 <b>Chốt Lời (TP):</b> <code>${signal.takeProfit}</code>
+⚖️ <b>Tỷ lệ R:R:</b> <b>1:${signal.riskReward}</b>
+
+💼 <b>QUẢN TRỊ VỐN (1R = ${signal.sizing?.riskPerUnit ? (signal.sizing.size * signal.sizing.riskPerUnit).toFixed(1) : '10'} USDT):</b>
+• Khối lượng (Size): <code>${signal.sizing?.size.toFixed(4)}</code> coin
+• Giá trị vị thế: <code>$${signal.sizing?.notional.toFixed(1)}</code>
+• Ký quỹ (Margin 10X): <code>$${signal.sizing?.margin.toFixed(1)}</code>
+
+📝 <b>Lý do Cấu trúc:</b> ${signal.reason}
+⏰ <b>Thời gian:</b> ${new Date(signal.triggerTime || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
+/**
+ * Thông báo khi vị thế đạt +1.5R và tự động Dời SL về Hòa vốn
+ * @param {object} position
+ * @param {number} newSL
+ */
+export async function notifyBreakevenTriggered(position, newSL) {
+  const msg = `
+🛡️ <b>KÍCH HOẠT DỜI HÒA VỐN (+1.5R): ${position.symbol}</b>
+━━━━━━━━━━━━━━━━━━━━
+📈 Lợi nhuận tạm tính đã chạm mốc <b>+1.5R</b>!
+🔒 <b>Hành động:</b> Đã tự động dời Stop Loss về <code>${newSL}</code> (Đệm phí sàn 0.08%).
+💎 <b>Trạng thái:</b> <b>GIỮ NGUYÊN 100% VỊ THẾ</b> để gồng tới Take Profit: <code>${position.takeProfit}</code>.
+✨ Vị thế hiện tại đã an toàn tuyệt đối (Risk-Free)!
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
+/**
+ * Thông báo Chốt Lời Toàn Bộ (Take Profit 100%)
+ * @param {object} position
+ * @param {number} exitPrice
+ * @param {number} pnlR
+ * @param {number} netPnlUsd
+ */
+export async function notifyTakeProfit(position, exitPrice, pnlR, netPnlUsd) {
+  const msg = `
+🎯 <b>CHỐT LỜI THÀNH CÔNG (TP HIT): ${position.symbol}</b>
+━━━━━━━━━━━━━━━━━━━━
+🚀 <b>Đóng 100% vị thế tại TP:</b> <code>${exitPrice}</code>
+💰 <b>Lợi nhuận đạt:</b> <b>+${pnlR.toFixed(2)}R</b>
+💵 <b>Thực nhận (sau phí Taker):</b> <b>+$${netPnlUsd.toFixed(2)} USDT</b>
+⏰ <b>Thời gian đóng:</b> ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
+/**
+ * Thông báo Dừng Lỗ hoặc Chạm Hòa vốn
+ * @param {object} position
+ * @param {number} exitPrice
+ * @param {number} pnlR
+ * @param {number} netPnlUsd
+ * @param {boolean} isBE
+ */
+export async function notifyStopLoss(position, exitPrice, pnlR, netPnlUsd, isBE = false) {
+  const title = isBE ? '🛡️ THOÁT VỊ THẾ HÒA VỐN (BE HIT)' : '🛑 CẮT LỖ (STOP LOSS HIT)';
+  const msg = `
+${title}: <b>${position.symbol}</b>
+━━━━━━━━━━━━━━━━━━━━
+📉 <b>Giá khớp thoát:</b> <code>${exitPrice}</code>
+📊 <b>Kết quả PnL:</b> ${pnlR >= 0 ? '+' : ''}${pnlR.toFixed(2)}R ($${netPnlUsd.toFixed(2)} USDT)
+📌 Kỷ luật 1R bảo vệ an toàn tối đa cho tài khoản!
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
+/**
+ * Thông báo Time-Stop (Đóng lệnh sau 16 nến M15 lình xình)
+ * @param {object} position
+ * @param {number} exitPrice
+ * @param {number} netPnlUsd
+ */
+export async function notifyTimeStop(position, exitPrice, netPnlUsd) {
+  const msg = `
+⏱️ <b>KÍCH HOẠT TIME-STOP (16 NẾN M15 / 4 TIẾNG): ${position.symbol}</b>
+━━━━━━━━━━━━━━━━━━━━
+⚠️ Sau 4 giờ dao động đi ngang trong biên độ hẹp, hệ thống chủ động đóng lệnh tại <code>${exitPrice}</code>.
+💵 <b>PnL ròng:</b> $${netPnlUsd.toFixed(2)} USDT
+🔄 Thu hồi vốn để dồn cho các cơ hội cấu trúc sắc nét hơn!
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
