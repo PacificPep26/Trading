@@ -136,7 +136,8 @@ export async function fetchOkxCandles(instId, bar = '4H', limit = 100) {
       high: parseFloat(c[2]),
       low: parseFloat(c[3]),
       close: parseFloat(c[4]),
-      vol: parseFloat(c[5])
+      vol: parseFloat(c[5]),
+      confirm: c[8] !== undefined ? parseInt(c[8], 10) : 1
     })).reverse(); // Đảo lại theo thứ tự thời gian tăng dần (cũ -> mới)
   } catch (err) {
     console.error(`[API] Lỗi fetch nến ${instId} (${bar}):`, err.message);
@@ -174,9 +175,9 @@ export async function fetchTopVolumeCoins(limit = 30) {
 /**
  * Quản lý và cập nhật các vị thế đang mở
  * @param {string} instId 
- * @param {number} currentPrice 
+ * @param {number|object} candleOrPrice 
  */
-async function updateOpenPositions(instId, currentPrice) {
+export async function updateOpenPositions(instId, candleOrPrice) {
   const posIndex = activePositions.findIndex(p => p.instId === instId);
   if (posIndex === -1) return;
 
@@ -184,47 +185,50 @@ async function updateOpenPositions(instId, currentPrice) {
   const isLong = pos.direction === 'LONG';
   const riskDist = Math.abs(pos.entry - pos.initialStopLoss);
 
-  // Tính P&L hiện tại theo R
+  const candle = (typeof candleOrPrice === 'object' && candleOrPrice !== null)
+    ? candleOrPrice
+    : { close: candleOrPrice, high: candleOrPrice, low: candleOrPrice };
+
+  const currentPrice = candle.close;
+  const highPrice = candle.high !== undefined ? candle.high : currentPrice;
+  const lowPrice = candle.low !== undefined ? candle.low : currentPrice;
+
+  // Tính P&L hiện tại theo R (theo giá đóng hiện tại)
   const rawPnlPrice = isLong ? (currentPrice - pos.entry) : (pos.entry - currentPrice);
   const currentR = riskDist > 0 ? (rawPnlPrice / riskDist) : 0;
-  pos.currentBarsM15 = (pos.currentBarsM15 || 0) + 1;
 
-  // 1. Kiểm tra kích hoạt Dời Stop Loss về Hòa vốn (+1.5R)
-  if (!pos.isBreakevenMoved && currentR >= CONFIG.beTriggerR) {
+  // Tính chính xác số nến M15 (15 phút) đã trôi qua kể từ khi mở vị thế
+  const elapsedMs = Date.now() - (pos.openedAt || Date.now());
+  pos.currentBarsM15 = Math.floor(elapsedMs / (15 * 60 * 1000));
+
+  // 1. Kiểm tra kích hoạt Dời Stop Loss về Hòa vốn (+1.5R) dựa trên giá thuận lợi nhất (Wick-level)
+  const favorablePrice = isLong ? highPrice : lowPrice;
+  const curMaxR = riskDist > 0
+    ? (isLong ? (favorablePrice - pos.entry) : (pos.entry - favorablePrice)) / riskDist
+    : 0;
+
+  if (!pos.isBreakevenMoved && curMaxR >= CONFIG.beTriggerR) {
     pos.isBreakevenMoved = true;
     const newSL = isLong
       ? pos.entry * (1 + CONFIG.beBufferRate)
       : pos.entry * (1 - CONFIG.beBufferRate);
     pos.stopLoss = parseFloat(newSL.toFixed(4));
-    console.log(`[PROTECTION] ${pos.symbol} đạt +${currentR.toFixed(2)}R -> Dời SL về Hòa vốn: ${pos.stopLoss}`);
+    console.log(`[PROTECTION] ${pos.symbol} đạt +${curMaxR.toFixed(2)}R -> Dời SL về Hòa vốn: ${pos.stopLoss}`);
     await notifyBreakevenTriggered(pos, pos.stopLoss);
     savePositions();
   }
 
-  // 2. Kiểm tra Chốt lời (Take Profit 100%)
-  const isTakeProfitHit = isLong ? (currentPrice >= pos.takeProfit) : (currentPrice <= pos.takeProfit);
-  if (isTakeProfitHit) {
-    const pnlPrice = isLong ? (pos.takeProfit - pos.entry) : (pos.entry - pos.takeProfit);
-    const grossPnl = pnlPrice * pos.sizing.size;
-    const fee = pos.sizing.notional * CONFIG.feeRate;
-    const netPnl = grossPnl - fee;
-    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : 0;
+  // 2. Kiểm tra Dừng lỗ hoặc Chốt lời (Wick-level)
+  // Nguyên tắc bảo toàn: Nếu cùng 1 nến râu giật quét cả SL và TP -> Ưu tiên xử lý SL trước (chống ảo tưởng lợi nhuận)
+  const isStopLossHit = isLong ? (lowPrice <= pos.stopLoss) : (highPrice >= pos.stopLoss);
+  const isTakeProfitHit = isLong ? (highPrice >= pos.takeProfit) : (lowPrice <= pos.takeProfit);
 
-    console.log(`[TAKE PROFIT] ${pos.symbol} 100% closed at ${pos.takeProfit} (+${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
-    await notifyTakeProfit(pos, pos.takeProfit, finalR, netPnl);
-    activePositions.splice(posIndex, 1);
-    savePositions();
-    return;
-  }
-
-  // 3. Kiểm tra Dừng lỗ hoặc chạm Hòa vốn (Stop Loss Hit)
-  const isStopLossHit = isLong ? (currentPrice <= pos.stopLoss) : (currentPrice >= pos.stopLoss);
   if (isStopLossHit) {
     const pnlPrice = isLong ? (pos.stopLoss - pos.entry) : (pos.entry - pos.stopLoss);
     const grossPnl = pnlPrice * pos.sizing.size;
     const fee = pos.sizing.notional * CONFIG.feeRate;
     const netPnl = grossPnl - fee;
-    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : 0;
+    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : (pos.isBreakevenMoved ? 0 : -1);
 
     console.log(`[STOP LOSS] ${pos.symbol} closed at ${pos.stopLoss} (${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
     await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isBreakevenMoved);
@@ -233,14 +237,28 @@ async function updateOpenPositions(instId, currentPrice) {
     return;
   }
 
-  // 4. Kiểm tra Time-Stop (16 nến M15 = 4 tiếng lình xình)
+  if (isTakeProfitHit) {
+    const pnlPrice = isLong ? (pos.takeProfit - pos.entry) : (pos.entry - pos.takeProfit);
+    const grossPnl = pnlPrice * pos.sizing.size;
+    const fee = pos.sizing.notional * CONFIG.feeRate;
+    const netPnl = grossPnl - fee;
+    const finalR = riskDist > 0 ? (pnlPrice / riskDist) : pos.riskReward;
+
+    console.log(`[TAKE PROFIT] ${pos.symbol} 100% closed at ${pos.takeProfit} (+${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
+    await notifyTakeProfit(pos, pos.takeProfit, finalR, netPnl);
+    activePositions.splice(posIndex, 1);
+    savePositions();
+    return;
+  }
+
+  // 3. Kiểm tra Time-Stop (16 nến M15 = 4 tiếng lình xình đi ngang +-0.3R)
   if (pos.currentBarsM15 >= CONFIG.timeStopBars && Math.abs(currentR) <= 0.3) {
     const pnlPrice = isLong ? (currentPrice - pos.entry) : (pos.entry - currentPrice);
     const grossPnl = pnlPrice * pos.sizing.size;
     const fee = pos.sizing.notional * CONFIG.feeRate;
     const netPnl = grossPnl - fee;
 
-    console.log(`[TIME-STOP] ${pos.symbol} lình xình sau 16 nến -> Đóng tại ${currentPrice}`);
+    console.log(`[TIME-STOP] ${pos.symbol} lình xình sau ${pos.currentBarsM15} nến M15 -> Đóng tại ${currentPrice}`);
     await notifyTimeStop(pos, currentPrice, netPnl);
     activePositions.splice(posIndex, 1);
     savePositions();
@@ -267,10 +285,11 @@ export async function runScanCycle() {
       try {
         const candles = await fetchOkxCandles(pos.instId, '15m', 5);
         if (candles && candles.length > 0) {
-          const curPrice = candles[candles.length - 1].close;
+          const curCandle = candles[candles.length - 1];
+          const curPrice = curCandle.close;
           const pnlR = (pos.direction === 'LONG' ? (curPrice - pos.entry) : (pos.entry - curPrice)) / Math.abs(pos.entry - pos.initialStopLoss);
           console.log(`  • ${pos.symbol} ${pos.direction} (Entry: ${pos.entry}, Hiện tại: ${curPrice}, PnL: ${pnlR.toFixed(2)}R, SL: ${pos.stopLoss}, TP: ${pos.takeProfit})`);
-          await updateOpenPositions(pos.instId, curPrice);
+          await updateOpenPositions(pos.instId, curCandle);
         }
       } catch (err) {
         console.error(`[UPDATE POS] Lỗi cập nhật ${pos.symbol}:`, err.message);
@@ -381,6 +400,23 @@ export async function runScanCycle() {
   console.log(`[SCAN CYCLE] Hoàn tất chu kỳ. Chờ ${CONFIG.pollIntervalSec}s...`);
 }
 
+let isScanning = false;
+
+export async function safeRunScanCycle() {
+  if (isScanning) {
+    console.warn('[SCAN CYCLE] Chu kỳ quét trước vẫn đang chạy. Bỏ qua lần này để chống chồng chéo.');
+    return;
+  }
+  isScanning = true;
+  try {
+    await runScanCycle();
+  } catch (err) {
+    console.error('[RUNTIME] Lỗi chu kỳ quét:', err);
+  } finally {
+    isScanning = false;
+  }
+}
+
 /**
  * Điểm khởi chạy chính
  */
@@ -390,20 +426,24 @@ async function main() {
 
   if (isSingleRun) {
     console.log('[RUNTIME] Chạy chế độ Single-Run / Dry-Run (Quét 1 lần)...');
-    await runScanCycle();
+    await safeRunScanCycle();
     process.exit(0);
   }
 
   console.log(`[RUNTIME] Khởi động Bot Live Scanner (Chu kỳ: ${CONFIG.pollIntervalSec}s)...`);
-  await runScanCycle();
+  await safeRunScanCycle();
 
-  setInterval(async () => {
-    try {
-      await runScanCycle();
-    } catch (err) {
-      console.error('[RUNTIME] Lỗi chu kỳ quét:', err);
-    }
-  }, CONFIG.pollIntervalSec * 1000);
+  const scheduleNext = () => {
+    setTimeout(async () => {
+      try {
+        await safeRunScanCycle();
+      } finally {
+        scheduleNext();
+      }
+    }, CONFIG.pollIntervalSec * 1000);
+  };
+
+  scheduleNext();
 }
 
 // Khởi chạy khi được gọi trực tiếp

@@ -23,7 +23,7 @@ export const DEFAULT_CONFIG = {
   minRR: 2.0,
   beTriggerR: 1.5,
   beBufferRate: 0.0008,     // Đệm phí hòa vốn (0.08%)
-  timeStopBars: 48,         // 48 nến M15 (12 tiếng)
+  timeStopBars: 16,         // 16 nến M15 (4 tiếng)
   wickRatioThreshold: 0.35,
   atrBufferMultiplier: 0.25,
   maxSlDistanceRate: 0.025  // SMC No-Chasing Rule: Không vào nếu giá đã trôi xa cản SMC > 2.5%
@@ -136,6 +136,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
   // Khiên BTC Macro 1H
   const btcShield = checkBtcMacroShield(btcH1Candles);
+  let blockedSignal = null;
 
   // =========================================================================
   // SETUP 1: KANE LONG
@@ -190,7 +191,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
           if (targetRes) {
             const rr = (targetRes - entry) / (entry - stopLoss);
             if (!btcShield.canLong) {
-              return { isBlocked: true, blockReason: btcShield.reason };
+              blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'LONG' };
+              continue;
             }
 
             const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG';
@@ -265,7 +267,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
           if (targetSup) {
             const rr = (entry - targetSup) / (stopLoss - entry);
             if (!btcShield.canShort) {
-              return { isBlocked: true, blockReason: btcShield.reason };
+              blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'SHORT' };
+              continue;
             }
 
             const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT';
@@ -288,5 +291,5 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
     }
   }
 
-  return null;
+  return blockedSignal;
 }

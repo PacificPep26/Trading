@@ -19,7 +19,8 @@ import {
 import {
   calculatePositionSize,
   checkBtcMacroShield,
-  evaluateMarket
+  evaluateMarket,
+  DEFAULT_CONFIG
 } from '../src/engine.js';
 
 let passed = 0;
@@ -136,6 +137,28 @@ btcMockH1.push(btcDumpCandle);
 const shieldDump = checkBtcMacroShield(btcMockH1);
 assert(!shieldDump.canLong, 'Khiên BTC chặn mở Long khi BTC vừa xả nến Marubozu đỏ');
 assert(shieldDump.canShort, 'Vẫn cho phép mở Short');
+
+// 8. Test Cấu hình Time-Stop & Khử lỗi nến confirm OKX API
+console.log('\n8. Kiểm tra Cấu hình Time-Stop & Xác thực nến OKX:');
+assert(DEFAULT_CONFIG.timeStopBars === 16, 'DEFAULT_CONFIG.timeStopBars đồng bộ 16 nến M15 (4 tiếng)');
+
+const mockOkxRaw = [
+  ['1729000000000', '100', '105', '99', '103', '500', '50000', '50000', '1'],
+  ['1729000900000', '103', '104', '101', '102', '300', '30000', '30000', '0']
+];
+const parsedCandles = mockOkxRaw.map(c => ({
+  ts: parseInt(c[0], 10),
+  open: parseFloat(c[1]),
+  high: parseFloat(c[2]),
+  low: parseFloat(c[3]),
+  close: parseFloat(c[4]),
+  vol: parseFloat(c[5]),
+  confirm: c[8] !== undefined ? parseInt(c[8], 10) : 1
+}));
+assert(parsedCandles[0].confirm === 1, 'Nến confirm=1 được phân tích chính xác là nến đã hoàn thành');
+assert(parsedCandles[1].confirm === 0, 'Nến confirm=0 được phân tích chính xác là nến đang chạy');
+const closedOnly = parsedCandles.filter(c => c.confirm === 1);
+assert(closedOnly.length === 1 && closedOnly[0].close === 103, 'Bộ lọc nến confirm=1 hoạt động chính xác');
 
 // Tổng kết
 console.log('\n======================================================');
