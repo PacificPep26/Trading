@@ -81,6 +81,21 @@ function loadPositions() {
         activePositions = [];
       }
       console.log(`[POSITIONS] Đã nạp ${activePositions.length} vị thế từ ${POSITIONS_FILE}`);
+
+      // Tự động giải phóng các coin rác / memecoin cũ bị cấm (như FLOKI, APR) để trả lại slot cho coin chất lượng
+      const prevCount = activePositions.length;
+      activePositions = activePositions.filter(p => {
+        const sym = p.symbol || p.instId.replace('-SWAP', '');
+        const isBanned = MEMECOIN_BLACKLIST.has(sym);
+        if (isBanned) {
+          console.log(`[PURGE STALE] Đã giải phóng vị thế cũ của coin rác: ${sym}`);
+        }
+        return !isBanned;
+      });
+      if (activePositions.length !== prevCount) {
+        savePositions();
+        console.log(`[POSITIONS] Số vị thế hợp lệ sau khi dọn dẹp coin rác: ${activePositions.length}`);
+      }
     } catch (err) {
       console.error(`[POSITIONS] Lỗi đọc ${POSITIONS_FILE}:`, err.message);
       activePositions = [];
