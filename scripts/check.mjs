@@ -13,7 +13,9 @@ import {
   findFractalPivots,
   getNearestKeyLevels,
   findFairValueGaps,
-  detectSqueeze
+  detectSqueeze,
+  normalizeCandle,
+  validateCandleSchema
 } from '../src/indicators.js';
 
 import {
@@ -22,6 +24,8 @@ import {
   evaluateMarket,
   DEFAULT_CONFIG
 } from '../src/engine.js';
+
+import { fetchOkxCandles } from '../src/server.js';
 
 let passed = 0;
 let failed = 0;
@@ -160,15 +164,48 @@ assert(parsedCandles[1].confirm === 0, 'Nến confirm=0 được phân tích ch�
 const closedOnly = parsedCandles.filter(c => c.confirm === 1);
 assert(closedOnly.length === 1 && closedOnly[0].close === 103, 'Bộ lọc nến confirm=1 hoạt động chính xác');
 
+// 9. Kiểm thử Hợp đồng Dữ liệu Nến (Candle Data Contract Verification)
+console.log('\n9. Kiểm thử Hợp đồng Dữ liệu Nến (Data Contract):');
+
+// 9.1. Chuẩn hóa nến mảng OKX 9 phần tử
+const okxRawCandle = ['1729000000000', '65000.5', '65500', '64800.2', '65200', '1250.5', '81500000', '81500000', '1'];
+const normFromRaw = normalizeCandle(okxRawCandle);
+assert(validateCandleSchema(normFromRaw), 'normalizeCandle từ raw array OKX phải tuân thủ 100% Candle Schema');
+assert(normFromRaw.confirm === 1, 'Trường confirm phải bằng 1');
+
+// 9.2. Chuẩn hóa nến cache/database cũ (thiếu confirm)
+const cachedObj = { ts: 1729000000000, open: 65000.5, high: 65500, low: 64800.2, close: 65200, vol: 1250.5 };
+const normFromCache = normalizeCandle(cachedObj);
+assert(validateCandleSchema(normFromCache), 'normalizeCandle từ cache cũ phải tự bù confirm=1 và hợp lệ schema');
+assert(normFromCache.confirm === 1, 'Cache cũ tự động có confirm=1');
+
+// 9.3. Bắt lỗi khi dữ liệu sai lệch hoặc thiếu trường bắt buộc
+const invalidCandleMissingConfirm = { ts: 1729000000000, open: 65000.5, high: 65500, low: 64800.2, close: 65200, vol: 1250.5 };
+assert(!validateCandleSchema(invalidCandleMissingConfirm), 'validateCandleSchema phải từ chối object thiếu trường confirm');
+
+const invalidCandleNaN = { ts: 1729000000000, open: NaN, high: 65500, low: 64800.2, close: 65200, vol: 1250.5, confirm: 1 };
+assert(!validateCandleSchema(invalidCandleNaN), 'validateCandleSchema phải từ chối nến chứa NaN');
+
+// 9.4. Kiểm thử Hợp đồng trên hàm fetchOkxCandles trực tiếp
+const sampleCandles = await fetchOkxCandles('BTC-USDT-SWAP', '4H', 5);
+if (sampleCandles && sampleCandles.length > 0) {
+  const allValid = sampleCandles.every(validateCandleSchema);
+  assert(allValid, `Mọi nến trả về từ fetchOkxCandles (lấy ${sampleCandles.length} nến) đều khớp 100% Data Contract`);
+  const hasConfirmDefined = sampleCandles.every(c => c.confirm === 0 || c.confirm === 1);
+  assert(hasConfirmDefined, '100% nến có trường confirm là 0 hoặc 1, không bao giờ undefined');
+} else {
+  console.log('  ⚠️ Cảnh báo: Môi trường offline, đã kiểm thử hợp đồng qua mock.');
+}
+
 // Tổng kết
 console.log('\n======================================================');
 console.log(`🎉 TỔNG KẾT KIỂM THỬ: ${passed} PASS, ${failed} FAIL`);
 console.log('======================================================\n');
 
 if (failed > 0) {
-  process.exit(1);
+  process.exitCode = 1;
 } else {
   console.log('✨ TẤT CẢ CÁC MODULE TOÁN HỌC VÀ LOGIC ĐÃ HOÀN HẢO!');
-  process.exit(0);
+  process.exitCode = 0;
 }
 

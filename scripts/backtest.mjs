@@ -10,6 +10,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { normalizeCandle } from '../src/indicators.js';
 import { evaluateMarket, DEFAULT_CONFIG } from '../src/engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,9 +48,9 @@ async function backtestSymbol(instId, btcH1Candles) {
     return [];
   }
 
-  const candlesH4 = JSON.parse(fs.readFileSync(fH4, 'utf8'));
-  const candlesH1 = JSON.parse(fs.readFileSync(fH1, 'utf8'));
-  const candlesM15 = JSON.parse(fs.readFileSync(fM15, 'utf8'));
+  const candlesH4 = JSON.parse(fs.readFileSync(fH4, 'utf8')).map(normalizeCandle);
+  const candlesH1 = JSON.parse(fs.readFileSync(fH1, 'utf8')).map(normalizeCandle);
+  const candlesM15 = JSON.parse(fs.readFileSync(fM15, 'utf8')).map(normalizeCandle);
 
   const closedTrades = [];
   let activeTrade = null;
@@ -200,7 +201,7 @@ async function runBacktest() {
   console.log('Quy tắc: 100% Chống Look-Ahead Bias | Trailing BE +1.5R | Phí Taker 0.08%');
   console.log('================================================================\n');
 
-  const btcH1 = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, 'BTC-USDT-SWAP_1H_october.json'), 'utf8'));
+  const btcH1 = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, 'BTC-USDT-SWAP_1H_october.json'), 'utf8')).map(normalizeCandle);
   const allTrades = [];
   const symbolStats = [];
 

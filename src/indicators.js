@@ -348,3 +348,56 @@ export function detectSqueeze(candlesH4, atrThreshold = 0.70, volThreshold = 0.6
   };
 }
 
+/**
+ * Chuẩn hóa dữ liệu nến thành cấu trúc Data Contract thống nhất
+ * @param {Array|object} raw - Mảng nến thô từ OKX REST API hoặc object nến từ cache/database
+ * @returns {{ ts: number, open: number, high: number, low: number, close: number, vol: number, confirm: number }}
+ */
+export function normalizeCandle(raw) {
+  if (!raw) return null;
+  if (Array.isArray(raw)) {
+    // Định dạng OKX API: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
+    return {
+      ts: parseInt(raw[0], 10),
+      open: parseFloat(raw[1]),
+      high: parseFloat(raw[2]),
+      low: parseFloat(raw[3]),
+      close: parseFloat(raw[4]),
+      vol: parseFloat(raw[5]),
+      confirm: raw[8] !== undefined ? parseInt(raw[8], 10) : 1
+    };
+  }
+  return {
+    ts: parseInt(raw.ts, 10),
+    open: parseFloat(raw.open),
+    high: parseFloat(raw.high),
+    low: parseFloat(raw.low),
+    close: parseFloat(raw.close),
+    vol: parseFloat(raw.vol || 0),
+    confirm: raw.confirm !== undefined ? parseInt(raw.confirm, 10) : 1
+  };
+}
+
+/**
+ * Kiểm tra tính hợp lệ của nến theo Data Contract
+ * @param {object} candle
+ * @returns {boolean}
+ */
+export function validateCandleSchema(candle) {
+  if (!candle || typeof candle !== 'object') return false;
+  const fields = ['ts', 'open', 'high', 'low', 'close', 'vol', 'confirm'];
+  for (const f of fields) {
+    if (typeof candle[f] !== 'number' || Number.isNaN(candle[f])) {
+      return false;
+    }
+  }
+  if (candle.ts <= 0 || candle.open <= 0 || candle.high <= 0 || candle.low <= 0 || candle.close <= 0) {
+    return false;
+  }
+  if (candle.confirm !== 0 && candle.confirm !== 1) {
+    return false;
+  }
+  return true;
+}
+
+

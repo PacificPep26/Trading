@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { normalizeCandle } from './indicators.js';
 import { evaluateMarket, DEFAULT_CONFIG } from './engine.js';
 import {
   notifyNewSignal,
@@ -130,15 +131,7 @@ export async function fetchOkxCandles(instId, bar = '4H', limit = 100) {
     const json = await res.json();
     if (!json.data || !Array.isArray(json.data)) return [];
 
-    return json.data.map(c => ({
-      ts: parseInt(c[0], 10),
-      open: parseFloat(c[1]),
-      high: parseFloat(c[2]),
-      low: parseFloat(c[3]),
-      close: parseFloat(c[4]),
-      vol: parseFloat(c[5]),
-      confirm: c[8] !== undefined ? parseInt(c[8], 10) : 1
-    })).reverse(); // Đảo lại theo thứ tự thời gian tăng dần (cũ -> mới)
+    return json.data.map(normalizeCandle).reverse(); // Đảo lại theo thứ tự thời gian tăng dần (cũ -> mới)
   } catch (err) {
     console.error(`[API] Lỗi fetch nến ${instId} (${bar}):`, err.message);
     return [];
