@@ -33,14 +33,23 @@ const CONFIG = {
   timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
   minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'), // Chặn triệt để coin giá 0.xx (< 1.0 USDT)
   maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
-  scanMode: process.env.SCAN_MODE || 'DYNAMIC_TOP',
+  scanMode: process.env.SCAN_MODE || 'WATCHLIST', // Mặc định chỉ trade Top 5 coin lớn theo yêu cầu
   topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
   pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
   okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
-  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,LINK-USDT,SOL-USDT')
+  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,LINK-USDT,NEAR-USDT')
     .split(',')
     .map(s => s.trim().toUpperCase())
 };
+
+// Danh sách Top 5 Coin Lớn & Chuẩn Cấu Trúc Nhất Sàn OKX (BTC, ETH, SOL, LINK, NEAR)
+const TOP_5_UNIVERSE = [
+  'BTC-USDT',
+  'ETH-USDT',
+  'SOL-USDT',
+  'LINK-USDT',
+  'NEAR-USDT'
+];
 
 // Danh sách Memecoin / Coin rác cấm giao dịch vì râu nến giật ảo
 const MEMECOIN_BLACKLIST = new Set([
@@ -306,28 +315,16 @@ export async function runScanCycle() {
     }
   }
 
-  // 2. Xác định danh sách cặp cần quét (Chỉ quét coin nền tảng chất lượng)
+  // 2. Xác định danh sách cặp cần quét (Khóa chặt Top 5 Coin Lớn: BTC, ETH, SOL, LINK, NEAR)
   let symbolsToScan = [];
-  if (CONFIG.scanMode === 'DYNAMIC_TOP') {
-    const rawTop = await fetchTopVolumeCoins(CONFIG.topLimit);
-    // Lọc bỏ toàn bộ memecoin / coin rác / tài sản phi crypto
-    symbolsToScan = rawTop.filter(inst => {
-      const sym = inst.replace('-SWAP', '');
-      return !MEMECOIN_BLACKLIST.has(sym) && !NON_CRYPTO_BLACKLIST.has(sym);
-    });
-
-    // Bổ sung các coin nền tảng chất lượng vào danh sách
-    for (const core of QUALITY_UNIVERSE) {
-      const inst = core.endsWith('-SWAP') ? core : `${core}-SWAP`;
-      if (!symbolsToScan.includes(inst) && !MEMECOIN_BLACKLIST.has(core) && !NON_CRYPTO_BLACKLIST.has(core)) {
-        symbolsToScan.push(inst);
-      }
-    }
+  if (CONFIG.scanMode === 'WATCHLIST') {
+    symbolsToScan = CONFIG.watchlist.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   } else {
-    symbolsToScan = QUALITY_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
+    symbolsToScan = TOP_5_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   }
 
-  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} cặp coin chất lượng (Giá >= ${CONFIG.minCoinPrice} USDT)...`);
+  const coinNames = symbolsToScan.map(s => s.replace('-USDT-SWAP', '')).join(', ');
+  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} coin lớn hàng đầu [${coinNames}] (Giá >= ${CONFIG.minCoinPrice} USDT)...`);
 
   for (const instId of symbolsToScan) {
     const symbol = instId.replace('-SWAP', '');

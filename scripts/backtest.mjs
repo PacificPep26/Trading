@@ -19,8 +19,9 @@ const CACHE_DIR = path.join(__dirname, '../data/cache');
 const BACKTEST_SYMBOLS = [
   'BTC-USDT-SWAP',
   'ETH-USDT-SWAP',
+  'SOL-USDT-SWAP',
   'LINK-USDT-SWAP',
-  'SOL-USDT-SWAP'
+  'NEAR-USDT-SWAP'
 ];
 
 const CONFIG = {
