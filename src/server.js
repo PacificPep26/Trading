@@ -38,18 +38,19 @@ const CONFIG = {
   topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
   pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
   okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
-  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,LINK-USDT,NEAR-USDT')
+  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,LINK-USDT,NEAR-USDT,HYPE-USDT')
     .split(',')
     .map(s => s.trim().toUpperCase())
 };
 
-// Danh sách Top 5 Coin Lớn & Chuẩn Cấu Trúc Nhất Sàn OKX (BTC, ETH, SOL, LINK, NEAR)
-const TOP_5_UNIVERSE = [
+// Danh sách Coin Lớn & Chuẩn Cấu Trúc Nhất Sàn OKX (BTC, ETH, SOL, LINK, NEAR, HYPE)
+const PREMIER_UNIVERSE = [
   'BTC-USDT',
   'ETH-USDT',
   'SOL-USDT',
   'LINK-USDT',
-  'NEAR-USDT'
+  'NEAR-USDT',
+  'HYPE-USDT'
 ];
 
 // Danh sách Memecoin / Coin rác cấm giao dịch vì râu nến giật ảo
@@ -319,12 +320,12 @@ export async function runScanCycle() {
     }
   }
 
-  // 2. Xác định danh sách cặp cần quét (Khóa chặt Top 5 Coin Lớn: BTC, ETH, SOL, LINK, NEAR)
+  // 2. Xác định danh sách cặp cần quét (Khóa chặt Danh mục Coin Lớn: BTC, ETH, SOL, LINK, NEAR, HYPE)
   let symbolsToScan = [];
   if (CONFIG.scanMode === 'WATCHLIST') {
     symbolsToScan = CONFIG.watchlist.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   } else {
-    symbolsToScan = TOP_5_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
+    symbolsToScan = PREMIER_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   }
 
   const coinNames = symbolsToScan.map(s => s.replace('-USDT-SWAP', '')).join(', ');
