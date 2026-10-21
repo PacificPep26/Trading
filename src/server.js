@@ -35,7 +35,7 @@ const CONFIG = {
   topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
   pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
   okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
-  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,WLD-USDT,DOGE-USDT,SUI-USDT')
+  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,LINK-USDT,SOL-USDT,WLD-USDT,SUI-USDT')
     .split(',')
     .map(s => s.trim().toUpperCase())
 };
@@ -45,14 +45,14 @@ const MEMECOIN_BLACKLIST = new Set([
   'FLOKI-USDT', 'BONK-USDT', 'SHIB-USDT', 'PEPE-USDT', 'MEME-USDT',
   'BOME-USDT', 'NEIRO-USDT', 'PENGU-USDT', 'APR-USDT', 'HMSTR-USDT',
   'TURBO-USDT', 'DOGS-USDT', '1000SATS-USDT', 'SATS-USDT', 'BABYDOGE-USDT',
-  'BILL-USDT', 'AKE-USDT', 'DOOD-USDT', 'PUMP-USDT'
+  'BILL-USDT', 'AKE-USDT', 'DOOD-USDT', 'PUMP-USDT', 'DOGE-USDT'
 ]);
 
 // Danh sách Altcoin Top & Nền tảng cấu trúc chuẩn được ưu tiên quét
 const QUALITY_UNIVERSE = [
-  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'WLD-USDT', 'SUI-USDT',
-  'DOGE-USDT', 'NEAR-USDT', 'AVAX-USDT', 'LINK-USDT', 'ARB-USDT',
-  'OP-USDT', 'APT-USDT', 'TIA-USDT', 'INJ-USDT', 'RENDER-USDT'
+  'BTC-USDT', 'ETH-USDT', 'LINK-USDT', 'SOL-USDT', 'WLD-USDT', 'SUI-USDT',
+  'NEAR-USDT', 'AVAX-USDT', 'ARB-USDT', 'OP-USDT', 'APT-USDT', 'TIA-USDT',
+  'INJ-USDT', 'RENDER-USDT'
 ];
 
 /**

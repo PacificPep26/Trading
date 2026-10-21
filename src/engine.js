@@ -1,9 +1,9 @@
 /**
  * ENGINE.JS
  * Lõi phân tích chiến lược định lượng Smart Money / Demand-Supply & Liquidity.
- * Mô phỏng chính xác phương pháp thực chiến của Dr. Kane:
- * 1. Setup A (Demand Sweep Long): Vùng cầu có điều kiện (Buy Zone ko Limit)
- * 2. Setup B (Supply Rejection Short): Kháng cự & Trendline giảm H4 từ chối (ETH H4 setup)
+ * Hiện thực hóa 100% công thức VIP của Dr. Kane (Sonic R Fibonacci EMAs 34 & 89):
+ * 1. KANE_THUAN_TREND (Đánh thuận xu hướng EMA 34/89 & Key Levels)
+ * 2. KANE_NGUOC_TREND (Đánh ngược xu hướng khi giá dãn nở xa EMA 34, râu nến H4 >= 45% & RR tới EMA 34 >= 1.0)
  * 
  * BẢO ĐẢM TÍNH TẤT ĐỊNH (PURE FUNCTIONS 100%) & CHỐNG LOOK-AHEAD BIAS.
  */
@@ -23,7 +23,7 @@ export const DEFAULT_CONFIG = {
   minRR: 2.0,
   beTriggerR: 1.5,
   beBufferRate: 0.0008,     // Đệm phí hòa vốn (0.08%)
-  timeStopBars: 48,         // 48 nến M15 (12 tiếng) - Không bóp nghẹt lệnh Swing H4
+  timeStopBars: 48,         // 48 nến M15 (12 tiếng)
   wickRatioThreshold: 0.35,
   atrBufferMultiplier: 0.25
 };
@@ -80,12 +80,12 @@ export function checkBtcMacroShield(btcH1Candles) {
 }
 
 /**
- * Master Evaluator - Đánh giá Thị trường theo chuẩn Dr. Kane H4/M15
+ * Master Evaluator - Đánh giá Thị trường theo chuẩn công thức VIP Dr. Kane H4/M15
  * @param {object} params
  * @returns {object|null}
  */
 export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1Candles = null, config = DEFAULT_CONFIG }) {
-  if (!candlesH4 || candlesH4.length < 30 || !candlesH1 || candlesH1.length < 15 || !candlesM15 || candlesM15.length < 5) {
+  if (!candlesH4 || candlesH4.length < 90 || !candlesH1 || candlesH1.length < 15 || !candlesM15 || candlesM15.length < 5) {
     return null;
   }
 
@@ -99,21 +99,23 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
   // QUY TẮC ĐỘ TƯƠI MỚI (FRESHNESS):
   // Tín hiệu xác nhận M15 chỉ có giá trị trong vòng 1-4 nến M15 (1 giờ) ngay sau khi nến H4 đóng!
-  // Tránh lặp lại tín hiệu bừa bãi hàng chục lần trên cùng 1 cây nến H4 cũ.
   const barsSinceH4Close = Math.round((curM15CloseTime - lastH4CloseTime) / M15_MS);
   if (barsSinceH4Close < 1 || barsSinceH4Close > 4) {
     return null;
   }
 
-  // Phân tích xu hướng vĩ mô H4 (EMA20 vs EMA50)
+  // 1. Chỉ báo Kane VIP: EMA 34 & EMA 89 trên khung H4
   const closesH4 = candlesH4.map(c => c.close);
-  const ema20Arr = calculateEMA(closesH4, 20);
-  const ema50Arr = calculateEMA(closesH4, 50);
-  const ema20 = ema20Arr[ema20Arr.length - 1];
-  const ema50 = ema50Arr[ema50Arr.length - 1];
+  const ema34Arr = calculateEMA(closesH4, 34);
+  const ema89Arr = calculateEMA(closesH4, 89);
+  const ema34 = ema34Arr[ema34Arr.length - 1];
+  const ema89 = ema89Arr[ema89Arr.length - 1];
 
-  const isBullTrend = ema20 >= ema50;
-  const isBearTrend = ema20 < ema50;
+  if (!ema34 || !ema89) return null;
+
+  // Xu hướng theo Kane EMA 34 & 89
+  const isBullTrend = ema34 >= ema89;
+  const isBearTrend = ema34 < ema89;
 
   // Lọc Fractal Key Levels H4 (Đỉnh Kháng cự & Đáy Hỗ trợ)
   const pivots = findFractalPivots(candlesH4, 2, 2);
@@ -135,19 +137,30 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const btcShield = checkBtcMacroShield(btcH1Candles);
 
   // =========================================================================
-  // SETUP 1: KANE DEMAND ZONE & LIQUIDITY SWEEP (BUY ZONE CÓ ĐIỀU KIỆN)
-  // Bắt đáy chữ V (như WLD 0,4561 và BTC 79.7k)
+  // SETUP 1: KANE LONG
+  // - Thuận trend Bull (EMA34 >= EMA89): Sweep hỗ trợ thường hoặc nến đảo chiều
+  // - Ngược trend Bear (EMA34 < EMA89): CÔNG THỨC KANE: CHỈ KHI GIÁ CÁCH XA EMA34 (>= 3.0%),
+  //   Râu H4 >= 45% & Khoảng cách về EMA 34 phải cho RR >= 1.0!
   // =========================================================================
   for (const sup of supports) {
     if (lastH4.low < sup) {
-      // Điều kiện nến H4: Quét thủng hỗ trợ
       const isStrongSweep = h4Anatomy.lowerWickRatio >= 0.45;
       const isNormalSweep = h4Anatomy.lowerWickRatio >= 0.35 && lastH4.close >= sup * 0.998;
       const prevH4 = candlesH4[candlesH4.length - 2];
       const isEngulfing = prevH4 && lastH4.close > lastH4.open && lastH4.close >= prevH4.open;
 
-      // Trong Bull Trend: Sweep thường là được. Trong Bear Trend: Yêu cầu rút râu cực mạnh (>= 45%) hoặc chữ V nuốt nến!
-      const canLong = isBullTrend ? (isNormalSweep || isEngulfing) : (isStrongSweep || isEngulfing);
+      let canLong = false;
+      let isNgocTrend = false;
+
+      if (isBullTrend) {
+        canLong = isNormalSweep || isEngulfing;
+      } else {
+        const distBelowEma34 = (ema34 - curPrice) / curPrice;
+        if (distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) {
+          canLong = true;
+          isNgocTrend = true;
+        }
+      }
 
       if (canLong) {
         // Điều kiện xác nhận M15: Nến M15 đóng xanh và phá đỉnh nến trước
@@ -158,6 +171,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
           const entry = currentM15.close;
           const stopLoss = lastH4.low - (config.atrBufferMultiplier * atrH1);
 
+          // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
+          if (isNgocTrend) {
+            const rrToEma34 = (ema34 - entry) / (entry - stopLoss);
+            if (rrToEma34 < 1.0) continue;
+          }
+
           // Tìm Kháng cự đối diện đạt R:R >= minRR
           const targetRes = resistances.find(r => (r - entry) / (entry - stopLoss) >= config.minRR);
 
@@ -167,9 +186,10 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               return { isBlocked: true, blockReason: btcShield.reason };
             }
 
+            const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG';
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             return {
-              strategy: 'KANE_DEMAND_SWEEP_LONG',
+              strategy: stratName,
               direction: 'LONG',
               symbol,
               entry,
@@ -178,7 +198,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               riskReward: parseFloat(rr.toFixed(2)),
               triggerTime: currentM15.ts,
               sizing,
-              reason: `H4 swept Support ${sup} (Wick ${(h4Anatomy.lowerWickRatio * 100).toFixed(1)}%), M15 confirmed Bullish push`
+              reason: `${stratName}: H4 swept Support ${sup} (Râu ${(h4Anatomy.lowerWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bullish push`
             };
           }
         }
@@ -187,18 +207,29 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   }
 
   // =========================================================================
-  // SETUP 2: KANE SUPPLY / TRENDLINE REJECTION SHORT (ETH H4 SETUP)
-  // Bắt đỉnh hồi về Trendline / Kháng cự trong xu hướng giảm (như kèo ETH 2436 -> 2359)
+  // SETUP 2: KANE SHORT (Kèo ETH & LINK H4 của Kane)
+  // - Thuận trend Bear (EMA34 < EMA89): Test Kháng cự & EMA34/89
+  // - Ngược trend Bull (EMA34 >= EMA89): CÔNG THỨC KANE: CHỈ KHI GIÁ CÁCH XA EMA34 (>= 3.0%),
+  //   Râu trên H4 >= 45% & Khoảng cách về EMA 34 phải cho RR >= 1.0!
   // =========================================================================
   for (const res of resistances) {
     const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
     if (testedRes) {
-      // H4 phải có râu từ chối hoặc nến đỏ
       const isStrongRejection = h4Anatomy.upperWickRatio >= 0.45;
       const isNormalRejection = h4Anatomy.upperWickRatio >= 0.25 || lastH4.close < lastH4.open;
 
-      // Trong Bear Trend: Rejection bình thường. Trong Bull Trend: Cần râu cực dài (>= 45%)
-      const canShort = isBearTrend ? isNormalRejection : isStrongRejection;
+      let canShort = false;
+      let isNgocTrend = false;
+
+      if (isBearTrend) {
+        canShort = isNormalRejection;
+      } else {
+        const distAboveEma34 = (curPrice - ema34) / ema34;
+        if (distAboveEma34 >= 0.030 && isStrongRejection) {
+          canShort = true;
+          isNgocTrend = true;
+        }
+      }
 
       if (canShort) {
         // Điều kiện xác nhận M15: Nến M15 đóng đỏ gãy đáy nến trước
@@ -209,6 +240,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
           const entry = currentM15.close;
           const stopLoss = lastH4.high + (config.atrBufferMultiplier * atrH1);
 
+          // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
+          if (isNgocTrend) {
+            const rrToEma34 = (entry - ema34) / (stopLoss - entry);
+            if (rrToEma34 < 1.0) continue;
+          }
+
           // Tìm Hỗ trợ đối diện đạt R:R >= minRR
           const targetSup = supports.find(s => (entry - s) / (stopLoss - entry) >= config.minRR);
 
@@ -218,9 +255,10 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               return { isBlocked: true, blockReason: btcShield.reason };
             }
 
+            const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT';
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             return {
-              strategy: 'KANE_SUPPLY_REJECTION_SHORT',
+              strategy: stratName,
               direction: 'SHORT',
               symbol,
               entry,
@@ -229,7 +267,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               riskReward: parseFloat(rr.toFixed(2)),
               triggerTime: currentM15.ts,
               sizing,
-              reason: `H4 tested Resistance ${res} (Upper Wick ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), M15 confirmed Bearish drop`
+              reason: `${stratName}: H4 tested Res ${res} (Râu trên ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bearish drop`
             };
           }
         }

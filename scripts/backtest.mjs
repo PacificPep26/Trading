@@ -1,7 +1,7 @@
 /**
  * BACKTEST.MJS
  * Khung kiểm thử Walk-Forward từ 01/10/2026 trên dữ liệu thực tế OKX API.
- * Chuẩn hóa 100% theo phương pháp Smart Money / Demand-Supply Dr. Kane:
+ * Chuẩn hóa 100% theo phương pháp Smart Money / Demand-Supply Dr. Kane (EMA 34 & 89):
  * - Khử hoàn toàn Look-Ahead Bias (chỉ nạp nến H4 đã đóng đủ 4 tiếng)
  * - Trailing Break-Even tại +1.5R (+0.08% đệm phí)
  * - Giả định SL trước nếu giật cả 2 đầu trong cùng 1 nến M15
@@ -18,10 +18,10 @@ const CACHE_DIR = path.join(__dirname, '../data/cache');
 const BACKTEST_SYMBOLS = [
   'BTC-USDT-SWAP',
   'ETH-USDT-SWAP',
+  'LINK-USDT-SWAP',
   'SOL-USDT-SWAP',
   'WLD-USDT-SWAP',
-  'SUI-USDT-SWAP',
-  'DOGE-USDT-SWAP'
+  'SUI-USDT-SWAP'
 ];
 
 const CONFIG = {
@@ -101,68 +101,53 @@ async function backtestSymbol(instId, btcH1Candles) {
           exitPrice,
           outcome: activeTrade.isBreakevenMoved ? 'BE' : 'SL',
           netR,
-          netUsd: parseFloat(netPnl.toFixed(2))
+          netUsd: netPnl
         });
-
         activeTrade = null;
-        continue;
-      }
-
-      if (isTPHit) {
+      } else if (isTPHit) {
         const exitPrice = activeTrade.takeProfit;
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
         const fee = activeTrade.sizing.notional * CONFIG.feeRate;
         const netPnl = grossPnl - fee;
-        const netR = isLong
-          ? (exitPrice - activeTrade.entry) / riskDist
-          : (activeTrade.entry - exitPrice) / riskDist;
+        const netR = activeTrade.riskReward;
 
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
           outcome: 'TP',
-          netR: parseFloat(netR.toFixed(2)),
-          netUsd: parseFloat(netPnl.toFixed(2))
+          netR,
+          netUsd: netPnl
         });
-
         activeTrade = null;
-        continue;
       }
     }
 
-    // 2. Tìm kiếm tín hiệu mới (Khử 100% Look-Ahead Bias)
+    // 2. Quét tín hiệu vào lệnh mới khi chưa có vị thế mở trên cặp này
     if (!activeTrade) {
-      const closedH4 = candlesH4.filter(c => (c.ts + H4_MS) <= m15CloseTime);
-      const closedH1 = candlesH1.filter(c => (c.ts + H1_MS) <= m15CloseTime);
-      const closedM15 = candlesM15.slice(0, i + 1);
-      const closedBtcH1 = btcH1Candles ? btcH1Candles.filter(c => (c.ts + H1_MS) <= m15CloseTime) : null;
-
-      if (closedH4.length < 30 || closedH1.length < 15) continue;
+      // 100% Chống Look-Ahead Bias:
+      // Nến H4 mở lúc T chỉ được coi là đóng khi thời gian m15 hiện tại đã qua T + 4 tiếng
+      const visibleH4 = candlesH4.filter(c => c.ts + H4_MS <= m15CloseTime);
+      const visibleH1 = candlesH1.filter(c => c.ts + H1_MS <= m15CloseTime);
+      const visibleM15 = candlesM15.slice(0, i + 1);
+      const visibleBtcH1 = btcH1Candles.filter(c => c.ts + H1_MS <= m15CloseTime);
 
       const signal = evaluateMarket({
         symbol,
-        candlesH4: closedH4,
-        candlesH1: closedH1,
-        candlesM15: closedM15,
-        btcH1Candles: closedBtcH1,
+        candlesH4: visibleH4,
+        candlesH1: visibleH1,
+        candlesM15: visibleM15,
+        btcH1Candles: visibleBtcH1,
         config: CONFIG
       });
 
       if (signal && !signal.isBlocked) {
         activeTrade = {
-          symbol,
-          strategy: signal.strategy,
-          direction: signal.direction,
-          entryTime: m15CloseTime,
-          entry: signal.entry,
-          stopLoss: signal.stopLoss,
+          ...signal,
+          entryTime: currentM15.ts,
           initialStopLoss: signal.stopLoss,
-          takeProfit: signal.takeProfit,
-          riskReward: signal.riskReward,
-          sizing: signal.sizing,
           isBreakevenMoved: false,
           barsHeld: 0
         };
@@ -175,7 +160,16 @@ async function backtestSymbol(instId, btcH1Candles) {
 
 function calculateMetrics(trades) {
   if (trades.length === 0) {
-    return { totalTrades: 0, wins: 0, be: 0, losses: 0, winRate: '0.0%', profitFactor: '0.00', totalR: '0.00R', netPnlUsd: '$0.00' };
+    return {
+      totalTrades: 0,
+      wins: 0,
+      be: 0,
+      losses: 0,
+      winRate: '0.0%',
+      profitFactor: '0.00',
+      totalR: '0.00R',
+      netPnlUsd: '$0.00'
+    };
   }
 
   const wins = trades.filter(t => t.outcome === 'TP');
@@ -204,7 +198,7 @@ function calculateMetrics(trades) {
 
 async function runBacktest() {
   console.log('================================================================');
-  console.log('🏆 KẾT QUẢ KIỂM THỬ THỰC CHIẾN DR. KANE H4/M15 (TỪ 01/10/2026)');
+  console.log('🏆 KẾT QUẢ KIỂM THỬ THỰC CHIẾN DR. KANE H4/M15 (EMA 34 & 89)');
   console.log('Quy tắc: 100% Chống Look-Ahead Bias | Trailing BE +1.5R | Phí Taker 0.08%');
   console.log('================================================================\n');
 
@@ -249,10 +243,10 @@ async function runBacktest() {
       stratShort.padEnd(28) +
       t.direction.padEnd(8) +
       t.entry.toString().padEnd(10) +
-      t.exitPrice.toString().padEnd(10) +
+      (t.exitPrice ? t.exitPrice.toString().substring(0, 8) : '').padEnd(10) +
       resIcon.padEnd(10) +
       `${t.netR >= 0 ? '+' : ''}${t.netR}R`.padEnd(10) +
-      `${t.netUsd >= 0 ? '+' : ''}$${t.netUsd}`
+      `${t.netUsd >= 0 ? '+$' : '-$'}${Math.abs(t.netUsd).toFixed(2)}`
     );
   });
 
@@ -285,18 +279,31 @@ async function runBacktest() {
     );
   });
 
-  const totalMetrics = calculateMetrics(allTrades);
+  const totalPortfolioTrades = allTrades.length;
+  const totalPortfolioWins = allTrades.filter(t => t.outcome === 'TP').length;
+  const totalPortfolioBe = allTrades.filter(t => t.outcome === 'BE').length;
+  const totalPortfolioLosses = allTrades.filter(t => t.outcome === 'SL').length;
+  const totalPortfolioGrossProfit = allTrades.filter(t => t.netUsd > 0).reduce((acc, t) => acc + t.netUsd, 0);
+  const totalPortfolioGrossLoss = Math.abs(allTrades.filter(t => t.netUsd < 0).reduce((acc, t) => acc + t.netUsd, 0));
+  const totalPortfolioPF = totalPortfolioGrossLoss > 0
+    ? (totalPortfolioGrossProfit / totalPortfolioGrossLoss).toFixed(2)
+    : 'INF';
+  const totalPortfolioR = allTrades.reduce((acc, t) => acc + t.netR, 0);
+  const totalPortfolioNetUsd = allTrades.reduce((acc, t) => acc + t.netUsd, 0);
+
   console.log('\n================================================================');
   console.log('🏆 TỔNG KẾT TOÀN DANH MỤC THÁNG 10/2026:');
   console.log('================================================================');
-  console.log(`• Tổng số lệnh:           ${totalMetrics.totalTrades} lệnh`);
-  console.log(`• Lệnh thắng trọn (TP):   ${totalMetrics.wins} lệnh (${totalMetrics.winRate})`);
-  console.log(`• Lệnh hòa vốn bảo vệ:   ${totalMetrics.be} lệnh (Trailing BE +1.5R)`);
-  console.log(`• Lệnh dừng lỗ:           ${totalMetrics.losses} lệnh`);
-  console.log(`• Tỷ số Lợi nhuận (PF):   ${totalMetrics.profitFactor}`);
-  console.log(`• Tổng số R mang về:      ${totalMetrics.totalR}`);
-  console.log(`• Tổng Lợi Nhuận Ròng:    ${totalMetrics.netPnlUsd} (Đã trừ phí Taker 0.08%)`);
+  console.log(`• Tổng số lệnh:           ${totalPortfolioTrades} lệnh`);
+  console.log(`• Lệnh thắng trọn (TP):   ${totalPortfolioWins} lệnh (${((totalPortfolioWins / totalPortfolioTrades) * 100).toFixed(1)}%)`);
+  console.log(`• Lệnh hòa vốn bảo vệ:   ${totalPortfolioBe} lệnh (Trailing BE +1.5R)`);
+  console.log(`• Lệnh dừng lỗ:           ${totalPortfolioLosses} lệnh`);
+  console.log(`• Tỷ số Lợi nhuận (PF):   ${totalPortfolioPF}`);
+  console.log(`• Tổng số R mang về:      ${totalPortfolioR >= 0 ? '+' : ''}${totalPortfolioR.toFixed(2)}R`);
+  console.log(`• Tổng Lợi Nhuận Ròng:    ${totalPortfolioNetUsd >= 0 ? '+' : ''}$${totalPortfolioNetUsd.toFixed(2)} (Đã trừ phí Taker 0.08%)`);
   console.log('================================================================\n');
 }
 
-runBacktest();
+runBacktest().catch(err => {
+  console.error('Lỗi khi chạy backtest:', err);
+});
