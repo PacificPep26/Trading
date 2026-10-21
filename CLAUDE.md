@@ -67,3 +67,4 @@ Tài liệu này quy định các nguyên tắc thiết kế bất biến và k�
 - `src/telegram.js`: Module gửi cảnh báo Markdown v2 tới Telegram Bot.
 - `scripts/check.mjs`: Bộ kiểm thử tự động (Unit Tests & Contract Tests).
 - `scripts/backtest.mjs`: Khung Walk-Forward Backtesting trên dữ liệu lịch sử.
+

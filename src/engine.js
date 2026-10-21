@@ -26,7 +26,8 @@ export const DEFAULT_CONFIG = {
   timeStopBars: 16,         // 16 nến M15 (4 tiếng)
   wickRatioThreshold: 0.35,
   atrBufferMultiplier: 0.25,
-  maxSlDistanceRate: 0.025  // SMC No-Chasing Rule: Không vào nếu giá đã trôi xa cản SMC > 2.5%
+  maxSlDistanceRate: 0.025, // SMC No-Chasing Rule: Không vào nếu giá đã trôi xa cản SMC > 2.5%
+  minCoinPrice: 1.0         // Lọc bỏ triệt để các coin giá 0.xx, chỉ giao dịch coin >= 1.0 USDT
 };
 
 const H4_MS = 4 * 60 * 60 * 1000;
@@ -93,6 +94,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const currentM15 = candlesM15[candlesM15.length - 1];
   const prevM15 = candlesM15[candlesM15.length - 2];
   const curPrice = currentM15.close;
+
+  // LỌC GIÁ TỐI THIỂU: Bỏ qua tuyệt đối các coin 0.xx (giá < minCoinPrice, mặc định 1.0 USDT)
+  if (config.minCoinPrice && curPrice < config.minCoinPrice) {
+    return null;
+  }
 
   const lastH4 = candlesH4[candlesH4.length - 1];
   const lastH4CloseTime = lastH4.ts + H4_MS;

@@ -31,6 +31,7 @@ const CONFIG = {
   minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
   beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.5'),
   timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
+  minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'), // Chặn triệt để coin giá 0.xx (< 1.0 USDT)
   maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
   scanMode: process.env.SCAN_MODE || 'DYNAMIC_TOP',
   topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
@@ -49,11 +50,18 @@ const MEMECOIN_BLACKLIST = new Set([
   'BILL-USDT', 'AKE-USDT', 'DOOD-USDT', 'PUMP-USDT', 'DOGE-USDT'
 ]);
 
-// Danh sách Altcoin Top & Nền tảng cấu trúc chuẩn được ưu tiên quét
+// Danh sách Tài sản truyền thống / Cổ phiếu CFD không phải Crypto trên OKX SWAP
+const NON_CRYPTO_BLACKLIST = new Set([
+  'XAU-USDT', 'XAG-USDT', 'CL-USDT', 'SOXL-USDT', 'SOXS-USDT', 'SPCX-USDT',
+  'SNDK-USDT', 'SKHYNIX-USDT', 'SKHY-USDT', 'MU-USDT', 'KORU-USDT', 'SNXX-USDT',
+  'TSLA-USDT', 'NVDA-USDT', 'QQQ-USDT', 'MSTR-USDT', 'CRCL-USDT', 'UNITREE-USDT', 'BZ-USDT'
+]);
+
+// Danh sách Altcoin Top & Nền tảng cấu trúc chuẩn được ưu tiên quét (Đều có giá >= 1.0 USDT)
 const QUALITY_UNIVERSE = [
-  'BTC-USDT', 'ETH-USDT', 'LINK-USDT', 'SOL-USDT', 'WLD-USDT', 'SUI-USDT',
-  'NEAR-USDT', 'AVAX-USDT', 'ARB-USDT', 'OP-USDT', 'APT-USDT', 'TIA-USDT',
-  'INJ-USDT', 'RENDER-USDT'
+  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'ZEC-USDT', 'LINK-USDT',
+  'AVAX-USDT', 'NEAR-USDT', 'SUI-USDT', 'INJ-USDT', 'AAVE-USDT',
+  'UNI-USDT', 'APT-USDT', 'TIA-USDT', 'RENDER-USDT'
 ];
 
 /**
@@ -83,19 +91,21 @@ function loadPositions() {
       }
       console.log(`[POSITIONS] Đã nạp ${activePositions.length} vị thế từ ${POSITIONS_FILE}`);
 
-      // Tự động giải phóng các coin rác / memecoin cũ bị cấm (như FLOKI, APR) để trả lại slot cho coin chất lượng
+      // Tự động giải phóng các coin rác / memecoin / coin 0.xx cũ để trả lại slot cho coin chất lượng
       const prevCount = activePositions.length;
       activePositions = activePositions.filter(p => {
         const sym = p.symbol || p.instId.replace('-SWAP', '');
-        const isBanned = MEMECOIN_BLACKLIST.has(sym);
-        if (isBanned) {
-          console.log(`[PURGE STALE] Đã giải phóng vị thế cũ của coin rác: ${sym}`);
+        const isBanned = MEMECOIN_BLACKLIST.has(sym) || NON_CRYPTO_BLACKLIST.has(sym);
+        const isSubDollar = (p.entry < CONFIG.minCoinPrice);
+        if (isBanned || isSubDollar) {
+          console.log(`[PURGE STALE] Đã giải phóng vị thế cũ của coin không phù hợp: ${sym} (Entry: ${p.entry}, MinPrice: ${CONFIG.minCoinPrice})`);
+          return false;
         }
-        return !isBanned;
+        return true;
       });
       if (activePositions.length !== prevCount) {
         savePositions();
-        console.log(`[POSITIONS] Số vị thế hợp lệ sau khi dọn dẹp coin rác: ${activePositions.length}`);
+        console.log(`[POSITIONS] Số vị thế hợp lệ sau khi dọn dẹp coin rác/0.xx: ${activePositions.length}`);
       }
     } catch (err) {
       console.error(`[POSITIONS] Lỗi đọc ${POSITIONS_FILE}:`, err.message);
@@ -152,11 +162,17 @@ export async function fetchTopVolumeCoins(limit = 30) {
 
     return json.data
       .filter(t => t.instId.endsWith('-USDT-SWAP'))
-      .map(t => ({
-        instId: t.instId,
-        volUsdt: parseFloat(t.volCcy24h || 0)
-      }))
-      .sort((a, b) => b.volUsdt - a.volUsdt)
+      .map(t => {
+        const last = parseFloat(t.last || 0);
+        const volCcy = parseFloat(t.volCcy24h || 0);
+        return {
+          instId: t.instId,
+          last,
+          turnoverUsdt: volCcy * last // Doanh số thực tế 24h tính bằng USDT (Volume * Giá)
+        };
+      })
+      .filter(t => t.last >= CONFIG.minCoinPrice) // Lọc bỏ triệt để các coin giá 0.xx (< minCoinPrice)
+      .sort((a, b) => b.turnoverUsdt - a.turnoverUsdt)
       .slice(0, limit)
       .map(t => t.instId);
   } catch (err) {
@@ -294,16 +310,16 @@ export async function runScanCycle() {
   let symbolsToScan = [];
   if (CONFIG.scanMode === 'DYNAMIC_TOP') {
     const rawTop = await fetchTopVolumeCoins(CONFIG.topLimit);
-    // Lọc bỏ toàn bộ memecoin / coin rác
+    // Lọc bỏ toàn bộ memecoin / coin rác / tài sản phi crypto
     symbolsToScan = rawTop.filter(inst => {
       const sym = inst.replace('-SWAP', '');
-      return !MEMECOIN_BLACKLIST.has(sym);
+      return !MEMECOIN_BLACKLIST.has(sym) && !NON_CRYPTO_BLACKLIST.has(sym);
     });
 
     // Bổ sung các coin nền tảng chất lượng vào danh sách
     for (const core of QUALITY_UNIVERSE) {
       const inst = core.endsWith('-SWAP') ? core : `${core}-SWAP`;
-      if (!symbolsToScan.includes(inst) && !MEMECOIN_BLACKLIST.has(core)) {
+      if (!symbolsToScan.includes(inst) && !MEMECOIN_BLACKLIST.has(core) && !NON_CRYPTO_BLACKLIST.has(core)) {
         symbolsToScan.push(inst);
       }
     }
@@ -311,7 +327,7 @@ export async function runScanCycle() {
     symbolsToScan = QUALITY_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   }
 
-  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} cặp coin...`);
+  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} cặp coin chất lượng (Giá >= ${CONFIG.minCoinPrice} USDT)...`);
 
   for (const instId of symbolsToScan) {
     const symbol = instId.replace('-SWAP', '');
@@ -330,6 +346,11 @@ export async function runScanCycle() {
 
       // Giá hiện tại theo thời gian thực để cập nhật TP/SL/Trailing BE
       const currentPrice = candlesM15[candlesM15.length - 1].close;
+
+      // KIỂM TRA GIÁ TỐI THIỂU: Bỏ qua tuyệt đối các coin 0.xx (nhỏ hơn minCoinPrice, mặc định 1.0 USDT)
+      if (currentPrice < CONFIG.minCoinPrice) {
+        continue;
+      }
 
       // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
       if (activePositions.length >= CONFIG.maxOpenPositions) {

@@ -145,6 +145,22 @@ assert(shieldDump.canShort, 'Vẫn cho phép mở Short');
 // 8. Test Cấu hình Time-Stop & Khử lỗi nến confirm OKX API
 console.log('\n8. Kiểm tra Cấu hình Time-Stop & Xác thực nến OKX:');
 assert(DEFAULT_CONFIG.timeStopBars === 16, 'DEFAULT_CONFIG.timeStopBars đồng bộ 16 nến M15 (4 tiếng)');
+assert(DEFAULT_CONFIG.minCoinPrice === 1.0, 'DEFAULT_CONFIG.minCoinPrice mặc định chặn coin < 1.0 USDT (loại trừ coin 0.xx)');
+
+// Test từ chối coin 0.xx trong evaluateMarket
+const subDollarM15 = [
+  { open: 0.05, high: 0.051, low: 0.049, close: 0.05, ts: 1729000000000, confirm: 1 },
+  { open: 0.05, high: 0.051, low: 0.049, close: 0.05, ts: 1729000900000, confirm: 1 }
+];
+const subDollarH4 = new Array(95).fill({ open: 0.05, high: 0.051, low: 0.049, close: 0.05, ts: 1729000000000, confirm: 1 });
+const resSubDollar = evaluateMarket({
+  symbol: 'PENNY-USDT',
+  candlesH4: subDollarH4,
+  candlesH1: subDollarH4.slice(0, 20),
+  candlesM15: subDollarM15,
+  config: DEFAULT_CONFIG
+});
+assert(resSubDollar === null, 'evaluateMarket tự động từ chối coin có giá 0.xx (< 1.0 USDT)');
 
 const mockOkxRaw = [
   ['1729000000000', '100', '105', '99', '103', '500', '50000', '50000', '1'],
