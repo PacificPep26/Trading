@@ -245,6 +245,24 @@ export async function runScanCycle() {
   const rawBtcH1 = await fetchOkxCandles('BTC-USDT-SWAP', '1H', 30);
   const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
 
+  // 1.1. Luôn cập nhật giá thời gian thực cho TẤT CẢ các vị thế đang mở
+  if (activePositions.length > 0) {
+    console.log(`[POSITIONS ACTIVE] Danh sách vị thế đang mở:`);
+    for (const pos of [...activePositions]) {
+      try {
+        const candles = await fetchOkxCandles(pos.instId, '15m', 5);
+        if (candles && candles.length > 0) {
+          const curPrice = candles[candles.length - 1].close;
+          const pnlR = (pos.direction === 'LONG' ? (curPrice - pos.entry) : (pos.entry - curPrice)) / Math.abs(pos.entry - pos.initialStopLoss);
+          console.log(`  • ${pos.symbol} ${pos.direction} (Entry: ${pos.entry}, Hiện tại: ${curPrice}, PnL: ${pnlR.toFixed(2)}R, SL: ${pos.stopLoss}, TP: ${pos.takeProfit})`);
+          await updateOpenPositions(pos.instId, curPrice);
+        }
+      } catch (err) {
+        console.error(`[UPDATE POS] Lỗi cập nhật ${pos.symbol}:`, err.message);
+      }
+    }
+  }
+
   // 2. Xác định danh sách cặp cần quét (Chỉ quét coin nền tảng chất lượng)
   let symbolsToScan = [];
   if (CONFIG.scanMode === 'DYNAMIC_TOP') {
@@ -285,9 +303,6 @@ export async function runScanCycle() {
 
       // Giá hiện tại theo thời gian thực để cập nhật TP/SL/Trailing BE
       const currentPrice = candlesM15[candlesM15.length - 1].close;
-
-      // Cập nhật vị thế đang mở nếu có
-      await updateOpenPositions(instId, currentPrice);
 
       // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
       if (activePositions.length >= CONFIG.maxOpenPositions) {
