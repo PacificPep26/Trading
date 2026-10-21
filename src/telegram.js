@@ -44,7 +44,7 @@ export async function sendTelegramMessage(text) {
 }
 
 /**
- * Thông báo khi phát hiện Tín hiệu vào lệnh mới
+ * Thông báo khi phát hiện Tín hiệu vào lệnh mới (Gọn gàng, loại bỏ RR & Quản trị vốn)
  * @param {object} signal
  */
 export async function notifyNewSignal(signal) {
@@ -53,21 +53,12 @@ export async function notifyNewSignal(signal) {
   const dirText = isLong ? 'MUA (LONG)' : 'BÁN (SHORT)';
 
   const msg = `
-${icon} <b>TÍN HIỆU ĐỊNH LƯỢNG MỚI: ${signal.symbol}</b>
+${icon} <b>${dirText} 10X: ${signal.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-📊 <b>Chiến lược:</b> <code>${signal.strategy}</code>
-🎯 <b>Hướng lệnh:</b> <b>${dirText}</b> (Isolated 10X)
-💵 <b>Giá Vào (Entry):</b> <code>${signal.entry}</code>
-🛑 <b>Dừng Lỗ (SL):</b> <code>${signal.stopLoss}</code>
-🎯 <b>Chốt Lời (TP):</b> <code>${signal.takeProfit}</code>
-⚖️ <b>Tỷ lệ R:R:</b> <b>1:${signal.riskReward}</b>
-
-💼 <b>QUẢN TRỊ VỐN (1R = ${signal.sizing?.riskPerUnit ? (signal.sizing.size * signal.sizing.riskPerUnit).toFixed(1) : '10'} USDT):</b>
-• Khối lượng (Size): <code>${signal.sizing?.size.toFixed(4)}</code> coin
-• Giá trị vị thế: <code>$${signal.sizing?.notional.toFixed(1)}</code>
-• Ký quỹ (Margin 10X): <code>$${signal.sizing?.margin.toFixed(1)}</code>
-
-📝 <b>Lý do Cấu trúc:</b> ${signal.reason}
+💵 <b>Entry:</b> <code>${signal.entry}</code>
+🛑 <b>SL:</b> <code>${signal.stopLoss}</code>
+🎯 <b>TP:</b> <code>${signal.takeProfit}</code>
+📝 <b>Lý do:</b> ${signal.reason}
 ⏰ <b>Thời gian:</b> ${new Date(signal.triggerTime || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
 `.trim();
 

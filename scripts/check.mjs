@@ -19,7 +19,6 @@ import {
 import {
   calculatePositionSize,
   checkBtcMacroShield,
-  evaluateLiquiditySweep,
   evaluateMarket
 } from '../src/engine.js';
 

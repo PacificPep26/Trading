@@ -30,8 +30,9 @@ const CONFIG = {
   minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
   beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.5'),
   timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
+  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
   scanMode: process.env.SCAN_MODE || 'DYNAMIC_TOP',
-  topLimit: parseInt(process.env.TOP_COINS_LIMIT || '30', 10),
+  topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
   pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
   okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
   watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,WLD-USDT,DOGE-USDT,SUI-USDT')
@@ -39,13 +40,34 @@ const CONFIG = {
     .map(s => s.trim().toUpperCase())
 };
 
-// State quản lý vị thế đang mở
-let activePositions = [];
+// Danh sách Memecoin / Coin rác cấm giao dịch vì râu nến giật ảo
+const MEMECOIN_BLACKLIST = new Set([
+  'FLOKI-USDT', 'BONK-USDT', 'SHIB-USDT', 'PEPE-USDT', 'MEME-USDT',
+  'BOME-USDT', 'NEIRO-USDT', 'PENGU-USDT', 'APR-USDT', 'HMSTR-USDT',
+  'TURBO-USDT', 'DOGS-USDT', '1000SATS-USDT', 'SATS-USDT', 'BABYDOGE-USDT',
+  'BILL-USDT', 'AKE-USDT', 'DOOD-USDT', 'PUMP-USDT'
+]);
+
+// Danh sách Altcoin Top & Nền tảng cấu trúc chuẩn được ưu tiên quét
+const QUALITY_UNIVERSE = [
+  'BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'WLD-USDT', 'SUI-USDT',
+  'DOGE-USDT', 'NEAR-USDT', 'AVAX-USDT', 'LINK-USDT', 'ARB-USDT',
+  'OP-USDT', 'APT-USDT', 'TIA-USDT', 'INJ-USDT', 'RENDER-USDT'
+];
 
 /**
  * Tải danh sách vị thế từ file lưu trữ
  */
+// State quản lý vị thế đang mở
+let activePositions = [];
+
 function loadPositions() {
+  if (process.env.RESET_STATE === 'true') {
+    console.log('[POSITIONS] Nhận cờ RESET_STATE=true -> Xóa sạch các vị thế cũ.');
+    activePositions = [];
+    savePositions();
+    return;
+  }
   if (fs.existsSync(POSITIONS_FILE)) {
     try {
       const data = fs.readFileSync(POSITIONS_FILE, 'utf8');
@@ -219,20 +241,29 @@ export async function runScanCycle() {
   console.log(`[SCAN CYCLE] Bắt đầu quét thị trường lúc: ${timeStr}`);
   console.log(`[MODE] ${CONFIG.scanMode} | Đang mở: ${activePositions.length} vị thế`);
 
-  // 1. Tải nến BTC 1H để kích hoạt Khiên Macro
-  const btcH1 = await fetchOkxCandles('BTC-USDT-SWAP', '1H', 30);
+  // 1. Tải nến BTC 1H để kích hoạt Khiên Macro (Chỉ lấy nến đã đóng confirm=1)
+  const rawBtcH1 = await fetchOkxCandles('BTC-USDT-SWAP', '1H', 30);
+  const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
 
-  // 2. Xác định danh sách cặp cần quét
+  // 2. Xác định danh sách cặp cần quét (Chỉ quét coin nền tảng chất lượng)
   let symbolsToScan = [];
   if (CONFIG.scanMode === 'DYNAMIC_TOP') {
-    symbolsToScan = await fetchTopVolumeCoins(CONFIG.topLimit);
-    // Luôn đảm bảo các đồng coin cốt lõi nằm trong danh sách
-    for (const core of CONFIG.watchlist) {
+    const rawTop = await fetchTopVolumeCoins(CONFIG.topLimit);
+    // Lọc bỏ toàn bộ memecoin / coin rác
+    symbolsToScan = rawTop.filter(inst => {
+      const sym = inst.replace('-SWAP', '');
+      return !MEMECOIN_BLACKLIST.has(sym);
+    });
+
+    // Bổ sung các coin nền tảng chất lượng vào danh sách
+    for (const core of QUALITY_UNIVERSE) {
       const inst = core.endsWith('-SWAP') ? core : `${core}-SWAP`;
-      if (!symbolsToScan.includes(inst)) symbolsToScan.push(inst);
+      if (!symbolsToScan.includes(inst) && !MEMECOIN_BLACKLIST.has(core)) {
+        symbolsToScan.push(inst);
+      }
     }
   } else {
-    symbolsToScan = CONFIG.watchlist.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
+    symbolsToScan = QUALITY_UNIVERSE.map(c => c.endsWith('-SWAP') ? c : `${c}-SWAP`);
   }
 
   console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} cặp coin...`);
@@ -252,21 +283,36 @@ export async function runScanCycle() {
         continue;
       }
 
+      // Giá hiện tại theo thời gian thực để cập nhật TP/SL/Trailing BE
       const currentPrice = candlesM15[candlesM15.length - 1].close;
 
       // Cập nhật vị thế đang mở nếu có
       await updateOpenPositions(instId, currentPrice);
 
+      // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
+      if (activePositions.length >= CONFIG.maxOpenPositions) {
+        continue;
+      }
+
       // Nếu đã có vị thế mở cho cặp này thì không mở thêm
       const hasOpenPos = activePositions.some(p => p.instId === instId);
       if (hasOpenPos) continue;
 
-      // Chạy thuật toán định lượng Pure Engine
+      // LỌC NẾN ĐÃ ĐÓNG HOÀN TOÀN (confirm = 1) để nhận diện cấu trúc, chống Look-Ahead Bias
+      const closedH4 = candlesH4.filter(c => c.confirm === 1);
+      const closedH1 = candlesH1.filter(c => c.confirm === 1);
+      const closedM15 = candlesM15.filter(c => c.confirm === 1);
+
+      if (closedH4.length < 15 || closedH1.length < 15 || closedM15.length < 5) {
+        continue;
+      }
+
+      // Chạy thuật toán định lượng Pure Engine trên nến đã đóng 100%
       const signal = evaluateMarket({
         symbol,
-        candlesH4,
-        candlesH1,
-        candlesM15,
+        candlesH4: closedH4,
+        candlesH1: closedH1,
+        candlesM15: closedM15,
         btcH1Candles: btcH1,
         config: CONFIG
       });
