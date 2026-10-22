@@ -13,7 +13,8 @@ import {
   calculateATR,
   analyzeCandle,
   isMarubozu,
-  findFractalPivots
+  findFractalPivots,
+  classifyLiquidityTiers
 } from './indicators.js';
 
 export const DEFAULT_CONFIG = {
@@ -141,6 +142,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const atrH1 = atrsH1[atrsH1.length - 1] || (curPrice * 0.005);
   const h4Anatomy = analyzeCandle(lastH4);
 
+  // Phân cấp Thanh khoản 2 Tầng (Smart Money Inducement vs Major Key Level)
+  const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
+
   // Khiên BTC Macro 1H
   const btcShield = checkBtcMacroShield(btcH1Candles);
   let blockedSignal = null;
@@ -153,21 +157,30 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   // =========================================================================
   for (const sup of supports) {
     if (lastH4.low < sup) {
+      // SMC Inducement Filter: Bỏ qua bắt đáy nếu đang nén tại cản đáy con (Equal Lows) chưa được quét
+      if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_LOW') {
+        const isNearInducement = liquidityTiers.tier1Lows.some(tl => Math.abs(sup - tl.avgPrice) / sup <= 0.01);
+        if (isNearInducement && h4Anatomy.lowerWickRatio < 0.45) {
+          continue; // Tránh bẫy thanh khoản đáy con
+        }
+      }
+
       const isStrongSweep = h4Anatomy.lowerWickRatio >= 0.45;
       const isNormalSweep = h4Anatomy.lowerWickRatio >= 0.35 && lastH4.close >= sup * 0.998;
       const prevH4 = candlesH4[candlesH4.length - 2];
       const isEngulfing = prevH4 && lastH4.close > lastH4.open && lastH4.close >= prevH4.open;
+      const isSmcSweepLong = liquidityTiers.sweepState === 'BULLISH_SWEEP_CONFIRMED';
 
       let canLong = false;
       let isNgocTrend = false;
 
       if (isBullTrend) {
-        canLong = isNormalSweep || isEngulfing;
+        canLong = isNormalSweep || isEngulfing || isSmcSweepLong;
       } else {
         const distBelowEma34 = (ema34 - curPrice) / curPrice;
-        if (distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) {
+        if ((distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) || isSmcSweepLong) {
           canLong = true;
-          isNgocTrend = true;
+          isNgocTrend = !isSmcSweepLong;
         }
       }
 
@@ -202,7 +215,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               continue;
             }
 
-            const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG';
+            const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : (isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             return {
               strategy: stratName,
@@ -231,19 +244,29 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   for (const res of resistances) {
     const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
     if (testedRes) {
+      // SMC Inducement Filter: Bỏ qua bắt đỉnh nếu đang nén tại cản đỉnh con (Equal Highs) chưa được quét
+      // (Bảo vệ tài khoản tuyệt đối trước cú bơm quét SL lúc 19h như ngày 21/10)
+      if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_HIGH') {
+        const isNearInducement = liquidityTiers.tier1Highs.some(th => Math.abs(res - th.avgPrice) / res <= 0.01);
+        if (isNearInducement && h4Anatomy.upperWickRatio < 0.45) {
+          continue; // Bỏ qua bẫy cản con!
+        }
+      }
+
       const isStrongRejection = h4Anatomy.upperWickRatio >= 0.45;
       const isNormalRejection = h4Anatomy.upperWickRatio >= 0.25 || lastH4.close < lastH4.open;
+      const isSmcSweepShort = liquidityTiers.sweepState === 'BEARISH_SWEEP_CONFIRMED';
 
       let canShort = false;
       let isNgocTrend = false;
 
       if (isBearTrend) {
-        canShort = isNormalRejection;
+        canShort = isNormalRejection || isSmcSweepShort;
       } else {
         const distAboveEma34 = (curPrice - ema34) / ema34;
-        if (distAboveEma34 >= 0.030 && isStrongRejection) {
+        if ((distAboveEma34 >= 0.030 && isStrongRejection) || isSmcSweepShort) {
           canShort = true;
-          isNgocTrend = true;
+          isNgocTrend = !isSmcSweepShort;
         }
       }
 
@@ -278,7 +301,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               continue;
             }
 
-            const stratName = isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT';
+            const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : (isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             return {
               strategy: stratName,

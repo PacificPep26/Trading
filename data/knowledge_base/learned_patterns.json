@@ -1,0 +1,29 @@
+[
+  {
+    "eventId": "MINE-AVAX-USDT-1788609600000",
+    "symbol": "AVAX-USDT",
+    "type": "BEARISH_LIQUIDITY_SWEEP",
+    "date": "19:00:00 5/9/2026",
+    "retailTrap": "Đám đông retail ngộ nhận mốc 7.555 là kháng cự đôi kiên cố nên kích hoạt hai làn sóng thanh khoản: Breakout trader FOMO mua đuổi khi giá chớm vượt cản, đồng thời phe Short trước đó dời Buy-Stop tập trung ngay phía trên để cắt lỗ.",
+    "smartMoneyTactic": "Smart Money chủ động kích giá vọt lên 7.587 nhằm vét sạch thanh khoản mua (Buy-side Liquidity) từ Stop Loss của phe Short và lệnh Mua của phe Breakout để khớp vị thế Short quy mô lớn tại giá tối ưu, sau đó lập tức đạp giá đóng cửa thụt lùi xuống 7.539 tạo râu từ chối 49.5%.",
+    "coreTruthRule": "Kháng cự test càng nhiều lần càng là mồi nhử thanh khoản; cấm Buy Breakout và chỉ kích hoạt lệnh Short khi nến quét rút râu trên 40% đóng cửa hoàn toàn dưới đỉnh Inducement."
+  },
+  {
+    "eventId": "MINE-AVAX-USDT-1788624000000",
+    "symbol": "AVAX-USDT",
+    "type": "BEARISH_LIQUIDITY_SWEEP",
+    "date": "23:00:00 5/9/2026",
+    "retailTrap": "Retail nhầm tưởng mốc 7.555 bị phá vỡ sau 2 lần test là tín hiệu Breakout mua theo xu hướng, đồng thời kích hoạt hàng loạt Buy Stop của phe Short đặt ngay trên đỉnh cản.",
+    "smartMoneyTactic": "Smart Money cố tình đẩy giá rướn lên 7.65 để kích hoạt thanh khoản mua cưỡng bức (Buy Stops & FOMO Long), khớp toàn bộ lệnh Short ẩn với thanh khoản đối ứng dồi dào rồi đè giá đóng nến rút râu 48%.",
+    "coreTruthRule": "Kháng cự thử thách càng nhiều lần càng trở thành bể thanh khoản Inducement, tuyệt đối không Buy Breakout mà phải canh Short khi giá quét đỉnh để lại râu từ chối."
+  },
+  {
+    "eventId": "MINE-AVAX-USDT-1788638400000",
+    "symbol": "AVAX-USDT",
+    "type": "BEARISH_LIQUIDITY_SWEEP",
+    "date": "03:00:00 6/9/2026",
+    "retailTrap": "Đám đông retail ngộ nhận cú đẩy qua vùng cản 7.555 (đã test 2 lần) là tín hiệu breakout xác nhận tăng tiếp diễn, ồ ạt kích hoạt lệnh Buy FOMO kết hợp với lệnh Buy-Stop (cắt lỗ) của phe Short tạo thành pool thanh khoản màu mỡ.",
+    "smartMoneyTactic": "Market Maker đẩy giá vượt đỉnh giả tạo lên 7.627 để khớp toàn bộ lệnh Sell quy mô lớn vào lượng thanh khoản mua của retail, lập tức rút chân với râu nến 52.9% và đóng cửa ép phe Long kẹt hàng vị thế lỗ.",
+    "coreTruthRule": "Không bao giờ Buy breakout khi giá vượt đỉnh inducement đa điểm chạm nếu nến để lại râu từ chối > 50%; chỉ ưu tiên Short khi xuất hiện nến quét thanh khoản đóng cửa quay ngược vào trong biên cản."
+  }
+]

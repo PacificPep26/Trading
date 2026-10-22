@@ -15,7 +15,8 @@ import {
   findFairValueGaps,
   detectSqueeze,
   normalizeCandle,
-  validateCandleSchema
+  validateCandleSchema,
+  classifyLiquidityTiers
 } from '../src/indicators.js';
 
 import {
@@ -212,6 +213,42 @@ if (sampleCandles && sampleCandles.length > 0) {
 } else {
   console.log('  ⚠️ Cảnh báo: Môi trường offline, đã kiểm thử hợp đồng qua mock.');
 }
+
+// 10. Kiểm tra Phân cấp Thanh khoản 2 Tầng (classifyLiquidityTiers)
+console.log('\n10. Kiểm tra Phân cấp Thanh khoản 2 Tầng (classifyLiquidityTiers):');
+// Tạo mock nến H4 có 2 đỉnh bằng nhau (Equal Highs ~ 83,500) và 1 đỉnh cản lớn (Major High = 85,000)
+const mockLiquidityH4 = [
+  { ts: 1000, open: 80000, high: 85000, low: 79000, close: 82000, vol: 100, confirm: 1 }, // Major High = 85000
+  { ts: 2000, open: 82000, high: 82500, low: 81000, close: 81500, vol: 100, confirm: 1 },
+  { ts: 3000, open: 81500, high: 82000, low: 80500, close: 81000, vol: 100, confirm: 1 },
+  { ts: 4000, open: 81000, high: 81500, low: 80000, close: 80500, vol: 100, confirm: 1 },
+  { ts: 5000, open: 80500, high: 83500, low: 80200, close: 82800, vol: 100, confirm: 1 }, // Pivot High 1 = 83500
+  { ts: 6000, open: 82800, high: 83000, low: 82000, close: 82200, vol: 100, confirm: 1 },
+  { ts: 7000, open: 82200, high: 82600, low: 81800, close: 82000, vol: 100, confirm: 1 },
+  { ts: 8000, open: 82000, high: 83600, low: 81900, close: 82500, vol: 100, confirm: 1 }, // Pivot High 2 = 83600 (EQH)
+  { ts: 9000, open: 82500, high: 82900, low: 82200, close: 82600, vol: 100, confirm: 1 },
+  { ts: 10000, open: 82600, high: 82800, low: 82300, close: 82700, vol: 100, confirm: 1 },
+  { ts: 11000, open: 82700, high: 83100, low: 82400, close: 82900, vol: 100, confirm: 1 },
+  { ts: 12000, open: 82900, high: 83200, low: 82600, close: 83000, vol: 100, confirm: 1 },
+  { ts: 13000, open: 83000, high: 83450, low: 82800, close: 83400, vol: 100, confirm: 1 },
+  { ts: 14000, open: 83400, high: 83550, low: 83100, close: 83480, vol: 100, confirm: 1 },
+  { ts: 15000, open: 83480, high: 83580, low: 83200, close: 83500, vol: 100, confirm: 1 } // Đang test cản con
+];
+
+const tiersAtRisk = classifyLiquidityTiers(mockLiquidityH4, 83500);
+assert(tiersAtRisk.tier1Highs.length > 0, 'Phát hiện cụm Equal Highs (Tier 1 Inducement)');
+assert(tiersAtRisk.tier2MajorHigh === 85000, 'Xác định chính xác cản lớn Major High là 85,000');
+assert(tiersAtRisk.isInducementTrapRisk === true, 'Cảnh báo chính xác rủi ro Bẫy Inducement khi giá chưa quét qua đỉnh con');
+
+// Mô phỏng cây nến 19h quét qua cản con 83,600 lên 84,900 chạm sát cản lớn 85,000 và để lại râu trên 60%
+const mockSweepH4 = [
+  ...mockLiquidityH4,
+  { ts: 16000, open: 83500, high: 84900, low: 83200, close: 83600, vol: 500, confirm: 1 }
+];
+const tiersAfterSweep = classifyLiquidityTiers(mockSweepH4, 83600);
+assert(tiersAfterSweep.sweepState === 'BEARISH_SWEEP_CONFIRMED', 'Xác nhận Liquidity Sweep thành công khi quét qua Inducement chạm cản lớn');
+assert(tiersAfterSweep.isInducementTrapRisk === false, 'Sau khi đã quét râu sạch SL thì không còn bị bẫy Inducement chặn nữa');
+
 
 // Tổng kết
 console.log('\n======================================================');

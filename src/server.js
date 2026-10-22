@@ -413,7 +413,69 @@ export async function runScanCycle() {
     }
   }
 
+  // Tự động kiểm tra và phát Bản tin Smart Money AI vào đầu mỗi buổi sáng (07:00 VN)
+  await checkAndTriggerDailyBriefing();
+
   console.log(`[SCAN CYCLE] Hoàn tất chu kỳ. Chờ ${CONFIG.pollIntervalSec}s...`);
+}
+
+let lastBriefingDate = '';
+
+async function checkAndTriggerDailyBriefing() {
+  const now = new Date();
+  const vnDateStr = now.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const vnHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' }), 10);
+
+  // Kích hoạt vào khoảng 07:00 - 08:00 sáng mỗi ngày giờ VN
+  if (vnHour >= 7 && lastBriefingDate !== vnDateStr && process.env.GEMINI_API_KEY) {
+    lastBriefingDate = vnDateStr;
+    console.log(`[AI AGENT] Kích hoạt Bản tin Smart Money Hàng Ngày (${vnDateStr})...`);
+    try {
+      const { generateDailyMarketAnalysis } = await import('./ai_agent.js');
+      const { calculateEMA, classifyLiquidityTiers } = await import('./indicators.js');
+      const { sendTelegramMessage } = await import('./telegram.js');
+
+      const symbols = PREMIER_UNIVERSE;
+      const snapshot = [];
+
+      for (const symbol of symbols) {
+        const instId = `${symbol}-SWAP`;
+        const candlesH4 = await fetchOkxCandles(instId, '4H', 100);
+        if (!candlesH4 || candlesH4.length < 50) continue;
+        const closedH4 = candlesH4.filter(c => c.confirm === 1);
+        const lastCandle = closedH4[closedH4.length - 1];
+        const curPrice = lastCandle.close;
+        const closes = closedH4.map(c => c.close);
+        const ema34 = calculateEMA(closes, 34).slice(-1)[0];
+        const ema89 = calculateEMA(closes, 89).slice(-1)[0];
+        const liquidityTiers = classifyLiquidityTiers(closedH4, curPrice);
+
+        snapshot.push({
+          symbol,
+          currentPrice: curPrice,
+          trendH4: ema34 >= ema89 ? 'BULL' : 'BEAR',
+          ema34: parseFloat(ema34?.toFixed(2) || '0'),
+          ema89: parseFloat(ema89?.toFixed(2) || '0'),
+          distanceToEma34Percent: parseFloat((((curPrice - ema34) / ema34) * 100).toFixed(2)),
+          liquidityTiers: {
+            tier1InducementHighs: liquidityTiers.tier1Highs.map(h => ({ price: h.avgPrice, touches: h.touchCount })),
+            tier1InducementLows: liquidityTiers.tier1Lows.map(l => ({ price: l.avgPrice, touches: l.touchCount })),
+            tier2MajorHigh: liquidityTiers.tier2MajorHigh,
+            tier2MajorLow: liquidityTiers.tier2MajorLow,
+            isInducementTrapRisk: liquidityTiers.isInducementTrapRisk,
+            sweepState: liquidityTiers.sweepState,
+            details: liquidityTiers.details
+          }
+        });
+      }
+
+      const briefingText = await generateDailyMarketAnalysis({ symbolsData: snapshot, activePositions });
+      await sendTelegramMessage(briefingText);
+      console.log('[AI AGENT] Đã tự động gửi Bản tin Smart Money sáng nay qua Telegram!');
+    } catch (err) {
+      console.error('[AI AGENT] Lỗi chạy Daily Briefing:', err.message);
+    }
+  }
 }
 
 let isScanning = false;

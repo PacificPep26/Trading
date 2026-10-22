@@ -23,6 +23,36 @@ export async function sendTelegramMessage(text) {
     return false;
   }
 
+  // Telegram giới hạn 4096 ký tự mỗi tin nhắn -> Tự động cắt nếu vượt quá 3900 ký tự
+  const MAX_LEN = 3900;
+  if (text.length > MAX_LEN) {
+    const parts = [];
+    let currentPart = '';
+    const lines = text.split('\n');
+
+    for (const line of lines) {
+      if ((currentPart + '\n' + line).length > MAX_LEN) {
+        if (currentPart.trim()) parts.push(currentPart.trim());
+        currentPart = line;
+      } else {
+        currentPart = currentPart ? (currentPart + '\n' + line) : line;
+      }
+    }
+    if (currentPart.trim()) parts.push(currentPart.trim());
+
+    let allOk = true;
+    for (const part of parts) {
+      const ok = await sendSingleTelegramChunk(part);
+      if (!ok) allOk = false;
+      await new Promise(r => setTimeout(r, 600)); // Nghỉ 600ms giữa các chunk để chống rate-limit
+    }
+    return allOk;
+  }
+
+  return await sendSingleTelegramChunk(text);
+}
+
+async function sendSingleTelegramChunk(text) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   try {
     const res = await fetch(url, {

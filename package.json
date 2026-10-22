@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/server.js",
     "check": "node scripts/check.mjs",
-    "backtest": "node scripts/backtest.mjs"
+    "backtest": "node scripts/backtest.mjs",
+    "briefing": "node scripts/daily_briefing.mjs",
+    "mine": "node src/research/market_miner.js"
   },
   "keywords": [
     "crypto",

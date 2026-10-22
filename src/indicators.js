@@ -400,4 +400,197 @@ export function validateCandleSchema(candle) {
   return true;
 }
 
+/**
+ * CLASSIFY LIQUIDITY TIERS (ĐỘC QUYỀN SMART MONEY CONCEPT & KANE H4)
+ * Phân cấp 2 Tầng Thanh khoản để triệt tiêu xung đột tín hiệu:
+ * 
+ * - Tier 1: Inducement Zone (Cản con / Bẫy Thanh Khoản - Equal Highs/Lows)
+ *   Là nơi giá quét râu nhiều lần nhưng không bứt phá mạnh, tạo cảm giác "cản cứng" cho Retail.
+ *   Retail tập trung đặt Limit Short / Buy và gom Stop Loss tại đây.
+ *   Cá mập (Smart Money) thường xuyên ĐẨY XUYÊN QUA để quét sạch SL (Liquidity Run).
+ *   => NGUYÊN TẮC: TUYỆT ĐỐI KHÔNG BẮT ĐỈNH/ĐÁY TẠI ĐÂY KHI CHƯA CÓ SWEEP!
+ * 
+ * - Tier 2: Major Key Level (Cản Lớn Cấu Trúc / Institutional Zone)
+ *   Là đỉnh/đáy lịch sử hoặc cấu trúc swing lớn của đa khung thời gian (H4 30-90 nến).
+ *   Cá mập dùng cú đẩy xuyên qua Tier 1 để khớp lệnh khối lượng lớn tại Tier 2.
+ *   => NGUYÊN TẮC: KHI GIÁ QUÉT QUA TIER 1, CHẠM TIER 2 VÀ ĐỂ LẠI RÂU NẾN H4 TỪ CHỐI (WICK >= 35%)
+ *      THÌ ĐÂY MỚI LÀ ĐIỂM VÀO ĐẢO CHIỀU VIP CỦA SMART MONEY!
+ * 
+ * @param {Array<{high: number, low: number, close: number, open: number, ts: number}>} candlesH4
+ * @param {number} curPrice
+ * @param {object} options
+ * @returns {object}
+ */
+export function classifyLiquidityTiers(candlesH4, curPrice, options = {}) {
+  const {
+    clusterTolerance = 0.008, // 0.8% biên độ xem là Equal Highs / Equal Lows
+    macroLookback = 60,
+    wickRejectionThreshold = 0.35
+  } = options;
+
+  if (!candlesH4 || candlesH4.length < 15) {
+    return {
+      tier1Highs: [],
+      tier1Lows: [],
+      tier2MajorHigh: null,
+      tier2MajorLow: null,
+      isInducementTrapRisk: false,
+      sweepState: 'NONE',
+      details: null
+    };
+  }
+
+  const recentCandles = candlesH4.slice(-macroLookback);
+  const pivots = findFractalPivots(recentCandles, 2, 2);
+
+  const pivotHighs = pivots.filter(p => p.type === 'HIGH').map(p => p.price);
+  const pivotLows = pivots.filter(p => p.type === 'LOW').map(p => p.price);
+
+  // 1. Phân cụm các đỉnh (Highs) để tìm Equal Highs (Tier 1 Inducement)
+  const tier1Highs = [];
+  const sortedHighs = [...pivotHighs].sort((a, b) => a - b);
+  const usedHighIdx = new Set();
+
+  for (let i = 0; i < sortedHighs.length; i++) {
+    if (usedHighIdx.has(i)) continue;
+    const base = sortedHighs[i];
+    const cluster = [base];
+    usedHighIdx.add(i);
+
+    for (let j = i + 1; j < sortedHighs.length; j++) {
+      if (usedHighIdx.has(j)) continue;
+      if (Math.abs(sortedHighs[j] - base) / base <= clusterTolerance) {
+        cluster.push(sortedHighs[j]);
+        usedHighIdx.add(j);
+      }
+    }
+
+    if (cluster.length >= 2) {
+      const avgPrice = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+      const maxPrice = Math.max(...cluster);
+      const minPrice = Math.min(...cluster);
+      tier1Highs.push({ avgPrice, minPrice, maxPrice, touchCount: cluster.length });
+    }
+  }
+
+  // 2. Phân cụm các đáy (Lows) để tìm Equal Lows (Tier 1 Inducement Floor)
+  const tier1Lows = [];
+  const sortedLows = [...pivotLows].sort((a, b) => a - b);
+  const usedLowIdx = new Set();
+
+  for (let i = 0; i < sortedLows.length; i++) {
+    if (usedLowIdx.has(i)) continue;
+    const base = sortedLows[i];
+    const cluster = [base];
+    usedLowIdx.add(i);
+
+    for (let j = i + 1; j < sortedLows.length; j++) {
+      if (usedLowIdx.has(j)) continue;
+      if (Math.abs(sortedLows[j] - base) / base <= clusterTolerance) {
+        cluster.push(sortedLows[j]);
+        usedLowIdx.add(j);
+      }
+    }
+
+    if (cluster.length >= 2) {
+      const avgPrice = cluster.reduce((a, b) => a + b, 0) / cluster.length;
+      const maxPrice = Math.max(...cluster);
+      const minPrice = Math.min(...cluster);
+      tier1Lows.push({ avgPrice, minPrice, maxPrice, touchCount: cluster.length });
+    }
+  }
+
+  // 3. Xác định Tier 2 Major Structural Levels
+  const maxHigh = Math.max(...recentCandles.map(c => c.high));
+  const minLow = Math.min(...recentCandles.map(c => c.low));
+
+  const tier2MajorHigh = maxHigh > curPrice ? maxHigh : null;
+  const tier2MajorLow = minLow < curPrice ? minLow : null;
+
+  // 4. Đánh giá trạng thái Sweep & Bẫy Inducement đối với nến H4 gần nhất
+  const lastH4 = candlesH4[candlesH4.length - 1];
+  const lastAnatomy = analyzeCandle(lastH4);
+
+  let isInducementTrapRisk = false;
+  let sweepState = 'NONE';
+  let details = null;
+
+  // Kiểm tra cản trên (Resistances & Bearish Sweep)
+  const nearestTier1High = tier1Highs
+    .filter(c => c.maxPrice >= curPrice * 0.985 && c.minPrice <= curPrice * 1.025)
+    .sort((a, b) => Math.abs(a.avgPrice - curPrice) - Math.abs(b.avgPrice - curPrice))[0];
+
+  if (nearestTier1High) {
+    const hasSweptAbove = lastH4.high > nearestTier1High.maxPrice;
+    if (!hasSweptAbove && curPrice <= nearestTier1High.maxPrice && curPrice >= nearestTier1High.minPrice * 0.995) {
+      isInducementTrapRisk = true;
+      sweepState = 'INDUCEMENT_TRAP_HIGH';
+      details = {
+        levelType: 'TIER_1_EQH',
+        zonePrice: nearestTier1High.avgPrice,
+        touchCount: nearestTier1High.touchCount,
+        warning: 'Giá đang nén tại cản con (Equal Highs). Nguy cơ cao Smart Money quét đỉnh trước khi xả!'
+      };
+    } else if (hasSweptAbove) {
+      const sweptNearMajor = tier2MajorHigh ? (lastH4.high >= tier2MajorHigh * 0.995) : false;
+      const isRejection = lastAnatomy.upperWickRatio >= wickRejectionThreshold || lastH4.close < nearestTier1High.maxPrice;
+
+      if (isRejection || sweptNearMajor) {
+        sweepState = 'BEARISH_SWEEP_CONFIRMED';
+        details = {
+          levelType: 'TIER_2_SWEEP_SUCCESS',
+          sweptInducement: nearestTier1High.maxPrice,
+          majorHigh: tier2MajorHigh,
+          upperWickRatio: lastAnatomy.upperWickRatio,
+          note: 'Smart Money đã quét sạch SL đội Short Inducement và chạm cản lớn Tier 2. Vùng Short an toàn!'
+        };
+      }
+    }
+  }
+
+  // Symmetrically Kiểm tra cản dưới (Supports & Bullish Sweep)
+  const nearestTier1Low = tier1Lows
+    .filter(c => c.minPrice <= curPrice * 1.015 && c.maxPrice >= curPrice * 0.975)
+    .sort((a, b) => Math.abs(a.avgPrice - curPrice) - Math.abs(b.avgPrice - curPrice))[0];
+
+  if (nearestTier1Low) {
+    const hasSweptBelow = lastH4.low < nearestTier1Low.minPrice;
+    if (!hasSweptBelow && curPrice >= nearestTier1Low.minPrice && curPrice <= nearestTier1Low.maxPrice * 1.005) {
+      isInducementTrapRisk = true;
+      sweepState = 'INDUCEMENT_TRAP_LOW';
+      details = {
+        levelType: 'TIER_1_EQL',
+        zonePrice: nearestTier1Low.avgPrice,
+        touchCount: nearestTier1Low.touchCount,
+        warning: 'Giá đang nén tại đáy con (Equal Lows). Nguy cơ cao Smart Money quét đáy trước khi hồi!'
+      };
+    } else if (hasSweptBelow) {
+      const sweptNearMajor = tier2MajorLow ? (lastH4.low <= tier2MajorLow * 1.005) : false;
+      const isRejection = lastAnatomy.lowerWickRatio >= wickRejectionThreshold || lastH4.close > nearestTier1Low.minPrice;
+
+      if (isRejection || sweptNearMajor) {
+        sweepState = 'BULLISH_SWEEP_CONFIRMED';
+        details = {
+          levelType: 'TIER_2_SWEEP_SUCCESS',
+          sweptInducement: nearestTier1Low.minPrice,
+          majorLow: tier2MajorLow,
+          lowerWickRatio: lastAnatomy.lowerWickRatio,
+          note: 'Smart Money đã quét sạch SL đội Long Inducement và chạm hỗ trợ lớn Tier 2. Vùng Long an toàn!'
+        };
+      }
+    }
+  }
+
+  return {
+    tier1Highs,
+    tier1Lows,
+    tier2MajorHigh,
+    tier2MajorLow,
+    isInducementTrapRisk,
+    sweepState,
+    details
+  };
+}
+
+
 

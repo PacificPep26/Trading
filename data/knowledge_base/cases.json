@@ -1,0 +1,12 @@
+[
+  {
+    "id": "CASE-20261021-BTC-FAKE-OUT",
+    "date": "2026-10-21",
+    "symbol": "BTC-USDT",
+    "eventType": "LIQUIDITY_SWEEP_BEARISH",
+    "description": "Bẫy thanh khoản nén đỉnh 83.5k - 83.9k và cú nổ nến 19h quét sạch SL lên cản lớn 84.8k - 85.0k",
+    "retailBehavior": "Trong suốt phiên ngày 21/10, BTC liên tục test vùng 83.5k - 83.9k nhiều lần rút râu nhẹ. Đám đông retail lầm tưởng đây là cản cứng, tập trung đặt limit short và kéo Stop Loss ngay trên 84.0k.",
+    "smartMoneyAction": "Vào cây nến 19h (12:00 UTC), Smart Money bơm một cây nến thẳng đứng vượt qua 84.0k, quét toàn bộ SL của phe Short và bẫy đám đông FOMO Breakout. Đỉnh sóng chạm đúng cản cấu trúc lớn 84.8k - 85.0k (Major High ngày 07/10), sau đó cá mập xả mạnh dìm giá về 82.9k.",
+    "systemLesson": "1. Không bao giờ đặt Short tại cản con (Inducement / Equal Highs) khi chưa có cú quét râu thanh khoản.\n2. Khi phát hiện cản lớn cấu trúc (Tier 2) cách cản con 1-2%, Smart Money luôn có xu hướng quét cản con để chạm cản lớn trước khi đảo chiều thật.\n3. Chỉ kích hoạt lệnh Short sau khi nến quét râu hoàn tất và M15 xác nhận gãy cấu trúc cục bộ."
+  }
+]
