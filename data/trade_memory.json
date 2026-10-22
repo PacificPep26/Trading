@@ -10,6 +10,26 @@
       "mistakeTitle": "Đánh Long Cản Tàu Khi Đầu Tàu BTC Đang Rơi Tự Do",
       "rootCause": "Toa tàu NEAR-USDT mở lệnh LONG khi Đầu Tàu BTC đang DUMPING_WATERFALL! Lỗi không theo đầu tàu dẫn dắt là lỗi chết người!",
       "lossUsd": -10,
+      "timestamp": 1792655152469
+    },
+    {
+      "symbol": "SOL-USDT",
+      "direction": "LONG",
+      "strategy": "SMC_SWEEP_REVERSAL_LONG",
+      "mistakeType": "TREND_FIGHTING",
+      "mistakeTitle": "Bắt Dao Rơi Trong Xu Hướng Giảm Dốc Đứng",
+      "rootCause": "Vào lệnh LONG khi thị trường đang ở giai đoạn STRONG_DOWNTREND. Nến dốc đứng một chiều nghiền nát mọi hỗ trợ/kháng cự con!",
+      "lossUsd": -10,
+      "timestamp": 1792655152464
+    },
+    {
+      "symbol": "NEAR-USDT",
+      "direction": "LONG",
+      "strategy": "SMC_SWEEP_REVERSAL_LONG",
+      "mistakeType": "LOCOMOTIVE_MISALIGNMENT",
+      "mistakeTitle": "Đánh Long Cản Tàu Khi Đầu Tàu BTC Đang Rơi Tự Do",
+      "rootCause": "Toa tàu NEAR-USDT mở lệnh LONG khi Đầu Tàu BTC đang DUMPING_WATERFALL! Lỗi không theo đầu tàu dẫn dắt là lỗi chết người!",
+      "lossUsd": -10,
       "timestamp": 1792654292375
     },
     {

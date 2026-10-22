@@ -14,6 +14,7 @@ import {
   analyzeCandle,
   isMarubozu,
   findFractalPivots,
+  findFairValueGaps,
   classifyLiquidityTiers,
   detectVolumeAbsorption,
   detectPreviousBarSweep
@@ -243,6 +244,24 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   }
   if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice && !supports.some(s => Math.abs(s - liquidityTiers.tier2MajorLow) / s < 0.003)) {
     supports.push(liquidityTiers.tier2MajorLow);
+  }
+
+  // Bổ sung các vùng Fair Value Gap (FVG) chưa được lấp (Unmitigated) làm cản SMC đón đầu
+  if (candlesH1 && candlesH1.length >= 5) {
+    const fvgsH1 = findFairValueGaps(candlesH1);
+    const unmitigatedBullishFvg = fvgsH1.filter(f => f.type === 'BULLISH' && !f.isMitigated && f.top < curPrice);
+    const unmitigatedBearishFvg = fvgsH1.filter(f => f.type === 'BEARISH' && !f.isMitigated && f.bottom > curPrice);
+
+    for (const f of unmitigatedBullishFvg) {
+      if (!supports.some(s => Math.abs(s - f.top) / s < 0.003)) {
+        supports.push(f.top);
+      }
+    }
+    for (const f of unmitigatedBearishFvg) {
+      if (!resistances.some(r => Math.abs(r - f.bottom) / r < 0.003)) {
+        resistances.push(f.bottom);
+      }
+    }
   }
 
   resistances.sort((a, b) => a - b); // Tăng dần (gần nhất lên đầu)
@@ -622,7 +641,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
  * @param {object} params
  * @returns {object|null}
  */
-export function generateKeyLevelRadar({ symbol, candlesH4, curPrice }) {
+export function generateKeyLevelRadar({ symbol, candlesH4, curPrice, candlesH1 = null }) {
   if (!candlesH4 || candlesH4.length < 15) return null;
 
   const closesH4 = candlesH4.map(c => c.close);
@@ -642,6 +661,14 @@ export function generateKeyLevelRadar({ symbol, candlesH4, curPrice }) {
   const candidateSupports = pivots.filter(p => p.type === 'LOW').map(p => p.price);
   if (prevH4) candidateSupports.push(prevH4.low);
   if (liquidityTiers.tier2MajorLow) candidateSupports.push(liquidityTiers.tier2MajorLow);
+
+  // Bổ sung các vùng Fair Value Gap (FVG) chưa lấp vào kịch bản đón đầu
+  const targetCandlesForFvg = (candlesH1 && candlesH1.length >= 5) ? candlesH1 : candlesH4;
+  if (targetCandlesForFvg && targetCandlesForFvg.length >= 5) {
+    const fvgs = findFairValueGaps(targetCandlesForFvg);
+    fvgs.filter(f => f.type === 'BULLISH' && !f.isMitigated && f.top < curPrice).forEach(f => candidateSupports.push(f.top));
+    fvgs.filter(f => f.type === 'BEARISH' && !f.isMitigated && f.bottom > curPrice).forEach(f => candidateResistances.push(f.bottom));
+  }
 
   const nearestRes = candidateResistances
     .filter(r => r > curPrice)

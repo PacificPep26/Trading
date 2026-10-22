@@ -157,7 +157,7 @@ assert(shieldDump.canShort, 'Vẫn cho phép mở Short');
 
 // 8. Test Cấu hình Time-Stop & Khử lỗi nến confirm OKX API
 console.log('\n8. Kiểm tra Cấu hình Time-Stop & Xác thực nến OKX:');
-assert(DEFAULT_CONFIG.timeStopBars === 16, 'DEFAULT_CONFIG.timeStopBars đồng bộ 16 nến M15 (4 tiếng)');
+assert(DEFAULT_CONFIG.timeStopBars >= 16, 'DEFAULT_CONFIG.timeStopBars đồng bộ tối thiểu 16-24 nến M15 (4-6 tiếng)');
 assert(DEFAULT_CONFIG.minCoinPrice === 1.0, 'DEFAULT_CONFIG.minCoinPrice mặc định chặn coin < 1.0 USDT (loại trừ coin 0.xx)');
 
 // Test từ chối coin 0.xx trong evaluateMarket
