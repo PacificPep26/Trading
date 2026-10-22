@@ -14,7 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from '../src/indicators.js';
-import { evaluateMarket, DEFAULT_CONFIG } from '../src/engine.js';
+import { evaluateMarket } from '../src/engine.js';
+import { BOT_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, '../data/cache_1year');
@@ -27,17 +28,7 @@ const BACKTEST_SYMBOLS = [
   'NEAR-USDT-SWAP'
 ];
 
-const CONFIG = {
-  ...DEFAULT_CONFIG,
-  riskUsd: 10.0,
-  leverage: 10,
-  feeRate: 0.0008,          // Phí Taker 0.08%
-  minRR: 2.0,
-  beTriggerR: 1.5,          // Đạt +1.5R kích hoạt trailing
-  lockProfitR: 1.0,         // Khóa dương +1.0R, gồng tiếp tới 2R
-  atrBufferMultiplier: 0.2,
-  minCoinPrice: 1.0
-};
+const CONFIG = BOT_CONFIG;
 
 const M15_MS = 15 * 60 * 1000;
 const H1_MS = 60 * 60 * 1000;
@@ -46,7 +37,8 @@ const H4_MS = 4 * 60 * 60 * 1000;
 // Bắt đầu backtest chính thức từ 01/10/2025 (dữ liệu tháng 09/2025 dùng để warmup EMA 89 và Pivots)
 const START_BACKTEST_TS = new Date('2025-10-01T00:00:00Z').getTime();
 
-export async function backtestSymbol(instId, btcH1Candles) {
+export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, customConfig = null) {
+  const cfg = customConfig || CONFIG;
   const symbol = instId.replace('-SWAP', '');
   const fH4 = path.join(CACHE_DIR, `${instId}_4H.json`);
   const fH1 = path.join(CACHE_DIR, `${instId}_1H.json`);
@@ -72,6 +64,7 @@ export async function backtestSymbol(instId, btcH1Candles) {
   let h4Pointer = 0;
   let h1Pointer = 0;
   let btcH1Pointer = 0;
+  let btcH4Pointer = 0;
 
   for (let i = startIndex; i < candlesM15.length; i++) {
     const currentM15 = candlesM15[i];
@@ -89,11 +82,11 @@ export async function backtestSymbol(instId, btcH1Candles) {
         ? (favorablePrice - activeTrade.entry) / riskDist
         : (activeTrade.entry - favorablePrice) / riskDist;
 
-      if (!activeTrade.isProfitLocked && curMaxR >= CONFIG.beTriggerR) {
+      if (!activeTrade.isProfitLocked && curMaxR >= cfg.beTriggerR) {
         activeTrade.isProfitLocked = true;
         activeTrade.stopLoss = isLong
-          ? activeTrade.entry + (CONFIG.lockProfitR * riskDist)
-          : activeTrade.entry - (CONFIG.lockProfitR * riskDist);
+          ? activeTrade.entry + (cfg.lockProfitR * riskDist)
+          : activeTrade.entry - (cfg.lockProfitR * riskDist);
       }
 
       // Kiểm tra chạm SL và TP
@@ -106,9 +99,9 @@ export async function backtestSymbol(instId, btcH1Candles) {
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
-        const fee = activeTrade.sizing.notional * CONFIG.feeRate;
+        const fee = activeTrade.sizing.notional * cfg.feeRate;
         const netPnl = grossPnl - fee;
-        const netR = activeTrade.isProfitLocked ? CONFIG.lockProfitR : -1.0;
+        const netR = activeTrade.isProfitLocked ? cfg.lockProfitR : -1.0;
 
         closedTrades.push({
           ...activeTrade,
@@ -124,7 +117,7 @@ export async function backtestSymbol(instId, btcH1Candles) {
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
-        const fee = activeTrade.sizing.notional * CONFIG.feeRate;
+        const fee = activeTrade.sizing.notional * cfg.feeRate;
         const netPnl = grossPnl - fee;
         const netR = activeTrade.riskReward;
 
@@ -154,6 +147,11 @@ export async function backtestSymbol(instId, btcH1Candles) {
           btcH1Pointer++;
         }
       }
+      if (btcH4Candles && btcH4Candles.length > 0) {
+        while (btcH4Pointer + 1 < btcH4Candles.length && btcH4Candles[btcH4Pointer + 1].ts + H4_MS <= m15CloseTime) {
+          btcH4Pointer++;
+        }
+      }
 
       // Đảm bảo đủ nến làm ấm (EMA 89 cần ~90 nến H4)
       if (h4Pointer >= 90 && h1Pointer >= 15 && i >= 5) {
@@ -172,13 +170,20 @@ export async function backtestSymbol(instId, btcH1Candles) {
           visibleBtcH1 = btcH1Candles.slice(btcStart, btcH1Pointer + 1);
         }
 
+        let visibleBtcH4 = null;
+        if (btcH4Candles && btcH4Candles.length > 0 && btcH4Pointer >= 35) {
+          const btcH4Start = Math.max(0, btcH4Pointer - 100);
+          visibleBtcH4 = btcH4Candles.slice(btcH4Start, btcH4Pointer + 1);
+        }
+
         const signal = evaluateMarket({
           symbol,
           candlesH4: visibleH4,
           candlesH1: visibleH1,
           candlesM15: visibleM15,
           btcH1Candles: visibleBtcH1,
-          config: CONFIG
+          btcH4Candles: visibleBtcH4,
+          config: cfg
         });
 
         if (signal && !signal.isBlocked) {
@@ -292,14 +297,19 @@ export function groupTradesByMonth(trades) {
 async function run1YearBacktest() {
   console.log('================================================================');
   console.log('🏆 KẾT QUẢ KIỂM THỬ THỰC CHIẾN 1 NĂM (10/2025 -> 10/2026)');
-  console.log('Quy tắc: 100% Chống Look-Ahead Bias | Trailing +1.5R Lock 1R | Phí 0.08%');
+  console.log(`Quy tắc: 100% Chống Look-Ahead Bias | Trailing +${CONFIG.beTriggerR}R Lock +${CONFIG.lockProfitR}R | Phí ${CONFIG.feeRate * 100}%`);
   console.log('================================================================\n');
 
-  // Đọc BTC H1 làm khiên Macro Shield
+  // Đọc BTC H1 và H4 làm khiên Macro Shield & Đầu Tàu
   const btcH1File = path.join(CACHE_DIR, 'BTC-USDT-SWAP_1H.json');
+  const btcH4File = path.join(CACHE_DIR, 'BTC-USDT-SWAP_4H.json');
   let btcH1 = [];
+  let btcH4 = [];
   if (fs.existsSync(btcH1File)) {
     btcH1 = JSON.parse(fs.readFileSync(btcH1File, 'utf8')).map(normalizeCandle);
+  }
+  if (fs.existsSync(btcH4File)) {
+    btcH4 = JSON.parse(fs.readFileSync(btcH4File, 'utf8')).map(normalizeCandle);
   }
 
   const allTrades = [];
@@ -308,7 +318,7 @@ async function run1YearBacktest() {
   const symbolsToRun = process.argv[2] ? [process.argv[2]] : BACKTEST_SYMBOLS;
 
   for (const instId of symbolsToRun) {
-    const trades = await backtestSymbol(instId, btcH1);
+    const trades = await backtestSymbol(instId, btcH1, btcH4);
     allTrades.push(...trades);
     const m = calculateMetrics(trades);
     symbolStats.push({
@@ -326,7 +336,7 @@ async function run1YearBacktest() {
     'Symbol'.padEnd(12) +
     'Số Lệnh'.padEnd(10) +
     'Thắng (TP)'.padEnd(12) +
-    'Khóa (+1R)'.padEnd(12) +
+    'Khóa Lãi'.padEnd(12) +
     'Thua (SL)'.padEnd(12) +
     'Win Rate'.padEnd(12) +
     'Total R'.padEnd(12) +
@@ -355,7 +365,7 @@ async function run1YearBacktest() {
     'Tháng'.padEnd(12) +
     'Số Lệnh'.padEnd(10) +
     'Thắng (TP)'.padEnd(12) +
-    'Khóa (+1R)'.padEnd(12) +
+    'Khóa Lãi'.padEnd(12) +
     'Thua (SL)'.padEnd(12) +
     'Win Rate'.padEnd(12) +
     'Lợi Nhuận (R)'.padEnd(16) +
@@ -384,7 +394,7 @@ async function run1YearBacktest() {
   console.log('🎯 TỔNG KẾT TOÀN DIỆN CHIẾN LƯỢC (1 NĂM QUA):');
   console.log(`• Tổng số lệnh đã đi: ${totalSummary.totalTrades} lệnh`);
   console.log(`• Số lệnh chốt Target 🎯 TP (+2R): ${totalSummary.wins}`);
-  console.log(`• Số lệnh Trailing khóa lãi 🔒 +1R: ${totalSummary.locks}`);
+  console.log(`• Số lệnh Trailing khóa lãi 🔒 (+${CONFIG.lockProfitR}R): ${totalSummary.locks}`);
   console.log(`• Số lệnh chạm cắt lỗ 🛑 SL (-1R): ${totalSummary.losses}`);
   console.log(`• Tỷ Lệ Thắng (Win Rate): ${totalSummary.winRate}`);
   console.log(`• Hệ số Lợi Nhuận (Profit Factor): ${totalSummary.profitFactor}`);

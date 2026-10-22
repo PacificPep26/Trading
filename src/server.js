@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from './indicators.js';
-import { evaluateMarket, DEFAULT_CONFIG } from './engine.js';
+import { evaluateMarket } from './engine.js';
+import { BOT_CONFIG, UNIVERSE_CONFIG } from './config.js';
 import {
   notifyNewSignal,
   notifyBreakevenTriggered,
@@ -32,50 +33,16 @@ dotenv.config();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const POSITIONS_FILE = process.env.STATE_FILE || path.join(__dirname, '../positions.json');
 
-const CONFIG = {
-  ...DEFAULT_CONFIG,
-  riskUsd: parseFloat(process.env.RISK_USD_PER_TRADE || '10.0'),
-  leverage: parseInt(process.env.LEVERAGE || '10', 10),
-  feeRate: parseFloat(process.env.FEE_RATE || '0.0008'),
-  minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
-  beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.5'),
-  lockProfitR: parseFloat(process.env.LOCK_PROFIT_R || '1.0'), // Kéo SL lên dương +1.0R khi đạt +1.5R, gồng tới 2R
-  timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
-  minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'), // Chặn triệt để coin giá 0.xx (< 1.0 USDT)
-  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
-  scanMode: process.env.SCAN_MODE || 'WATCHLIST', // Mặc định chỉ trade Top 5 coin lớn theo yêu cầu
-  topLimit: parseInt(process.env.TOP_COINS_LIMIT || '20', 10),
-  pollIntervalSec: parseInt(process.env.POLL_INTERVAL_SEC || '60', 10),
-  okxBaseUrl: process.env.OKX_BASE_URL || 'https://www.okx.com',
-  watchlist: (process.env.WATCHLIST || 'BTC-USDT,ETH-USDT,SOL-USDT,LINK-USDT,NEAR-USDT,HYPE-USDT')
-    .split(',')
-    .map(s => s.trim().toUpperCase())
-};
+const CONFIG = BOT_CONFIG;
 
 // Danh sách Coin Lớn & Chuẩn Cấu Trúc Nhất Sàn OKX (BTC, ETH, SOL, LINK, NEAR, HYPE)
-const PREMIER_UNIVERSE = [
-  'BTC-USDT',
-  'ETH-USDT',
-  'SOL-USDT',
-  'LINK-USDT',
-  'NEAR-USDT',
-  'HYPE-USDT'
-];
+const PREMIER_UNIVERSE = UNIVERSE_CONFIG.premierWatchlist;
 
 // Danh sách Memecoin / Coin rác cấm giao dịch vì râu nến giật ảo
-const MEMECOIN_BLACKLIST = new Set([
-  'FLOKI-USDT', 'BONK-USDT', 'SHIB-USDT', 'PEPE-USDT', 'MEME-USDT',
-  'BOME-USDT', 'NEIRO-USDT', 'PENGU-USDT', 'APR-USDT', 'HMSTR-USDT',
-  'TURBO-USDT', 'DOGS-USDT', '1000SATS-USDT', 'SATS-USDT', 'BABYDOGE-USDT',
-  'BILL-USDT', 'AKE-USDT', 'DOOD-USDT', 'PUMP-USDT', 'DOGE-USDT'
-]);
+const MEMECOIN_BLACKLIST = UNIVERSE_CONFIG.memecoinBlacklist;
 
 // Danh sách Tài sản truyền thống / Cổ phiếu CFD không phải Crypto trên OKX SWAP
-const NON_CRYPTO_BLACKLIST = new Set([
-  'XAU-USDT', 'XAG-USDT', 'CL-USDT', 'SOXL-USDT', 'SOXS-USDT', 'SPCX-USDT',
-  'SNDK-USDT', 'SKHYNIX-USDT', 'SKHY-USDT', 'MU-USDT', 'KORU-USDT', 'SNXX-USDT',
-  'TSLA-USDT', 'NVDA-USDT', 'QQQ-USDT', 'MSTR-USDT', 'CRCL-USDT', 'UNITREE-USDT', 'BZ-USDT'
-]);
+const NON_CRYPTO_BLACKLIST = UNIVERSE_CONFIG.nonCryptoBlacklist;
 
 // Danh sách Altcoin Top & Nền tảng cấu trúc chuẩn được ưu tiên quét (Đều có giá >= 1.0 USDT)
 const QUALITY_UNIVERSE = [

@@ -12,17 +12,18 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { calculateEMA, calculateSMA, calculateATR, analyzeCandle } from './indicators.js';
 import { detectMarketPhase, analyzeBtcLocomotive } from './engine.js';
+import { LEARNING_CONFIG, BOT_CONFIG } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, '../data/trade_memory.json');
 
-// Cấu hình Hình phạt Kỷ luật
+// Cấu hình Hình phạt Kỷ luật (Tham chiếu trực tiếp từ src/config.js)
 export const PENALTY_CONFIG = {
-  cooldownHoursAfterSL: 4,          // Đóng băng tối thiểu 4 tiếng trên cặp bị thua
-  trendFightingCooldownHours: 8,    // Đóng băng 8 tiếng nếu phạm lỗi bắt dao rơi / cản tàu
-  consecutiveSlThreshold: 2,        // 2 lệnh thua liên tiếp -> Giảm 50% rủi ro ($10 -> $5)
-  circuitBreakerThreshold: 3,       // 3 lệnh thua liên tiếp -> Đóng băng toàn bộ hệ thống 12 tiếng
-  circuitBreakerHours: 12
+  cooldownHoursAfterSL: LEARNING_CONFIG.baseCooldownHours,
+  trendFightingCooldownHours: LEARNING_CONFIG.trendFightingCooldownHours,
+  consecutiveSlThreshold: LEARNING_CONFIG.consecutiveLossThreshold,
+  circuitBreakerThreshold: LEARNING_CONFIG.circuitBreakerThreshold,
+  circuitBreakerHours: LEARNING_CONFIG.circuitBreakerHours
 };
 
 // Trạng thái bộ nhớ sống của bot

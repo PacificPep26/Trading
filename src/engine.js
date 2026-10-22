@@ -19,20 +19,8 @@ import {
   detectPreviousBarSweep
 } from './indicators.js';
 
-export const DEFAULT_CONFIG = {
-  riskUsd: 10.0,
-  leverage: 10,
-  feeRate: 0.0008,          // 0.08% Taker roundtrip
-  minRR: 2.0,
-  beTriggerR: 1.5,          // Mốc kích hoạt kéo SL (+1.5R)
-  lockProfitR: 1.0,         // Kéo SL lên dương +1.0R (khóa chắc 1R lợi nhuận, gồng tới 2R)
-  beBufferRate: 0.0008,     // Đệm phí hòa vốn (0.08%)
-  timeStopBars: 16,         // 16 nến M15 (4 tiếng)
-  wickRatioThreshold: 0.35,
-  atrBufferMultiplier: 0.25,
-  maxSlDistanceRate: 0.025, // SMC No-Chasing Rule: Không vào nếu giá đã trôi xa cản SMC > 2.5%
-  minCoinPrice: 1.0         // Lọc bỏ triệt để các coin giá 0.xx, chỉ giao dịch coin >= 1.0 USDT
-};
+import { BOT_CONFIG, DEFAULT_CONFIG } from './config.js';
+export { BOT_CONFIG, DEFAULT_CONFIG };
 
 const H4_MS = 4 * 60 * 60 * 1000;
 const M15_MS = 15 * 60 * 1000;
@@ -300,7 +288,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
 
       const isStrongSweep = h4Anatomy.lowerWickRatio >= 0.45;
-      const isNormalSweep = h4Anatomy.lowerWickRatio >= 0.35 && lastH4.close >= sup * 0.998;
+      const isNormalSweep = h4Anatomy.lowerWickRatio >= (config.wickRatioThreshold || 0.35) && lastH4.close >= sup * 0.998;
       const prevH4 = candlesH4[candlesH4.length - 2];
       const isEngulfing = prevH4 && lastH4.close > lastH4.open && lastH4.close >= prevH4.open;
       const isSmcSweepLong = liquidityTiers.sweepState === 'BULLISH_SWEEP_CONFIRMED';
@@ -408,7 +396,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
 
       const isStrongRejection = h4Anatomy.upperWickRatio >= 0.45;
-      const isNormalRejection = h4Anatomy.upperWickRatio >= 0.25 || lastH4.close < lastH4.open;
+      const isNormalRejection = h4Anatomy.upperWickRatio >= (config.wickRatioThreshold || 0.35);
       const isSmcSweepShort = liquidityTiers.sweepState === 'BEARISH_SWEEP_CONFIRMED';
 
       let canShort = false;
