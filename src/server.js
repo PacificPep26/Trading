@@ -436,7 +436,7 @@ export async function runScanCycle() {
           console.log(`  ⚪ Bỏ qua ${symbol}: Điểm chất lượng thấp (${quality.score}đ < ${minScore}đ)`);
         }
       } else if (signal && signal.isBlocked) {
-        console.log(`[SIGNAL BLOCKED] ${signal.symbol} bị chặn bởi Khiên BTC: ${signal.blockReason}`);
+        console.log(`[SIGNAL BLOCKED] ${signal.symbol}: ${signal.blockReason}`);
       }
     } catch (err) {
       console.error(`[SCANNER] Lỗi phân tích ${symbol}:`, err.message);

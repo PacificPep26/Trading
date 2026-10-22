@@ -21,11 +21,31 @@ export const CAPITAL_CONFIG = {
   // Đòn bẩy tài khoản (Isolated Margin 10X)
   leverage: parseInt(process.env.LEVERAGE || '10', 10),
 
-  // Tỷ lệ phí giao dịch Taker khứ hồi (0.08% trên sàn OKX Futures)
-  feeRate: parseFloat(process.env.FEE_RATE || '0.0008'),
+  // Chế độ khớp lệnh: 'LIMIT_MAKER' (Post-Only) hoặc 'MARKET'
+  orderType: process.env.ORDER_TYPE || 'LIMIT_MAKER',
+
+  // Tỷ lệ phí giao dịch: Maker 0.02% (tiết kiệm 75%) vs Taker 0.08%
+  makerFeeRate: 0.0002,
+  takerFeeRate: 0.0008,
+  feeRate: process.env.ORDER_TYPE === 'MARKET' ? 0.0008 : 0.0002,
 
   // Số lượng vị thế mở tối đa cùng một thời điểm (Tránh phân tán Margin)
   maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10)
+};
+
+// ====================================================================
+// 1.1. BỘ LỌC CHẾ ĐỘ THỊ TRƯỜNG V3.0 (MARKET REGIME & VOLATILITY COMPRESSION)
+// Triệt tiêu tử huyệt Sideway / Summer Chop làm thua lỗ các tháng mùa hè
+// ====================================================================
+export const REGIME_CONFIG = {
+  // Ngưỡng tối thiểu H1 ADX(14) để xác nhận thị trường có xu hướng động lực
+  minH1ADX: parseFloat(process.env.MIN_H1_ADX || '20.0'),
+
+  // Ngưỡng tỷ số nén ATR: ATR(14) / SMA(ATR, 50). < 0.70 là biến động co thắt kiệt quệ
+  minAtrCompressionRatio: parseFloat(process.env.MIN_ATR_COMPRESSION_RATIO || '0.70'),
+
+  // Kích hoạt trạng thái ngủ đông khi thị trường Sideway / Chop
+  enableChopSleepMode: process.env.ENABLE_CHOP_SLEEP_MODE !== 'false'
 };
 
 // ====================================================================
@@ -227,11 +247,15 @@ export const BOT_CONFIG = {
 
   wickRatioThreshold: INDICATOR_CONFIG.wickRatioThreshold,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
+  minH1ADX: REGIME_CONFIG.minH1ADX,
+  minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
+  orderType: CAPITAL_CONFIG.orderType,
   pollIntervalSec: RUNTIME_CONFIG.pollIntervalSeconds,
   okxBaseUrl: RUNTIME_CONFIG.okxBaseUrl,
 
   // Nhúng các nhóm cấu hình chi tiết
   capital: CAPITAL_CONFIG,
+  regime: REGIME_CONFIG,
   exit: EXIT_CONFIG,
   universe: UNIVERSE_CONFIG,
   locomotive: LOCOMOTIVE_CONFIG,

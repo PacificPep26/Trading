@@ -18,7 +18,9 @@ import {
   validateCandleSchema,
   classifyLiquidityTiers,
   detectVolumeAbsorption,
-  detectPreviousBarSweep
+  detectPreviousBarSweep,
+  calculateADX,
+  calculateATRCompression
 } from '../src/indicators.js';
 
 import {
@@ -519,6 +521,81 @@ const weakQualityScore = calculateSetupQualityScore({
   btcH1Candles: mockBtcH1
 });
 assert(weakQualityScore.score < 50, `Setup yếu bị chấm điểm thấp < 50 (Thực tế: ${weakQualityScore.score} điểm)`);
+
+// 17. Kiểm tra Bộ Lọc Chế Độ Thị Trường V3.0 (ADX & Dynamic ATR Compression)
+console.log('\n17. Kiểm tra Bộ Lọc Chế Độ Thị Trường V3.0 (ADX & Dynamic ATR Compression):');
+
+// Tạo chuỗi nến trend mạnh: giá tăng liên tục từ 100 -> 200
+const trendCandles = Array.from({ length: 40 }, (_, i) => ({
+  high: 100 + (i * 3) + 2,
+  low: 100 + (i * 3) - 1,
+  close: 100 + (i * 3) + 1,
+  open: 100 + (i * 3),
+  vol: 1000,
+  confirm: 1
+}));
+const adxResult = calculateADX(trendCandles, 14);
+const lastADX = adxResult[adxResult.length - 1].adx;
+assert(lastADX !== null && lastADX > 30, `ADX nhận diện chính xác xu hướng mạnh (> 30, thực tế: ${lastADX ? lastADX.toFixed(1) : 'null'})`);
+
+// Tạo chuỗi nến sideway / chop: giá dao động trong biên hẹp 100-101
+const chopCandles = Array.from({ length: 40 }, (_, i) => ({
+  high: 100 + (i % 2 === 0 ? 1 : 0.5),
+  low: 100 - (i % 2 === 0 ? 0.5 : 1),
+  close: 100,
+  open: 100,
+  vol: 1000,
+  confirm: 1
+}));
+const chopAdxResult = calculateADX(chopCandles, 14);
+const lastChopADX = chopAdxResult[chopAdxResult.length - 1].adx;
+assert(lastChopADX !== null && lastChopADX <= 25, `ADX nhận diện chính xác vùng sideway/chop (thực tế: ${lastChopADX ? lastChopADX.toFixed(1) : 'null'})`);
+
+// Kiểm tra ATR Compression
+const compressionRatio = calculateATRCompression(chopCandles, 14, 20);
+assert(compressionRatio !== null, 'Tính toán thành công tỷ số nén ATR');
+
+// Kiểm tra evaluateMarket tự động kích hoạt Chop Sleep Mode khi H1 ADX <= 20
+const baseH4Ts = 99 * 4 * 3600000;
+const mockChopH4 = Array.from({ length: 100 }, (_, i) => ({
+  ts: i * 4 * 3600000,
+  open: 100,
+  high: 102,
+  low: 98,
+  close: 100,
+  vol: 1000,
+  confirm: 1
+}));
+const mockChopH1 = Array.from({ length: 40 }, (_, i) => ({
+  ts: (baseH4Ts - 40 * 3600000) + (i * 3600000),
+  open: 100,
+  high: 100.5,
+  low: 99.5,
+  close: 100,
+  vol: 100,
+  confirm: 1
+}));
+const mockChopM15 = Array.from({ length: 20 }, (_, i) => ({
+  ts: baseH4Ts + (i * 900000),
+  open: 100,
+  high: 101,
+  low: 99,
+  close: 100,
+  vol: 500,
+  confirm: 1
+}));
+
+const chopMarketResult = evaluateMarket({
+  symbol: 'ETH-USDT',
+  candlesH4: mockChopH4,
+  candlesH1: mockChopH1,
+  candlesM15: mockChopM15,
+  btcH1Candles: mockBtcH1,
+  btcH4Candles: mockChopH4,
+  config: BOT_CONFIG
+});
+assert(chopMarketResult && chopMarketResult.isBlocked === true, 'evaluateMarket tự động chặn lệnh trong Chop Sleep Mode khi H1 ADX <= 20');
+assert(chopMarketResult && chopMarketResult.blockReason.includes('CHOP_SLEEP_MODE'), 'Lý do chặn nêu rõ CHOP_SLEEP_MODE');
 
 // Tổng kết
 console.log('\n======================================================');

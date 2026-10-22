@@ -11,6 +11,10 @@
 import {
   calculateEMA,
   calculateATR,
+  calculateSMA,
+  calculateTR,
+  calculateADX,
+  calculateATRCompression,
   analyzeCandle,
   isMarubozu,
   findFractalPivots,
@@ -210,6 +214,31 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
   // Nhận diện Giai đoạn Thị trường (Market Regime): STRONG_UPTREND, STRONG_DOWNTREND, RANGING
   const marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
+
+  // BỘ LỌC CHẾ ĐỘ THỊ TRƯỜNG V3.0 (H1 ADX & DYNAMIC ATR COMPRESSION)
+  // Triệt tiêu tử huyệt Sideway / Summer Chop làm thua lỗ các tháng mùa hè
+  if (candlesH1 && candlesH1.length >= 30 && config.regime?.enableChopSleepMode !== false) {
+    const minADX = config.minH1ADX || (config.regime && config.regime.minH1ADX) || 20;
+    const adxSeries = calculateADX(candlesH1, 14);
+    const curADX = adxSeries && adxSeries.length > 0 ? adxSeries[adxSeries.length - 1].adx : null;
+    if (curADX !== null && curADX <= minADX) {
+      return {
+        isBlocked: true,
+        blockReason: `CHOP_SLEEP_MODE: H1 ADX (${curADX.toFixed(1)}) <= ${minADX} (Thị trường đi ngang ngột ngạt không có xu hướng)`,
+        symbol
+      };
+    }
+
+    const minAtrRatio = config.minAtrCompressionRatio || (config.regime && config.regime.minAtrCompressionRatio) || 0.70;
+    const atrRatio = calculateATRCompression(candlesH1, 14, 50);
+    if (atrRatio !== null && atrRatio < minAtrRatio) {
+      return {
+        isBlocked: true,
+        blockReason: `VOLATILITY_COMPRESSED: Tỷ số nén ATR (${atrRatio.toFixed(2)}) < ${minAtrRatio} (Biến động co thắt kiệt quệ)`,
+        symbol
+      };
+    }
+  }
 
   // Xu hướng theo Kane EMA 34 & 89
   const isBullTrend = ema34 >= ema89;

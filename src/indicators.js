@@ -705,6 +705,120 @@ export function detectPreviousBarSweep(candles, wickThreshold = 0.35) {
   return { isSweep: false, type: null, sweptPrice: null, wickRatio: 0 };
 }
 
+/**
+ * Tính Average Directional Index (ADX) chuẩn Welles Wilder
+ * @param {Array<{high: number, low: number, close: number}>} candles
+ * @param {number} period - Chu kỳ (mặc định 14)
+ * @returns {Array<{adx: number|null, plusDI: number|null, minusDI: number|null}>}
+ */
+export function calculateADX(candles, period = 14) {
+  if (!candles || candles.length < period * 2) return [];
+
+  const len = candles.length;
+  const result = new Array(len).fill(null).map(() => ({ adx: null, plusDI: null, minusDI: null }));
+
+  const tr = new Array(len).fill(0);
+  const plusDM = new Array(len).fill(0);
+  const minusDM = new Array(len).fill(0);
+
+  tr[0] = candles[0].high - candles[0].low;
+
+  for (let i = 1; i < len; i++) {
+    const cur = candles[i];
+    const prev = candles[i - 1];
+
+    tr[i] = calculateTR(cur.high, cur.low, prev.close);
+
+    const upMove = cur.high - prev.high;
+    const downMove = prev.low - cur.low;
+
+    if (upMove > downMove && upMove > 0) {
+      plusDM[i] = upMove;
+    } else {
+      plusDM[i] = 0;
+    }
+
+    if (downMove > upMove && downMove > 0) {
+      minusDM[i] = downMove;
+    } else {
+      minusDM[i] = 0;
+    }
+  }
+
+  let smoothTR = 0;
+  let smoothPlusDM = 0;
+  let smoothMinusDM = 0;
+
+  for (let i = 1; i <= period; i++) {
+    smoothTR += tr[i];
+    smoothPlusDM += plusDM[i];
+    smoothMinusDM += minusDM[i];
+  }
+
+  const dx = new Array(len).fill(null);
+
+  const calcDI = (idx, sTR, sPlus, sMinus) => {
+    if (sTR === 0) return { pDI: 0, mDI: 0, dxVal: 0 };
+    const pDI = (sPlus / sTR) * 100;
+    const mDI = (sMinus / sTR) * 100;
+    const diSum = pDI + mDI;
+    const dxVal = diSum === 0 ? 0 : (Math.abs(pDI - mDI) / diSum) * 100;
+    return { pDI, mDI, dxVal };
+  };
+
+  const initial = calcDI(period, smoothTR, smoothPlusDM, smoothMinusDM);
+  result[period] = { adx: null, plusDI: initial.pDI, minusDI: initial.mDI };
+  dx[period] = initial.dxVal;
+
+  for (let i = period + 1; i < len; i++) {
+    smoothTR = smoothTR - (smoothTR / period) + tr[i];
+    smoothPlusDM = smoothPlusDM - (smoothPlusDM / period) + plusDM[i];
+    smoothMinusDM = smoothMinusDM - (smoothMinusDM / period) + minusDM[i];
+
+    const { pDI, mDI, dxVal } = calcDI(i, smoothTR, smoothPlusDM, smoothMinusDM);
+    dx[i] = dxVal;
+    result[i] = { adx: null, plusDI: pDI, minusDI: mDI };
+  }
+
+  let sumDX = 0;
+  for (let i = period; i < period * 2; i++) {
+    sumDX += (dx[i] || 0);
+  }
+  let prevADX = sumDX / period;
+  result[period * 2 - 1].adx = prevADX;
+
+  for (let i = period * 2; i < len; i++) {
+    const curDX = dx[i] || 0;
+    const curADX = (prevADX * (period - 1) + curDX) / period;
+    result[i].adx = curADX;
+    prevADX = curADX;
+  }
+
+  return result;
+}
+
+/**
+ * Tính tỷ số nén biến động ATR Compression Ratio
+ * @param {Array<{high: number, low: number, close: number}>} candles
+ * @param {number} atrPeriod - Chu kỳ ATR (mặc định 14)
+ * @param {number} smaPeriod - Chu kỳ SMA của ATR (mặc định 50)
+ * @returns {number|null} Tỷ số ATR hiện tại / SMA(ATR)
+ */
+export function calculateATRCompression(candles, atrPeriod = 14, smaPeriod = 50) {
+  const atrs = calculateATR(candles, atrPeriod);
+  if (!atrs || atrs.length < smaPeriod + atrPeriod) return 1.0;
+
+  const validAtrs = atrs.slice(-smaPeriod);
+  if (validAtrs.some(v => v === null)) return 1.0;
+
+  const curAtr = atrs[atrs.length - 1];
+  const avgAtr = validAtrs.reduce((a, b) => a + b, 0) / smaPeriod;
+
+  if (avgAtr <= 0) return 1.0;
+  return curAtr / avgAtr;
+}
+
+
 
 
 

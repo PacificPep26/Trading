@@ -83,13 +83,14 @@ export async function notifyNewSignal(signal) {
   const dirText = isLong ? 'MUA (LONG)' : 'BÁN (SHORT)';
   const scoreInfo = signal.qualityScore ? `\n⚡ <b>Điểm Sức Mạnh:</b> <code>${signal.qualityScore}/100 pts</code>` : '';
   const reasonInfo = signal.qualityReasons && signal.qualityReasons.length > 0 ? `\n⭐ <b>Hội tụ sức mạnh:</b> ${signal.qualityReasons.join(' | ')}` : '';
+  const orderTypeTag = `\n🏷️ <b>Khớp Lệnh:</b> <code>Limit Post-Only (Phí Maker 0.02%)</code>`;
 
   const msg = `
 ${icon} <b>${dirText} 10X: ${signal.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-💵 <b>Entry:</b> <code>${signal.entry}</code>
+💵 <b>Entry (Limit):</b> <code>${signal.entry}</code>
 🛑 <b>SL:</b> <code>${signal.stopLoss}</code>
-🎯 <b>TP:</b> <code>${signal.takeProfit}</code>${scoreInfo}${reasonInfo}
+🎯 <b>TP:</b> <code>${signal.takeProfit}</code>${orderTypeTag}${scoreInfo}${reasonInfo}
 📝 <b>Lý do:</b> ${signal.reason}
 ⏰ <b>Thời gian:</b> ${new Date(signal.triggerTime || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
 `.trim();
