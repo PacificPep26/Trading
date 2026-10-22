@@ -216,3 +216,4 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
 export function stopTelegramListener() {
   isPolling = false;
 }
+
