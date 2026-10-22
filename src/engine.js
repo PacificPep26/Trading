@@ -191,6 +191,18 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
         if (isM15Green && isM15Breakout) {
           const entry = currentM15.close;
+
+          // QUY TẮC CHỐNG LONG ĐUỔI KHI TĂNG KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
+          // Để Long, giá phải nằm ở nửa dưới Discount Zone (entry <= h4Mid * 1.002)
+          // HOẶC các nến M15 gần đây đã có nhịp thoái lui xuống test vùng 50% nến H4.
+          const h4Mid = (lastH4.high + lastH4.low) / 2;
+          const recentM15Slice = candlesM15.slice(-8);
+          const recentLowM15 = Math.min(...recentM15Slice.map(c => c.low));
+          const hasValidLongPullback = entry <= (h4Mid * 1.002) || recentLowM15 <= (h4Mid * 1.002);
+          if (!hasValidLongPullback) {
+            continue; // Bỏ qua pha tăng kiệt sức lết đỉnh (Chống Long đuổi ở đỉnh)!
+          }
+
           const stopLoss = lastH4.low - (config.atrBufferMultiplier * atrH1);
 
           // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đáy cản kỹ thuật
@@ -277,6 +289,18 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
         if (isM15Red && isM15Breakdown) {
           const entry = currentM15.close;
+
+          // QUY TẮC CHỐNG SHORT ĐUỔI KHI XẢ KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
+          // Để Short, giá phải nằm ở nửa trên Premium Zone (entry >= h4Mid * 0.998)
+          // HOẶC các nến M15 gần đây đã có nhịp hồi lên test tối thiểu vùng 50% nến H4.
+          const h4Mid = (lastH4.high + lastH4.low) / 2;
+          const recentM15Slice = candlesM15.slice(-8);
+          const recentHighM15 = Math.max(...recentM15Slice.map(c => c.high));
+          const hasValidShortPullback = entry >= (h4Mid * 0.998) || recentHighM15 >= (h4Mid * 0.998);
+          if (!hasValidShortPullback) {
+            continue; // Bỏ qua pha xả kiệt sức lết đáy (Chống Short đuổi ở đáy)!
+          }
+
           const stopLoss = lastH4.high + (config.atrBufferMultiplier * atrH1);
 
           // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đỉnh cản kỹ thuật
