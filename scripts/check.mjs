@@ -24,10 +24,18 @@ import {
 import {
   calculatePositionSize,
   checkBtcMacroShield,
+  detectMarketPhase,
   evaluateMarket,
   generateKeyLevelRadar,
   DEFAULT_CONFIG
 } from '../src/engine.js';
+
+import {
+  inspectTradeMistake,
+  applyDisciplinaryPenalty,
+  checkAdaptiveTradeAllowed,
+  rewardWinAndClearPenalty
+} from '../src/learning.js';
 
 import { fetchOkxCandles } from '../src/server.js';
 
@@ -286,6 +294,71 @@ const radar = generateKeyLevelRadar({
 assert(radar !== null, 'Tạo bản đồ radar thành công');
 assert(radar.radarStatus === 'APPROACHING_RESISTANCE', 'Cảnh báo chính xác khi giá đang áp sát vùng cản trên');
 assert(typeof radar.scenario === 'string' && radar.scenario.includes('CẢNH BÁO CANH SHORT'), 'Sinh kịch bản canh Short đón đầu chi tiết');
+
+// 13. Test Nhận diện Giai đoạn Thị trường (detectMarketPhase)
+console.log('\n13. Kiểm tra Nhận diện Giai đoạn Thị trường (Market Regime):');
+const mockH4Candles = Array(20).fill(null).map((_, i) => ({
+  ts: i * 4 * 3600 * 1000,
+  open: 100 + i * 2,
+  high: 105 + i * 2,
+  low: 98 + i * 2,
+  close: 104 + i * 2,
+  vol: 1000,
+  confirm: 1
+}));
+const mockCloses = mockH4Candles.map(c => c.close);
+const mockE34 = calculateEMA(mockCloses, 5);
+const mockE89 = mockE34.map(v => v * 0.95); // EMA34 > EMA89 mở rộng
+const phaseUp = detectMarketPhase(mockH4Candles, mockE34, mockE89);
+assert(phaseUp === 'STRONG_UPTREND', 'Nhận diện chuẩn xác giai đoạn Xu hướng Tăng Dốc Mạnh (STRONG_UPTREND)');
+
+const mockE89Down = mockE34.map(v => v * 1.05); // EMA34 < EMA89 dốc xuống
+const phaseDown = detectMarketPhase(mockH4Candles.map(c => ({ ...c, close: 50 })), mockE34, mockE89Down);
+assert(phaseDown === 'STRONG_DOWNTREND', 'Nhận diện chuẩn xác giai đoạn Xu hướng Giảm Dốc Đứng (STRONG_DOWNTREND)');
+
+// 14. Test Hệ Thống Tự Học & Phạt Kỷ Luật (Adaptive Learning & Penalty Gate)
+console.log('\n14. Kiểm tra Hệ Thống Tự Học & Phạt Kỷ Luật (Adaptive Learning):');
+const mockLossCandlesH4 = Array(90).fill(null).map((_, i) => ({
+  ts: i * 4 * 3600 * 1000,
+  open: 200 - i * 2,
+  high: 205 - i * 2,
+  low: 195 - i * 2,
+  close: 198 - i * 2,
+  vol: 1000,
+  confirm: 1
+}));
+
+const mockLossPos = {
+  symbol: 'SOL-USDT',
+  direction: 'LONG',
+  entry: 100,
+  stopLoss: 98,
+  initialStopLoss: 98,
+  strategy: 'SMC_SWEEP_REVERSAL_LONG'
+};
+
+// Giả lập thua lệnh Long khi H4 đang trong bão giảm STRONG_DOWNTREND
+const mistake = inspectTradeMistake({
+  pos: mockLossPos,
+  candlesH4: mockLossCandlesH4,
+  candlesH1: mockLossCandlesH4.slice(0, 15),
+  candlesM15: mockLossCandlesH4.slice(0, 20)
+});
+assert(mistake.mistakeType === 'TREND_FIGHTING', 'Mổ xẻ chuẩn xác điểm sai: Bắt dao rơi trong xu hướng giảm dốc đứng');
+assert(mistake.forbiddenDirection === 'LONG', 'Cấm hướng vi phạm: Khóa chặt lệnh Long');
+
+// Áp dụng hình phạt
+const penalty = applyDisciplinaryPenalty(mockLossPos, mistake);
+assert(penalty.cooldownHours >= 4, 'Áp dụng hình phạt đóng băng tối thiểu 4 tiếng trên cặp SOL-USDT');
+
+// Kiểm tra cổng Adaptive Veto Gate
+const checkLong = checkAdaptiveTradeAllowed('SOL-USDT', 'LONG');
+assert(checkLong.allowed === false, 'Cổng kỷ luật Veto chặn đứng lệnh Long trên cặp đang bị phạt');
+
+// Sau khi thắng lệnh, xóa án phạt phục hồi
+rewardWinAndClearPenalty('SOL-USDT');
+const checkAfterReward = checkAdaptiveTradeAllowed('SOL-USDT', 'LONG');
+assert(checkAfterReward.allowed === true, 'Gỡ bỏ hình phạt và khôi phục giao dịch sau lệnh Thắng');
 
 // Tổng kết
 console.log('\n======================================================');

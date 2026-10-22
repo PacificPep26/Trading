@@ -157,6 +157,37 @@ ${title}: <b>${position.symbol}</b>
 }
 
 /**
+ * Thông báo Bản Kiểm Điểm Thất Bại & Hình Phạt Kỷ Luật Sau Stop Loss
+ * @param {object} position
+ * @param {object} mistake
+ * @param {object} penalty
+ */
+export async function notifyPostMortemPenalty(position, mistake, penalty) {
+  const msg = `
+🚨 <b>BẢN KIỂM ĐIỂM THẤT BẠI & HÌNH PHẠT BOT</b>
+━━━━━━━━━━━━━━━━━━━━
+📌 <b>Cặp giao dịch:</b> <b>${position.symbol}</b> (${position.direction})
+📉 <b>Stop Loss tại:</b> <code>${position.stopLoss}</code>
+🛑 <b>Lỗ:</b> <b>-1.0R (-$10.00 USDT)</b>
+
+🔍 <b>MỔ XẺ ĐIỂM SAI CỦA BOT:</b>
+• <b>Giai đoạn nến H4:</b> <code>${mistake.marketPhase}</code>
+• <b>Lỗi vi phạm:</b> <b>${mistake.mistakeTitle}</b>
+• <b>Chi tiết:</b> ${mistake.rootCause}
+
+⚖️ <b>HÌNH PHẠT ĐANG THI HÀNH:</b>
+• ⏳ <b>Đóng băng ${position.symbol}:</b> ${penalty.cooldownHours} tiếng (đến ${penalty.penaltyUntilStr}).
+• 🚫 <b>Cấm vào lệnh:</b> ${mistake.forbiddenDirection ? `CẤM ${mistake.forbiddenDirection}` : 'Tạm ngưng toàn bộ'}
+• 📉 <b>Kỷ luật vốn:</b> ${penalty.riskAction}
+• ⚠️ <b>Chuỗi thua liên tiếp:</b> ${penalty.consecutiveLosses} lệnh
+━━━━━━━━━━━━━━━━━━━━
+💡 <i>Bot đã ghi nhớ bài học vào trade_memory.json để không bao giờ tái phạm!</i>
+`.trim();
+
+  await sendTelegramMessage(msg);
+}
+
+/**
  * Thông báo Time-Stop (Đóng lệnh sau 16 nến M15 lình xình)
  * @param {object} position
  * @param {number} exitPrice

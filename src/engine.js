@@ -86,6 +86,38 @@ export function checkBtcMacroShield(btcH1Candles) {
 }
 
 /**
+ * Nhận diện Giai đoạn Thị trường (Market Regime / Phase Classifier)
+ * Phục vụ bài học cốt lõi: Phải xem nến đánh theo từng giai đoạn, không dùng rập khuôn:
+ * - STRONG_UPTREND: EMA34 > EMA89 dốc mạnh (Spread >= 0.8% và đang mở rộng), nến bám trên EMA34 -> CẤM SHORT CHẶN XE LỬA
+ * - STRONG_DOWNTREND: EMA34 < EMA89 dốc mạnh (Spread <= -0.8% và đang mở rộng), nến bị đè dưới EMA34 -> CẤM LONG BẮT DAO RƠI
+ * - RANGING: Đi ngang có cấu trúc biên độ rõ ràng -> Thích hợp đón đầu tại 2 đầu biên Tier 2 Key Levels
+ */
+export function detectMarketPhase(candlesH4, ema34Arr, ema89Arr) {
+  if (!candlesH4 || candlesH4.length < 10) return 'RANGING';
+  const lastIdx = candlesH4.length - 1;
+  const e34 = ema34Arr[lastIdx];
+  const e89 = ema89Arr[lastIdx];
+  const prevE34 = ema34Arr[Math.max(0, lastIdx - 3)] || e34;
+  const prevE89 = ema89Arr[Math.max(0, lastIdx - 3)] || e89;
+
+  const curSpreadPct = (e34 - e89) / e89 * 100;
+  const prevSpreadPct = (prevE34 - prevE89) / prevE89 * 100;
+  const curPrice = candlesH4[lastIdx].close;
+
+  // 1. Xu hướng Tăng Dốc Mạnh (Strong Uptrend)
+  if (curSpreadPct >= 0.8 && curSpreadPct >= (prevSpreadPct - 0.05) && curPrice >= e34 * 0.998) {
+    return 'STRONG_UPTREND';
+  }
+
+  // 2. Xu hướng Giảm Dốc Đứng (Strong Downtrend / Waterfall)
+  if (curSpreadPct <= -0.8 && curSpreadPct <= (prevSpreadPct + 0.05) && curPrice <= e34 * 1.002) {
+    return 'STRONG_DOWNTREND';
+  }
+
+  return 'RANGING';
+}
+
+/**
  * Master Evaluator - Đánh giá Thị trường theo chuẩn công thức VIP Dr. Kane H4/M15
  * @param {object} params
  * @returns {object|null}
@@ -125,6 +157,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const ema89 = ema89Arr[ema89Arr.length - 1];
 
   if (!ema34 || !ema89) return null;
+
+  // Nhận diện Giai đoạn Thị trường (Market Regime): STRONG_UPTREND, STRONG_DOWNTREND, RANGING
+  const marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
 
   // Xu hướng theo Kane EMA 34 & 89
   const isBullTrend = ema34 >= ema89;
@@ -183,6 +218,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
     // SETUP 1: KANE LONG
     for (const sup of supports) {
     if (lastH4.low < sup) {
+      // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
+      // Nếu đang trong bão giảm dốc đứng một chiều (STRONG_DOWNTREND), CẤM Long bắt đáy dao rơi!
+      if (marketPhase === 'STRONG_DOWNTREND') {
+        continue;
+      }
+
       // SMC Inducement Filter: Bỏ qua bắt đáy nếu đang nén tại cản đáy con (Equal Lows) chưa được quét
       if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_LOW') {
         const isNearInducement = liquidityTiers.tier1Lows.some(tl => Math.abs(sup - tl.avgPrice) / sup <= 0.01);
@@ -284,6 +325,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   for (const res of resistances) {
     const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
     if (testedRes) {
+      // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
+      // Nếu đang trong bão tăng dốc mạnh một chiều (STRONG_UPTREND), CẤM Short cản tàu!
+      if (marketPhase === 'STRONG_UPTREND') {
+        continue;
+      }
+
       // SMC Inducement Filter: Bỏ qua bắt đỉnh nếu đang nén tại cản đỉnh con (Equal Highs) chưa được quét
       // (Bảo vệ tài khoản tuyệt đối trước cú bơm quét SL lúc 19h như ngày 21/10)
       if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_HIGH') {
@@ -407,7 +454,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   }
 
   // 1. Zone Reaction Short tại Vùng Kháng cự Lớn
-  for (const res of majorResistances) {
+  if (marketPhase !== 'STRONG_UPTREND') {
+    for (const res of majorResistances) {
     const testedRes = currentM15.high >= (res * 0.998) || prevM15.high >= (res * 0.998);
     if (testedRes) {
       // Yêu cầu: Với BTC/ETH cần râu trên >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
@@ -455,9 +503,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
     }
   }
+  } // Đóng if (marketPhase !== 'STRONG_UPTREND')
 
   // 2. Zone Reaction Long tại Vùng Hỗ trợ Lớn
-  for (const sup of majorSupports) {
+  if (marketPhase !== 'STRONG_DOWNTREND') {
+    for (const sup of majorSupports) {
     const testedSup = currentM15.low <= (sup * 1.002) || prevM15.low <= (sup * 1.002);
     if (testedSup) {
       // Yêu cầu: Với BTC/ETH cần râu dưới >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
@@ -506,6 +556,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
     }
   }
+  } // Đóng if (marketPhase !== 'STRONG_DOWNTREND')
 
   return blockedSignal;
 }

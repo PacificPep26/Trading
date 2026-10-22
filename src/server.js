@@ -15,8 +15,16 @@ import {
   notifyBreakevenTriggered,
   notifyTakeProfit,
   notifyStopLoss,
+  notifyPostMortemPenalty,
   notifyTimeStop
 } from './telegram.js';
+import {
+  inspectTradeMistake,
+  applyDisciplinaryPenalty,
+  rewardWinAndClearPenalty,
+  checkAdaptiveTradeAllowed,
+  getAdaptiveRiskMultiplier
+} from './learning.js';
 import { startTelegramListener } from './telegram_bot.js';
 
 dotenv.config();
@@ -256,6 +264,26 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     const logPrefix = pos.isProfitLocked ? `[LOCKED PROFIT HIT]` : `[STOP LOSS]`;
     console.log(`${logPrefix} ${pos.symbol} closed at ${pos.stopLoss} (${finalR >= 0 ? '+' : ''}${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
     await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isProfitLocked);
+
+    // BỘ MỔ XẺ SAI LẦM & ÁP DỤNG HÌNH PHẠT HỌC HỎI
+    if (!pos.isProfitLocked) {
+      try {
+        const [h4, h1, m15] = await Promise.all([
+          fetchOkxCandles(pos.instId, '4H', 25),
+          fetchOkxCandles(pos.instId, '1H', 15),
+          fetchOkxCandles(pos.instId, '15m', 20)
+        ]);
+        const mistake = inspectTradeMistake({ pos, candlesH4: h4, candlesH1: h1, candlesM15: m15 });
+        const penalty = applyDisciplinaryPenalty(pos, mistake);
+        console.log(`[LEARNING PENALTY] Phạt ${pos.symbol}: ${mistake.mistakeTitle} -> Đóng băng đến ${penalty.penaltyUntilStr}`);
+        await notifyPostMortemPenalty(pos, mistake, penalty);
+      } catch (err) {
+        console.error(`[LEARNING ERROR] Lỗi phân tích thất bại:`, err.message);
+      }
+    } else {
+      rewardWinAndClearPenalty(pos.symbol);
+    }
+
     activePositions.splice(posIndex, 1);
     savePositions();
     return;
@@ -269,6 +297,7 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     const finalR = riskDist > 0 ? (pnlPrice / riskDist) : pos.riskReward;
 
     console.log(`[TAKE PROFIT] ${pos.symbol} 100% closed at ${pos.takeProfit} (+${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
+    rewardWinAndClearPenalty(pos.symbol);
     await notifyTakeProfit(pos, pos.takeProfit, finalR, netPnl);
     activePositions.splice(posIndex, 1);
     savePositions();
@@ -355,6 +384,12 @@ export async function runScanCycle() {
         continue;
       }
 
+      // KIỂM TRA HÌNH PHẠT HỌC HỎI (ADAPTIVE PENALTY GATE):
+      const generalCheck = checkAdaptiveTradeAllowed(symbol, null);
+      if (!generalCheck.allowed) {
+        continue; // Cặp coin đang bị đóng băng kỷ luật sau thất bại
+      }
+
       // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
       if (activePositions.length >= CONFIG.maxOpenPositions) {
         continue;
@@ -384,6 +419,22 @@ export async function runScanCycle() {
       });
 
       if (signal && !signal.isBlocked) {
+        // KIỂM TRA HÌNH PHẠT THEO HƯỚNG LỆNH (CẤM BẮT ĐÁY / CẤM CẢN TÀU):
+        const dirCheck = checkAdaptiveTradeAllowed(symbol, signal.direction);
+        if (!dirCheck.allowed) {
+          console.log(`[PENALTY VETO] ${symbol} bị hủy lệnh ${signal.direction}: ${dirCheck.reason}`);
+          continue;
+        }
+
+        // ĐIỀU CHỈNH QUẢN TRỊ VỐN KHI ĐANG BỊ PHẠT CHUỖI THUA (Sizing Penalty):
+        const riskMult = getAdaptiveRiskMultiplier();
+        if (riskMult < 1.0) {
+          signal.sizing.size = signal.sizing.size * riskMult;
+          signal.sizing.notional = signal.sizing.notional * riskMult;
+          signal.sizing.margin = signal.sizing.margin * riskMult;
+          console.log(`[RISK PENALTY] Phạt giảm 50% vốn cho ${symbol}: size = ${signal.sizing.size.toFixed(4)}`);
+        }
+
         console.log(`[SIGNAL FOUND] ${signal.direction} ${signal.symbol} via ${signal.strategy} | R:R 1:${signal.riskReward}`);
         
         // Mở vị thế Paper Trading
