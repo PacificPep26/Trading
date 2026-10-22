@@ -259,7 +259,8 @@ HÃY SOẠN BẢN TIN: "BẢN TIN SMART MONEY & PHÂN TÍCH THANH KHOẢN HÀNG 
    - Các mức giá cần lưu ý (Key Levels).
 4. ⚠️ **CẢNH BÁO NGUY HIỂM (INDUCEMENT ALERT)**: Nhắc nhở kỷ luật để không ai bị dính cú bơm quét SL lúc 19h như bài học ngày 21/10.
 
-Định dạng Telegram HTML sạch sẽ, không dùng thẻ markdown \`\`\` trong văn bản chính, dùng thẻ <b> và <code>.
+Định dạng Telegram HTML sạch sẽ, đóng mở thẻ <b> và <code> chuẩn xác, không dùng thẻ markdown \`\`\` trong văn bản chính.
+Độ dài tối đa: Ngắn gọn, cô đọng dưới 2000 ký tự để vừa vặn trong 1 tin nhắn Telegram duy nhất.
 `.trim();
 
   return await callGemini(userPrompt, systemPrompt);

@@ -66,6 +66,20 @@ async function sendSingleTelegramChunk(text) {
       })
     });
     const data = await res.json();
+    if (!data.ok) {
+      console.warn('[TELEGRAM] Gửi HTML lỗi:', data.description, '- Tự động gửi lại dạng Plain Text chuẩn...');
+      const fallbackRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text: text.replace(/<[^>]*>?/gm, ''), // Loại bỏ các thẻ HTML bị lỗi hoặc thiếu đóng mở
+          disable_web_page_preview: true
+        })
+      });
+      const fallbackData = await fallbackRes.json();
+      return fallbackData.ok;
+    }
     return data.ok;
   } catch (err) {
     console.error('Lỗi gửi Telegram:', err.message);

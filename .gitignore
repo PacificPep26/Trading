@@ -5,4 +5,5 @@ positions.json
 .env
 .railway/
 logs/
+data/last_briefing.txt
 

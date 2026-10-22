@@ -498,17 +498,34 @@ export async function runScanCycle() {
   console.log(`[SCAN CYCLE] Hoàn tất chu kỳ. Chờ ${CONFIG.pollIntervalSec}s...`);
 }
 
-let lastBriefingDate = '';
+const BRIEFING_STATE_FILE = 'data/last_briefing.txt';
+
+function getLastBriefingDate() {
+  try {
+    if (fs.existsSync(BRIEFING_STATE_FILE)) {
+      return fs.readFileSync(BRIEFING_STATE_FILE, 'utf8').trim();
+    }
+  } catch {}
+  return '';
+}
+
+function saveLastBriefingDate(dateStr) {
+  try {
+    fs.writeFileSync(BRIEFING_STATE_FILE, dateStr, 'utf8');
+  } catch {}
+}
 
 async function checkAndTriggerDailyBriefing() {
   const now = new Date();
   const vnDateStr = now.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
   const vnHour = parseInt(now.toLocaleTimeString('en-US', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit' }), 10);
 
-  // Kích hoạt vào khoảng 07:00 - 08:00 sáng mỗi ngày giờ VN
-  if (vnHour >= 7 && lastBriefingDate !== vnDateStr && process.env.GEMINI_API_KEY) {
-    lastBriefingDate = vnDateStr;
-    console.log(`[AI AGENT] Kích hoạt Bản tin Smart Money Hàng Ngày (${vnDateStr})...`);
+  const lastSavedDate = getLastBriefingDate();
+
+  // Chỉ kích hoạt duy nhất vào khung giờ 07:00 - 08:59 sáng giờ VN, mỗi ngày chỉ gửi đúng 1 lần
+  if (vnHour >= 7 && vnHour < 9 && lastSavedDate !== vnDateStr && process.env.GEMINI_API_KEY) {
+    saveLastBriefingDate(vnDateStr);
+    console.log(`[AI AGENT] Kích hoạt Bản tin Smart Money Buổi Sáng (${vnDateStr})...`);
     try {
       const { generateDailyMarketAnalysis } = await import('./ai_agent.js');
       const { calculateEMA, classifyLiquidityTiers } = await import('./indicators.js');
