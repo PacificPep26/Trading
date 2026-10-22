@@ -15,18 +15,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from '../src/indicators.js';
 import { evaluateMarket } from '../src/engine.js';
-import { BOT_CONFIG } from '../src/config.js';
+import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, '../data/cache_1year');
 
-const BACKTEST_SYMBOLS = [
-  'BTC-USDT-SWAP',
-  'ETH-USDT-SWAP',
-  'SOL-USDT-SWAP',
-  'LINK-USDT-SWAP',
-  'NEAR-USDT-SWAP'
-];
+// Lấy trực tiếp danh mục từ UNIVERSE_CONFIG (Đã loại bỏ SOL theo khuyến nghị của Chuyên gia)
+const BACKTEST_SYMBOLS = UNIVERSE_CONFIG.premierWatchlist.map(s => s.endsWith('-SWAP') ? s : s + '-SWAP');
 
 const CONFIG = BOT_CONFIG;
 

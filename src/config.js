@@ -35,41 +35,38 @@ export const EXIT_CONFIG = {
   // Tỷ lệ Lợi nhuận / Rủi ro tối thiểu để chấp nhận vào lệnh (Tối thiểu 1:2.0)
   minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
 
-  // Mốc lãi để kích hoạt dời Stop Loss (Khi giá chạy được +1.2R - Kết quả Backtest tối ưu bảo vệ vốn)
-  beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.2'),
+  // Mốc lãi để kích hoạt dời Stop Loss (Nâng lên +1.4R theo khuyến nghị Chuyên gia để tránh bị quét khi retest)
+  beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.4'),
 
-  // Mức khóa lợi nhuận dương (Kéo SL lên dương +0.5R để đút túi 0.5R, tiếp tục gồng tới 2.0R)
-  lockProfitR: parseFloat(process.env.LOCK_PROFIT_R || '0.5'),
+  // Mức khóa lợi nhuận dương (Đưa về Hòa Vốn thực tế +0.05R đệm trượt giá, không khóa non 0.5R để giá thở tới 2R)
+  lockProfitR: parseFloat(process.env.LOCK_PROFIT_R || '0.05'),
 
-  // Đệm bù phí sàn khi dời hòa vốn (0.08% giá trị vị thế)
-  beBufferRate: 0.0008,
+  // Đệm bù phí sàn khi dời hòa vốn (0.12% để gánh trọn vẹn phí Taker + trượt giá)
+  beBufferRate: 0.0012,
 
-  // Time-stop: Sau 16 nến M15 (4 tiếng) nếu giá không chạy tới TP/SL thì chủ động đóng lệnh
-  timeStopBars: parseInt(process.env.TIME_STOP_BARS || '16', 10),
+  // Time-stop: Sau 24 nến M15 (6 tiếng) cho SMC M15 đủ thời gian phát triển trọn vẹn sóng
+  timeStopBars: parseInt(process.env.TIME_STOP_BARS || '24', 10),
 
   // Quy tắc SMC Không Đuổi Giá (No-Chasing Rule): Không mở lệnh nếu khoảng cách SL > 2.5% giá vào
   maxSlDistanceRate: 0.025,
 
-  // Đệm ATR cộng thêm vào đỉnh/đáy để đặt Stop Loss tránh bị quét râu (0.50 * ATR M15 - Giảm 79% quét râu)
-  atrBufferMultiplier: 0.50
+  // Đệm ATR cộng thêm vào đỉnh/đáy để đặt Stop Loss (Tăng lên 0.75 * ATR M15 để loại bỏ 90% râu nến giả)
+  atrBufferMultiplier: 0.75
 };
 
 // ====================================================================
 // 3. DANH MỤC COIN & BỘ LỌC CHẤT LƯỢNG (UNIVERSE & BLACKLIST)
 // ====================================================================
 export const UNIVERSE_CONFIG = {
-  // Chế độ quét: 'WATCHLIST' (Ưu tiên coin chỉ định) hoặc 'DYNAMIC_TOP' (Quét Top Volume)
-  scanMode: process.env.SCAN_MODE || 'DYNAMIC_TOP',
+  // Chế độ quét: 'WATCHLIST' (Tập trung danh mục coin có Expectancy dương)
+  scanMode: process.env.SCAN_MODE || 'WATCHLIST',
 
-  // Danh mục Coin tinh hoa chuẩn nến và thanh khoản lớn nhất OKX
-  premierWatchlist: [
-    'BTC-USDT',
-    'ETH-USDT',
-    'SOL-USDT',
-    'LINK-USDT',
-    'NEAR-USDT',
-    'HYPE-USDT'
-  ],
+  // Danh mục Coin tinh hoa chuẩn nến và cấu trúc tôn trọng SMC nhất sàn OKX
+  // Mặc định chạy 2 cỗ máy sinh lời thực dương mạnh nhất: ETH-USDT (+12.58R) và NEAR-USDT (+10.97R)
+  // (Loại bỏ SOL-USDT, có thể tùy biến thêm LINK, BTC qua biến môi trường WATCHLIST)
+  premierWatchlist: (process.env.WATCHLIST || 'ETH-USDT,NEAR-USDT')
+    .split(',')
+    .map(s => s.trim().toUpperCase()),
 
   // Bộ lọc giá tối thiểu: Chặn triệt để coin rác có giá 0.xx (< 1.0 USDT)
   minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'),
@@ -146,13 +143,13 @@ export const LEARNING_CONFIG = {
   // Cơ chế gỡ án phạt: 'LOCOMOTIVE_STRUCTURAL' (Neo vào cấu trúc Đầu Tàu BTC, KHÔNG DÙNG ĐỒNG HỒ)
   unfreezeMode: 'LOCOMOTIVE_STRUCTURAL',
 
-  // Ngưỡng phạt giảm 50% vốn ($10 -> $5): Sau 2 lệnh thua liên tiếp
-  consecutiveLossThreshold: 2,
-  reducedRiskMultiplier: 0.5,
+  // BỎ phạt giảm size vốn để triệt tiêu bẫy sụt giảm vốn bất đối xứng (Asymmetric Recovery Trap)
+  consecutiveLossThreshold: 999, // Vô hiệu hóa tính năng giảm size lẻ tẻ
+  reducedRiskMultiplier: 1.0,    // Luôn giữ nguyên 1R ($10) để bảo toàn lực gỡ hòa
 
-  // Ngưỡng Cầu Dao Tổng (Circuit Breaker): Sau 3 lệnh thua liên tiếp -> Đóng băng 12 tiếng
+  // Cầu Dao Tổng (Circuit Breaker): Sau 3 lệnh thua liên tiếp -> Tạm dừng quét 8 tiếng
   circuitBreakerThreshold: 3,
-  circuitBreakerHours: 12,
+  circuitBreakerHours: 8,
 
   // Thời gian làm nguội cơ bản cho các lỗi kỹ thuật thông thường (tiếng)
   baseCooldownHours: 4,

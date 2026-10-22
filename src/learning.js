@@ -210,14 +210,15 @@ export function applyDisciplinaryPenalty(pos, mistake) {
 
   let riskAction = 'GIỮ NGUYÊN 100% RISK ($10)';
   if (tradeMemory.consecutiveLosses >= PENALTY_CONFIG.circuitBreakerThreshold) {
-    // Thua 3 lệnh liên tiếp -> Circuit Breaker đóng băng toàn hệ thống 12 tiếng!
+    // Thua 3 lệnh liên tiếp -> Circuit Breaker tạm dừng toàn hệ thống để bảo toàn vốn!
     tradeMemory.systemCircuitBreakerUntil = now + (PENALTY_CONFIG.circuitBreakerHours * 3600 * 1000);
-    tradeMemory.currentRiskMultiplier = 0.5;
-    riskAction = `🚨 KÍCH HOẠT CIRCUIT BREAKER: ĐÓNG BĂNG TOÀN HỆ THỐNG ${PENALTY_CONFIG.circuitBreakerHours} TIẾNG!`;
+    tradeMemory.currentRiskMultiplier = LEARNING_CONFIG.reducedRiskMultiplier || 1.0;
+    riskAction = `🚨 KÍCH HOẠT CIRCUIT BREAKER: TẠM DỪNG TOÀN HỆ THỐNG ${PENALTY_CONFIG.circuitBreakerHours} TIẾNG!`;
   } else if (tradeMemory.consecutiveLosses >= PENALTY_CONFIG.consecutiveSlThreshold) {
-    // Thua 2 lệnh liên tiếp -> Phạt cắt giảm 50% rủi ro ($10 -> $5)
-    tradeMemory.currentRiskMultiplier = 0.5;
-    riskAction = '📉 PHẠT CẮT 50% VOLUME ($10 -> $5) CHO LỆNH TIẾP THEO ĐỂ BẢO VỆ TÀI KHOẢN';
+    tradeMemory.currentRiskMultiplier = LEARNING_CONFIG.reducedRiskMultiplier || 1.0;
+    if (tradeMemory.currentRiskMultiplier < 1.0) {
+      riskAction = '📉 PHẠT CẮT GIẢM VOLUME CHO LỆNH TIẾP THEO ĐỂ BẢO VỆ TÀI KHOẢN';
+    }
   }
 
   // 3. Ghi vào lịch sử bài học
