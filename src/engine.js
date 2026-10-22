@@ -109,11 +109,13 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const curM15CloseTime = currentM15.ts + M15_MS;
 
   // QUY TẮC ĐỘ TƯƠI MỚI (FRESHNESS):
-  // Chấp nhận ngay từ thời điểm nến H4 vừa đóng (bar 0) cho đến tối đa 4 nến M15 (1 giờ sau khi H4 đóng)
+  // barsSinceH4Close: 0 đến 4 là ngay sau khi H4 đóng nến (chạy chiến lược H4 truyền thống)
+  // barsSinceH4Close > 4 là giai đoạn trong phiên nến H4 đang chạy (chạy chiến lược Đón Đầu Zone Reaction)
   const barsSinceH4Close = Math.round((curM15CloseTime - lastH4CloseTime) / M15_MS);
-  if (barsSinceH4Close < 0 || barsSinceH4Close > 4) {
+  if (barsSinceH4Close < 0) {
     return null;
   }
+  const isFreshH4 = barsSinceH4Close <= 4;
 
   // 1. Chỉ báo Kane VIP: EMA 34 & EMA 89 trên khung H4
   const closesH4 = candlesH4.map(c => c.close);
@@ -175,12 +177,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   let blockedSignal = null;
 
   // =========================================================================
-  // SETUP 1: KANE LONG
-  // - Thuận trend Bull (EMA34 >= EMA89): Sweep hỗ trợ thường hoặc nến đảo chiều
-  // - Ngược trend Bear (EMA34 < EMA89): CÔNG THỨC KANE: CHỈ KHI GIÁ CÁCH XA EMA34 (>= 3.0%),
-  //   Râu H4 >= 45% & Khoảng cách về EMA 34 phải cho RR >= 1.0!
+  // SETUP 1 & 2: KANE SWING & TREND (CHỈ CHẠY KHI H4 VỪA ĐÓNG NẾN FRESH <= 4 BARS)
   // =========================================================================
-  for (const sup of supports) {
+  if (isFreshH4) {
+    // SETUP 1: KANE LONG
+    for (const sup of supports) {
     if (lastH4.low < sup) {
       // SMC Inducement Filter: Bỏ qua bắt đáy nếu đang nén tại cản đáy con (Equal Lows) chưa được quét
       if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_LOW') {
@@ -367,6 +368,133 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               reason: `${stratName}: H4 tested Res ${res} (Râu trên ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bearish drop${vsaNote}`
             };
           }
+        }
+      }
+    }
+  }
+  } // Đóng if (isFreshH4)
+
+  // =========================================================================
+  // SETUP 3: SMC ZONE REACTION (VÀO LỆNH ĐÓN ĐẦU TẠI CẢN & HỖ TRỢ LỚN THEO M15)
+  // Thực hiện đúng triết lý: "Lập kịch bản trước các vùng cản/hỗ trợ lớn (Tier 2 / Đỉnh đáy nến H4 trước),
+  // khi giá tới đó xem M15 phản ứng sao rồi vào lệnh đón đầu tại đỉnh/đáy,
+  // không ngồi chờ nến 4H đóng để rồi dí theo đuổi giá!"
+  //
+  // NGUYÊN TẮC THỂ CHẾ (INSTITUTIONAL RULE):
+  // - BTC & ETH: Là 2 coin dẫn dắt thanh khoản lớn nhất, vùng cản Tier 2 giữ rất chuẩn.
+  // - Altcoin (SOL, LINK, NEAR): Rất dễ bị kéo xuyên cản theo quán tính BTC,
+  //   do đó đối với Altcoin BẮT BUỘC PHẢI CÓ VOLUME ABSORPTION (VSA Climax) mới được bắt đỉnh/đáy!
+  // =========================================================================
+  const isLeader = symbol.includes('BTC') || symbol.includes('ETH');
+  const m15Anatomy = analyzeCandle(currentM15);
+
+  const majorResistances = [];
+  if (prevH4 && prevH4.high > curPrice) majorResistances.push(prevH4.high);
+  if (liquidityTiers.tier2MajorHigh && liquidityTiers.tier2MajorHigh > curPrice) {
+    if (!majorResistances.includes(liquidityTiers.tier2MajorHigh)) majorResistances.push(liquidityTiers.tier2MajorHigh);
+  }
+
+  const majorSupports = [];
+  if (prevH4 && prevH4.low < curPrice) majorSupports.push(prevH4.low);
+  if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice) {
+    if (!majorSupports.includes(liquidityTiers.tier2MajorLow)) majorSupports.push(liquidityTiers.tier2MajorLow);
+  }
+
+  // 1. Zone Reaction Short tại Vùng Kháng cự Lớn
+  for (const res of majorResistances) {
+    const testedRes = currentM15.high >= (res * 0.998) || prevM15.high >= (res * 0.998);
+    if (testedRes) {
+      // Yêu cầu: Với BTC/ETH cần râu trên >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
+      const hasVsaRejection = volAbsorptionM15.isAbsorption || volAbsorptionH4.isAbsorption || (isLeader && m15Anatomy.upperWickRatio >= 0.45);
+      const isM15Reversal = currentM15.close < currentM15.open && currentM15.close < prevM15.low;
+
+      if (hasVsaRejection && isM15Reversal) {
+        // Nếu ngược trend tăng thì bắt buộc giá phải dãn nở xa EMA34 >= 2.0%
+        if (isBullTrend) {
+          const distAboveEma34 = (curPrice - ema34) / ema34;
+          if (distAboveEma34 < 0.020 && !volAbsorptionM15.isAbsorption) continue;
+        }
+
+        const entry = currentM15.close;
+        const stopLoss = Math.max(currentM15.high, prevM15.high) + (config.atrBufferMultiplier * atrH1);
+
+        const slDistanceRate = Math.abs(entry - stopLoss) / entry;
+        if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
+          continue;
+        }
+
+        const targetSup = supports.find(s => (entry - s) / (stopLoss - entry) >= config.minRR);
+        if (targetSup) {
+          const rr = (entry - targetSup) / (stopLoss - entry);
+          if (!btcShield.canShort) {
+            blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'SHORT' };
+            continue;
+          }
+
+          const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
+          const vsaNote = volAbsorptionM15.isAbsorption ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
+          return {
+            strategy: 'SMC_ZONE_REACTION_SHORT',
+            direction: 'SHORT',
+            symbol,
+            entry,
+            stopLoss,
+            takeProfit: targetSup,
+            riskReward: parseFloat(rr.toFixed(2)),
+            triggerTime: currentM15.ts,
+            sizing,
+            reason: `SMC_ZONE_REACTION_SHORT: Đón đầu tại Cản ${res} (M15 Râu trên ${(m15Anatomy.upperWickRatio * 100).toFixed(1)}%), SL sát đỉnh râu${vsaNote}`
+          };
+        }
+      }
+    }
+  }
+
+  // 2. Zone Reaction Long tại Vùng Hỗ trợ Lớn
+  for (const sup of majorSupports) {
+    const testedSup = currentM15.low <= (sup * 1.002) || prevM15.low <= (sup * 1.002);
+    if (testedSup) {
+      // Yêu cầu: Với BTC/ETH cần râu dưới >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
+      const hasVsaRejection = volAbsorptionM15.isAbsorption || volAbsorptionH4.isAbsorption || (isLeader && m15Anatomy.lowerWickRatio >= 0.45);
+      const isM15Reversal = currentM15.close > currentM15.open && currentM15.close > prevM15.high;
+
+      if (hasVsaRejection && isM15Reversal) {
+        // Nếu ngược trend giảm thì bắt buộc giá phải dãn nở xa EMA34 >= 2.0%
+        if (isBearTrend) {
+          const distBelowEma34 = (ema34 - curPrice) / curPrice;
+          if (distBelowEma34 < 0.020 && !volAbsorptionM15.isAbsorption) continue;
+        }
+
+        const entry = currentM15.close;
+        const stopLoss = Math.min(currentM15.low, prevM15.low) - (config.atrBufferMultiplier * atrH1);
+
+        const slDistanceRate = Math.abs(entry - stopLoss) / entry;
+        if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
+          continue;
+        }
+
+        const targetRes = resistances.find(r => (r - entry) / (entry - stopLoss) >= config.minRR);
+        if (targetRes) {
+          const rr = (targetRes - entry) / (entry - stopLoss);
+          if (!btcShield.canLong) {
+            blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'LONG' };
+            continue;
+          }
+
+          const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
+          const vsaNote = volAbsorptionM15.isAbsorption ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
+          return {
+            strategy: 'SMC_ZONE_REACTION_LONG',
+            direction: 'LONG',
+            symbol,
+            entry,
+            stopLoss,
+            takeProfit: targetRes,
+            riskReward: parseFloat(rr.toFixed(2)),
+            triggerTime: currentM15.ts,
+            sizing,
+            reason: `SMC_ZONE_REACTION_LONG: Đón đầu tại Hỗ trợ ${sup} (M15 Râu dưới ${(m15Anatomy.lowerWickRatio * 100).toFixed(1)}%), SL sát đáy râu${vsaNote}`
+          };
         }
       }
     }
