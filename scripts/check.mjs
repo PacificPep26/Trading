@@ -24,6 +24,7 @@ import {
 import {
   calculatePositionSize,
   checkBtcMacroShield,
+  analyzeBtcLocomotive,
   detectMarketPhase,
   evaluateMarket,
   generateKeyLevelRadar,
@@ -359,6 +360,71 @@ assert(checkLong.allowed === false, 'Cổng kỷ luật Veto chặn đứng lệ
 rewardWinAndClearPenalty('SOL-USDT');
 const checkAfterReward = checkAdaptiveTradeAllowed('SOL-USDT', 'LONG');
 assert(checkAfterReward.allowed === true, 'Gỡ bỏ hình phạt và khôi phục giao dịch sau lệnh Thắng');
+
+console.log('\n15. Kiểm tra Bộ Chỉ Huy Đầu Tàu BTC & Kỷ Luật Cấu Trúc (Locomotive Structural Discipline):');
+// Tạo chuỗi nến BTC H1 đang xả lũ (Dumping Waterfall)
+const mockBtcDumpingH1 = Array(20).fill(null).map((_, i) => ({
+  ts: i * 3600 * 1000,
+  open: 70000 - i * 1000,
+  high: 70050 - i * 1000,
+  low: 68950 - i * 1000,
+  close: 69000 - i * 1000, // Thân nến xả 1000 giá chiếm > 90% biên độ
+  vol: 5000,
+  confirm: 1
+}));
+
+// Đầu Tàu BTC nhận diện chính xác trạng thái xả lũ
+const btcLocoDump = analyzeBtcLocomotive({ btcH1Candles: mockBtcDumpingH1 });
+assert(btcLocoDump.canLongAlts === false, 'Đầu tàu BTC xả lũ: CẤM TUYỆT ĐỐI Long Altcoin');
+assert(btcLocoDump.canShortAlts === true, 'Đầu tàu BTC xả lũ: Vẫn cho phép Short Altcoin thuận theo đầu tàu');
+assert(btcLocoDump.phase === 'DUMPING_WATERFALL', 'Giai đoạn Đầu Tàu: DUMPING_WATERFALL');
+
+// Altcoin NEAR-USDT dính SL do mở Long cản tàu
+const mockNearLongPos = {
+  symbol: 'NEAR-USDT',
+  direction: 'LONG',
+  entry: 5.0,
+  stopLoss: 4.8,
+  initialStopLoss: 4.8,
+  strategy: 'SMC_SWEEP_REVERSAL_LONG'
+};
+
+const nearMistake = inspectTradeMistake({
+  pos: mockNearLongPos,
+  candlesH4: mockLossCandlesH4,
+  candlesH1: mockLossCandlesH4.slice(0, 15),
+  candlesM15: mockLossCandlesH4.slice(0, 20),
+  btcH1Candles: mockBtcDumpingH1
+});
+
+assert(nearMistake.mistakeType === 'LOCOMOTIVE_MISALIGNMENT', 'Mổ xẻ chuẩn xác lỗi: Không theo Đầu Tàu BTC (LOCOMOTIVE_MISALIGNMENT)');
+assert(nearMistake.requiredBtcConfirmation === 'BTC_BULLISH_REVERSAL_CONFIRMED', 'Yêu cầu điều kiện gỡ án: Đầu Tàu BTC phải xác nhận đảo chiều');
+
+// Thi hành án phạt không dùng đồng hồ
+const nearPenalty = applyDisciplinaryPenalty(mockNearLongPos, nearMistake);
+assert(nearPenalty.isLocomotiveAnchored === true, 'Hình phạt neo trực tiếp vào Cấu Trúc Đầu Tàu (Không dùng giờ đồng hồ)');
+assert(nearPenalty.penaltyUntilStr.includes('CHỜ ĐẦU TÀU BTC XÁC NHẬN CẤU TRÚC'), 'Thông điệp án phạt rõ ràng: Chờ Đầu Tàu BTC xác nhận');
+
+// Khi BTC vẫn đang xả lũ: Khóa chặt lệnh Long, nhưng CHO PHÉP Short thuận chiều Đầu Tàu
+const checkNearLongWhileDump = checkAdaptiveTradeAllowed('NEAR-USDT', 'LONG', mockBtcDumpingH1);
+assert(checkNearLongWhileDump.allowed === false, 'Khi Đầu Tàu chưa đảo chiều: Khóa chặt lệnh Long NEAR-USDT');
+
+const checkNearShortWhileDump = checkAdaptiveTradeAllowed('NEAR-USDT', 'SHORT', mockBtcDumpingH1);
+assert(checkNearShortWhileDump.allowed === true, 'Cho phép mở lệnh Short NEAR-USDT thuận theo chiều rơi của Đầu Tàu BTC');
+
+// Giả lập Đầu Tàu BTC xuất hiện nến rút chân đảo chiều mạnh (Bullish Reversal Wick)
+const mockBtcReversalH1 = [...mockBtcDumpingH1.slice(0, 19), {
+  ts: 20 * 3600 * 1000,
+  open: 60000,
+  high: 61000,
+  low: 58000, // Rút râu dưới cực mạnh từ 58000 lên 60800
+  close: 60800,
+  vol: 15000,
+  confirm: 1
+}];
+
+const checkNearLongAfterBtcReversal = checkAdaptiveTradeAllowed('NEAR-USDT', 'LONG', mockBtcReversalH1);
+assert(checkNearLongAfterBtcReversal.allowed === true, 'Đầu Tàu BTC vừa xác nhận rút râu đảo chiều: Giải phóng án phạt cho NEAR-USDT ngay lập tức!');
 
 // Tổng kết
 console.log('\n======================================================');

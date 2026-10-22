@@ -268,14 +268,23 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     // BỘ MỔ XẺ SAI LẦM & ÁP DỤNG HÌNH PHẠT HỌC HỎI
     if (!pos.isProfitLocked) {
       try {
-        const [h4, h1, m15] = await Promise.all([
+        const [h4, h1, m15, bH4, bH1] = await Promise.all([
           fetchOkxCandles(pos.instId, '4H', 25),
           fetchOkxCandles(pos.instId, '1H', 15),
-          fetchOkxCandles(pos.instId, '15m', 20)
+          fetchOkxCandles(pos.instId, '15m', 20),
+          fetchOkxCandles('BTC-USDT-SWAP', '4H', 35),
+          fetchOkxCandles('BTC-USDT-SWAP', '1H', 20)
         ]);
-        const mistake = inspectTradeMistake({ pos, candlesH4: h4, candlesH1: h1, candlesM15: m15 });
+        const mistake = inspectTradeMistake({
+          pos,
+          candlesH4: h4,
+          candlesH1: h1,
+          candlesM15: m15,
+          btcH4Candles: bH4.filter(c => c.confirm === 1),
+          btcH1Candles: bH1.filter(c => c.confirm === 1)
+        });
         const penalty = applyDisciplinaryPenalty(pos, mistake);
-        console.log(`[LEARNING PENALTY] Phạt ${pos.symbol}: ${mistake.mistakeTitle} -> Đóng băng đến ${penalty.penaltyUntilStr}`);
+        console.log(`[LEARNING PENALTY] Phạt ${pos.symbol}: ${mistake.mistakeTitle} -> Yêu cầu Đầu Tàu BTC: ${mistake.requiredBtcConfirmation || 'Chờ nến xác nhận'}`);
         await notifyPostMortemPenalty(pos, mistake, penalty);
       } catch (err) {
         console.error(`[LEARNING ERROR] Lỗi phân tích thất bại:`, err.message);
@@ -327,8 +336,12 @@ export async function runScanCycle() {
   console.log(`[SCAN CYCLE] Bắt đầu quét thị trường lúc: ${timeStr}`);
   console.log(`[MODE] ${CONFIG.scanMode} | Đang mở: ${activePositions.length} vị thế`);
 
-  // 1. Tải nến BTC 1H để kích hoạt Khiên Macro (Chỉ lấy nến đã đóng confirm=1)
-  const rawBtcH1 = await fetchOkxCandles('BTC-USDT-SWAP', '1H', 30);
+  // 1. Tải nến Đầu Tàu BTC (H4 & 1H) để kích hoạt Bộ Chỉ Huy Đầu Tàu
+  const [rawBtcH4, rawBtcH1] = await Promise.all([
+    fetchOkxCandles('BTC-USDT-SWAP', '4H', 40),
+    fetchOkxCandles('BTC-USDT-SWAP', '1H', 30)
+  ]);
+  const btcH4 = rawBtcH4.filter(c => c.confirm === 1);
   const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
 
   // 1.1. Luôn cập nhật giá thời gian thực cho TẤT CẢ các vị thế đang mở
@@ -384,10 +397,10 @@ export async function runScanCycle() {
         continue;
       }
 
-      // KIỂM TRA HÌNH PHẠT HỌC HỎI (ADAPTIVE PENALTY GATE):
-      const generalCheck = checkAdaptiveTradeAllowed(symbol, null);
+      // KIỂM TRA HÌNH PHẠT HỌC HỎI (ADAPTIVE PENALTY GATE THEO ĐẦU TÀU BTC):
+      const generalCheck = checkAdaptiveTradeAllowed(symbol, null, btcH1, btcH4);
       if (!generalCheck.allowed) {
-        continue; // Cặp coin đang bị đóng băng kỷ luật sau thất bại
+        continue; // Cặp coin đang bị đóng băng kỷ luật chờ đầu tàu BTC xác nhận
       }
 
       // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
@@ -415,12 +428,13 @@ export async function runScanCycle() {
         candlesH1: closedH1,
         candlesM15: closedM15,
         btcH1Candles: btcH1,
+        btcH4Candles: btcH4,
         config: CONFIG
       });
 
       if (signal && !signal.isBlocked) {
         // KIỂM TRA HÌNH PHẠT THEO HƯỚNG LỆNH (CẤM BẮT ĐÁY / CẤM CẢN TÀU):
-        const dirCheck = checkAdaptiveTradeAllowed(symbol, signal.direction);
+        const dirCheck = checkAdaptiveTradeAllowed(symbol, signal.direction, btcH1, btcH4);
         if (!dirCheck.allowed) {
           console.log(`[PENALTY VETO] ${symbol} bị hủy lệnh ${signal.direction}: ${dirCheck.reason}`);
           continue;

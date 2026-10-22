@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { calculateEMA, calculateSMA, calculateATR, analyzeCandle } from './indicators.js';
-import { detectMarketPhase } from './engine.js';
+import { detectMarketPhase, analyzeBtcLocomotive } from './engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MEMORY_FILE = path.join(__dirname, '../data/trade_memory.json');
@@ -69,11 +69,25 @@ loadTradeMemory();
  * @param {object} params
  * @returns {object} Chi tiết lỗi và khuyến nghị kỷ luật
  */
-export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15 }) {
+export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15, btcH4Candles = null, btcH1Candles = null }) {
   const isLong = pos.direction === 'LONG';
   const symbol = pos.symbol;
+  const isAltcoin = !symbol.includes('BTC');
 
-  // 1. Kiểm tra Giai đoạn Thị trường lúc thua
+  // 1. Kiểm tra LỖI KHÔNG THEO ĐẦU TÀU BTC (LOCOMOTIVE MISALIGNMENT):
+  // Đây là điểm sai cốt lõi: Nếu đầu tàu BTC đang cắm đầu rơi mà Altcoin dám Long,
+  // hoặc đầu tàu BTC đang bơm dốc đứng mà Altcoin dám Short -> Phạt gắn chặt vào cấu trúc BTC!
+  let btcLoco = null;
+  let isFoughtLocomotive = false;
+  if (btcH1Candles && btcH1Candles.length >= 15) {
+    btcLoco = analyzeBtcLocomotive({ btcH4Candles, btcH1Candles });
+    if (isAltcoin) {
+      if (isLong && !btcLoco.canLongAlts) isFoughtLocomotive = true;
+      if (!isLong && !btcLoco.canShortAlts) isFoughtLocomotive = true;
+    }
+  }
+
+  // 2. Kiểm tra Giai đoạn Thị trường của chính cặp coin
   let marketPhase = 'RANGING';
   if (candlesH4 && candlesH4.length >= 20) {
     const closesH4 = candlesH4.map(c => c.close);
@@ -82,12 +96,12 @@ export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15 }) {
     marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
   }
 
-  // 2. Kiểm tra lỗi Bắt Dao Rơi / Cản Tàu (Trend Fighting Trap)
+  // 3. Kiểm tra lỗi Bắt Dao Rơi / Cản Tàu (Trend Fighting Trap)
   const isTrendFighting = 
     (isLong && marketPhase === 'STRONG_DOWNTREND') ||
     (!isLong && marketPhase === 'STRONG_UPTREND');
 
-  // 3. Kiểm tra lỗi Thiếu Khối lượng Hấp thụ VSA (No Volume Fakeout)
+  // 4. Kiểm tra lỗi Thiếu Khối lượng Hấp thụ VSA (No Volume Fakeout)
   let isLowVolumeTrap = false;
   let volRatio = 1.0;
   if (candlesM15 && candlesM15.length >= 20) {
@@ -101,24 +115,35 @@ export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15 }) {
     }
   }
 
-  // 4. Kiểm tra lỗi Bị Quét Râu Do Stop Loss Quá Chặt / Cản Rác
+  // 5. Kiểm tra lỗi Bị Quét Râu Do Stop Loss Quá Chặt / Cản Rác
   const riskDist = Math.abs(pos.entry - pos.initialStopLoss);
   const riskPct = (riskDist / pos.entry) * 100;
   const isTooTightOrChop = riskPct < 0.25;
 
-  // Phân loại Lỗi Trọng Tâm (Primary Mistake)
+  // Phân loại Lỗi Trọng Tâm & Yêu Cầu Cấu Trúc Đầu Tàu (Locomotive Requirement)
   let mistakeType = 'STRUCTURE_FAILED';
   let mistakeTitle = 'Vùng Cản Thất Bại (Cấu trúc bị phá vỡ)';
   let rootCause = 'Giá kiểm tra cản nhưng Market Maker hấp thụ xuyên qua, quét Stop Loss.';
   let penaltyDurationHours = PENALTY_CONFIG.cooldownHoursAfterSL;
   let forbiddenDirection = null;
+  let requiredBtcConfirmation = isLong ? 'BTC_BULLISH_REVERSAL_CONFIRMED' : 'BTC_BEARISH_REJECTION_CONFIRMED';
 
-  if (isTrendFighting) {
+  if (isFoughtLocomotive) {
+    mistakeType = 'LOCOMOTIVE_MISALIGNMENT';
+    mistakeTitle = isLong
+      ? 'Đánh Long Cản Tàu Khi Đầu Tàu BTC Đang Rơi Tự Do'
+      : 'Đánh Short Chặn Đầu Khi Đầu Tàu BTC Đang Bơm Dựng Cột';
+    rootCause = `Toa tàu ${symbol} mở lệnh ${pos.direction} khi Đầu Tàu BTC đang ${btcLoco.phase}! Lỗi không theo đầu tàu dẫn dắt là lỗi chết người!`;
+    penaltyDurationHours = PENALTY_CONFIG.trendFightingCooldownHours;
+    forbiddenDirection = pos.direction;
+    requiredBtcConfirmation = isLong ? 'BTC_BULLISH_REVERSAL_CONFIRMED' : 'BTC_BEARISH_REJECTION_CONFIRMED';
+  } else if (isTrendFighting) {
     mistakeType = 'TREND_FIGHTING';
     mistakeTitle = isLong ? 'Bắt Dao Rơi Trong Xu Hướng Giảm Dốc Đứng' : 'Chặn Đầu Xe Lửa Trong Xu Hướng Tăng Dốc Mạnh';
     rootCause = `Vào lệnh ${pos.direction} khi thị trường đang ở giai đoạn ${marketPhase}. Nến dốc đứng một chiều nghiền nát mọi hỗ trợ/kháng cự con!`;
     penaltyDurationHours = PENALTY_CONFIG.trendFightingCooldownHours;
     forbiddenDirection = pos.direction; // Cấm mở tiếp hướng này!
+    requiredBtcConfirmation = isLong ? 'BTC_BULLISH_REVERSAL_CONFIRMED' : 'BTC_BEARISH_REJECTION_CONFIRMED';
   } else if (isLowVolumeTrap) {
     mistakeType = 'LOW_VOLUME_FAKEOUT';
     mistakeTitle = 'Bẫy Thanh Khoản Thiếu Khối Lượng (Fakeout)';
@@ -142,6 +167,7 @@ export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15 }) {
     rootCause,
     penaltyDurationHours,
     forbiddenDirection,
+    requiredBtcConfirmation,
     volRatio: parseFloat(volRatio.toFixed(2)),
     analyzedAt: Date.now()
   };
@@ -158,13 +184,21 @@ export function applyDisciplinaryPenalty(pos, mistake) {
 
   const now = Date.now();
   const symbol = pos.symbol;
-  const penaltyUntil = now + (mistake.penaltyDurationHours * 3600 * 1000);
+  const isLocomotiveAnchored = Boolean(mistake.requiredBtcConfirmation);
+  const penaltyUntil = isLocomotiveAnchored
+    ? null // Không dùng hạn thời gian, neo chặt vào cấu trúc Đầu Tàu BTC!
+    : now + (mistake.penaltyDurationHours * 3600 * 1000);
+
+  const penaltyUntilStr = isLocomotiveAnchored
+    ? `CHỜ ĐẦU TÀU BTC XÁC NHẬN CẤU TRÚC (${mistake.requiredBtcConfirmation})`
+    : new Date(penaltyUntil).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
 
   // 1. Phạt Đóng Băng Cặp Coin vi phạm
   tradeMemory.penalties[symbol] = {
     penaltyUntil,
-    penaltyUntilStr: new Date(penaltyUntil).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+    penaltyUntilStr,
     forbiddenDirection: mistake.forbiddenDirection,
+    requiredBtcConfirmation: mistake.requiredBtcConfirmation || null,
     mistakeType: mistake.mistakeType,
     rootCause: mistake.rootCause,
     appliedAt: now
@@ -206,7 +240,8 @@ export function applyDisciplinaryPenalty(pos, mistake) {
   return {
     symbol,
     cooldownHours: mistake.penaltyDurationHours,
-    penaltyUntilStr: new Date(penaltyUntil).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+    isLocomotiveAnchored,
+    penaltyUntilStr,
     consecutiveLosses: tradeMemory.consecutiveLosses,
     currentRiskMultiplier: tradeMemory.currentRiskMultiplier,
     riskAction,
@@ -237,7 +272,7 @@ export function rewardWinAndClearPenalty(symbol) {
  * @param {string} direction 'LONG' | 'SHORT'
  * @returns {{ allowed: boolean, reason: string|null }}
  */
-export function checkAdaptiveTradeAllowed(symbol, direction) {
+export function checkAdaptiveTradeAllowed(symbol, direction, btcH1Candles = null, btcH4Candles = null) {
   loadTradeMemory();
   const now = Date.now();
 
@@ -250,21 +285,67 @@ export function checkAdaptiveTradeAllowed(symbol, direction) {
     };
   }
 
-  // 2. Kiểm tra án phạt riêng từng cặp coin
+  // 2. Kiểm tra án phạt của cặp coin
   const penalty = tradeMemory.penalties[symbol];
-  if (penalty && penalty.penaltyUntil > now) {
-    // Nếu bị cấm tuyệt đối theo hướng (ví dụ cấm Long bắt dao rơi)
-    if (penalty.forbiddenDirection && penalty.forbiddenDirection === direction) {
-      return {
-        allowed: false,
-        reason: `MISTAKE_PENALTY_VETO: Cặp ${symbol} đang bị PHẠT CẤM ${direction} đến ${penalty.penaltyUntilStr} do bài học: ${penalty.rootCause}`
-      };
+  if (!penalty) {
+    return { allowed: true, reason: null };
+  }
+
+  // 2.1. NẾU LÀ ÁN PHẠT NEO THEO CẤU TRÚC ĐẦU TÀU BTC (KHÔNG DÙNG ĐỒNG HỒ THỜI GIAN)
+  if (penalty.requiredBtcConfirmation) {
+    // Nếu có dữ liệu nến Đầu Tàu BTC để kiểm tra
+    if (btcH1Candles && btcH1Candles.length >= 15) {
+      const btcLoco = analyzeBtcLocomotive({ btcH4Candles, btcH1Candles });
+      const isLongPenalty = penalty.requiredBtcConfirmation === 'BTC_BULLISH_REVERSAL_CONFIRMED';
+      const isStructureConfirmed = isLongPenalty ? btcLoco.hasBullishReversal : btcLoco.hasBearishRejection;
+
+      if (isStructureConfirmed) {
+        // ĐẦU TÀU ĐÃ HOÀN TẤT CẤU TRÚC XÁC NHẬN! GỠ BỎ ÁN PHẠT NGAY LẬP TỨC!
+        delete tradeMemory.penalties[symbol];
+        saveTradeMemory();
+        console.log(`[LOCOMOTIVE ALIGNED] Đầu Tàu BTC đã xác nhận cấu trúc ${penalty.requiredBtcConfirmation}! Gỡ bỏ án phạt cho ${symbol} ngay lập tức!`);
+        return { allowed: true, reason: null };
+      }
     }
 
-    // Nếu đang trong thời gian đóng băng Cooldown chung
+    // Nếu Đầu Tàu BTC vẫn chưa xác nhận cấu trúc:
+    if (penalty.forbiddenDirection) {
+      // Chỉ cấm hướng vi phạm (ví dụ cấm LONG), không cấm hướng thuận theo Đầu Tàu (ví dụ SHORT)!
+      if (direction === penalty.forbiddenDirection) {
+        return {
+          allowed: false,
+          reason: `LOCOMOTIVE_STRUCTURE_LOCKED: Cặp ${symbol} bị PHẠT KHÓA CHẶT lệnh ${penalty.forbiddenDirection}. Đang đợi Đầu Tàu BTC hoàn tất cấu trúc (${penalty.requiredBtcConfirmation})!`
+        };
+      }
+      // Cho phép hướng đối diện hoặc cho phép quét sơ bộ ban đầu (direction=null) để evaluateMarket tìm kèo thuận Đầu Tàu!
+      return { allowed: true, reason: null };
+    }
+
+    // Nếu là án phạt đóng băng toàn diện không phân biệt hướng
     return {
       allowed: false,
-      reason: `COOLDOWN_ACTIVE: ${symbol} đang trong thời gian phạt làm nguội đến ${penalty.penaltyUntilStr} (Lỗi: ${penalty.mistakeType})`
+      reason: `LOCOMOTIVE_STRUCTURE_LOCKED: Cặp ${symbol} bị ĐÓNG BĂNG TOÀN DIỆN. Đang đợi Đầu Tàu BTC hoàn tất cấu trúc (${penalty.requiredBtcConfirmation})!`
+    };
+  }
+
+  // 2.2. Án phạt thường (nếu có hướng cấm)
+  if (penalty.forbiddenDirection) {
+    if (direction === penalty.forbiddenDirection) {
+      if (!penalty.penaltyUntil || penalty.penaltyUntil > now) {
+        return {
+          allowed: false,
+          reason: `MISTAKE_PENALTY_VETO: Cặp ${symbol} đang bị PHẠT CẤM ${penalty.forbiddenDirection} đến ${penalty.penaltyUntilStr} do bài học: ${penalty.rootCause}`
+        };
+      }
+    }
+    return { allowed: true, reason: null };
+  }
+
+  // 2.3. Cooldown chung (cho các lỗi kỹ thuật khác nếu có)
+  if (!penalty.forbiddenDirection && penalty.penaltyUntil && penalty.penaltyUntil > now) {
+    return {
+      allowed: false,
+      reason: `COOLDOWN_ACTIVE: ${symbol} đang trong thời gian làm nguội đến ${penalty.penaltyUntilStr} (Lỗi: ${penalty.mistakeType})`
     };
   }
 
@@ -278,3 +359,4 @@ export function getAdaptiveRiskMultiplier() {
   loadTradeMemory();
   return tradeMemory.currentRiskMultiplier || 1.0;
 }
+

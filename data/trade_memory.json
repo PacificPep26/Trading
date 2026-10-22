@@ -1,0 +1,7 @@
+{
+  "penalties": {},
+  "consecutiveLosses": 0,
+  "recentMistakes": [],
+  "currentRiskMultiplier": 1.0,
+  "systemCircuitBreakerUntil": 0
+}

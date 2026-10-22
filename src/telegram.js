@@ -175,8 +175,8 @@ export async function notifyPostMortemPenalty(position, mistake, penalty) {
 • <b>Lỗi vi phạm:</b> <b>${mistake.mistakeTitle}</b>
 • <b>Chi tiết:</b> ${mistake.rootCause}
 
-⚖️ <b>HÌNH PHẠT ĐANG THI HÀNH:</b>
-• ⏳ <b>Đóng băng ${position.symbol}:</b> ${penalty.cooldownHours} tiếng (đến ${penalty.penaltyUntilStr}).
+⚖️ <b>HÌNH PHẠT CẤU TRÚC ĐẦU TÀU (KHÔNG DÙNG ĐỒNG HỒ):</b>
+• 🚂 <b>Điều kiện gỡ phạt:</b> Bắt buộc Đầu Tàu BTC phải xác nhận cấu trúc <code>${mistake.requiredBtcConfirmation || 'Đảo chiều nến H1/H4'}</code>!
 • 🚫 <b>Cấm vào lệnh:</b> ${mistake.forbiddenDirection ? `CẤM ${mistake.forbiddenDirection}` : 'Tạm ngưng toàn bộ'}
 • 📉 <b>Kỷ luật vốn:</b> ${penalty.riskAction}
 • ⚠️ <b>Chuỗi thua liên tiếp:</b> ${penalty.consecutiveLosses} lệnh

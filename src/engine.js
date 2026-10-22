@@ -59,30 +59,91 @@ export function calculatePositionSize(entry, stopLoss, riskUsd = 10, leverage = 
 }
 
 /**
- * Kiểm tra Khiên bảo vệ BTC Macro 1H
+ * Bộ Chỉ Huy Đầu Tàu BTC (Locomotive Leader Engine)
+ * Triết lý cốt lõi từ phản hồi thực tế:
+ * "Đánh sai là do không theo đầu tàu! Thay vì phạt theo giờ đồng hồ cứng nhắc,
+ * phải phạt và kiểm soát theo CẤU TRÚC ĐẦU TÀU (BTC)!"
+ * 
+ * - BTC là "Đầu Tàu" kéo toàn bộ các toa tàu (Altcoins SOL, LINK, NEAR, ETH).
+ * - Khi Đầu Tàu BTC đang lao dốc (Dumping Waterfall): CẤM TUYỆT ĐỐI Long Altcoin!
+ * - Khi Đầu Tàu BTC đang bơm dựng cột (Pumping Parabolic): CẤM TUYỆT ĐỐI Short Altcoin!
+ * - Nhận diện nến rút râu đảo chiều của BTC (CHoCH / Rejection) để giải phóng án phạt cho Altcoin!
+ */
+export function analyzeBtcLocomotive({ btcH4Candles = null, btcH1Candles = null }) {
+  if (!btcH1Candles || btcH1Candles.length < 15) {
+    return {
+      canLongAlts: true,
+      canShortAlts: true,
+      phase: 'NEUTRAL',
+      reason: null,
+      hasBullishReversal: false,
+      hasBearishRejection: false
+    };
+  }
+
+  const atrsH1 = calculateATR(btcH1Candles, 14);
+  const lastH1Idx = btcH1Candles.length - 1;
+  const lastH1 = btcH1Candles[lastH1Idx];
+  const lastAtrH1 = atrsH1[lastH1Idx] || (lastH1.close * 0.005);
+  const { isBullishMarubozu, isBearishMarubozu } = isMarubozu(lastH1, lastAtrH1, 0.8, 0.65);
+
+  let btcH4Phase = 'RANGING';
+  if (btcH4Candles && btcH4Candles.length >= 35) {
+    const closesH4 = btcH4Candles.map(c => c.close);
+    const ema34Arr = calculateEMA(closesH4, 34);
+    const ema89Arr = calculateEMA(closesH4, 89);
+    btcH4Phase = detectMarketPhase(btcH4Candles, ema34Arr, ema89Arr);
+  }
+
+  // Nhận diện nến H1 của Đầu Tàu có xác nhận đảo chiều cấu trúc (Structural Reversal) hay không
+  const h1Anatomy = analyzeCandle(lastH1);
+  const hasBullishReversal = h1Anatomy.lowerWickRatio >= 0.35 && lastH1.close > lastH1.open;
+  const hasBearishRejection = h1Anatomy.upperWickRatio >= 0.35 && lastH1.close < lastH1.open;
+
+  // 1. Đầu Tàu BTC đang Lao Dốc (Dumping Waterfall) -> Cấm Long Altcoins
+  if (isBearishMarubozu || (btcH4Phase === 'STRONG_DOWNTREND' && !hasBullishReversal)) {
+    return {
+      canLongAlts: false,
+      canShortAlts: true,
+      phase: 'DUMPING_WATERFALL',
+      reason: 'LOCOMOTIVE_BTC_DUMPING: Đầu tàu BTC đang rơi tự do, CẤM TUYỆT ĐỐI Long Altcoin!',
+      hasBullishReversal: false,
+      hasBearishRejection
+    };
+  }
+
+  // 2. Đầu Tàu BTC đang Bơm Dốc (Pumping Parabolic) -> Cấm Short Altcoins
+  if (isBullishMarubozu || (btcH4Phase === 'STRONG_UPTREND' && !hasBearishRejection)) {
+    return {
+      canLongAlts: true,
+      canShortAlts: false,
+      phase: 'PUMPING_PARABOLIC',
+      reason: 'LOCOMOTIVE_BTC_PUMPING: Đầu tàu BTC đang bơm dốc đứng, CẤM TUYỆT ĐỐI Short Altcoin!',
+      hasBullishReversal,
+      hasBearishRejection: false
+    };
+  }
+
+  return {
+    canLongAlts: true,
+    canShortAlts: true,
+    phase: btcH4Phase,
+    reason: null,
+    hasBullishReversal,
+    hasBearishRejection
+  };
+}
+
+/**
+ * Kiểm tra Khiên bảo vệ BTC Macro 1H (Giữ tương thích ngược)
  */
 export function checkBtcMacroShield(btcH1Candles) {
-  if (!btcH1Candles || btcH1Candles.length < 15) {
-    return { canLong: true, canShort: true, reason: null };
-  }
-
-  const atrs = calculateATR(btcH1Candles, 14);
-  const lastIdx = btcH1Candles.length - 1;
-  const lastCandle = btcH1Candles[lastIdx];
-  const lastAtr = atrs[lastIdx];
-
-  if (!lastAtr) return { canLong: true, canShort: true, reason: null };
-
-  const { isBullishMarubozu, isBearishMarubozu } = isMarubozu(lastCandle, lastAtr, 0.8, 0.65);
-
-  if (isBearishMarubozu) {
-    return { canLong: false, canShort: true, reason: 'BTC_1H_BEARISH_MARUBOZU_DUMP' };
-  }
-  if (isBullishMarubozu) {
-    return { canLong: true, canShort: false, reason: 'BTC_1H_BULLISH_MARUBOZU_PUMP' };
-  }
-
-  return { canLong: true, canShort: true, reason: null };
+  const loco = analyzeBtcLocomotive({ btcH1Candles });
+  return {
+    canLong: loco.canLongAlts,
+    canShort: loco.canShortAlts,
+    reason: loco.reason
+  };
 }
 
 /**
@@ -122,7 +183,7 @@ export function detectMarketPhase(candlesH4, ema34Arr, ema89Arr) {
  * @param {object} params
  * @returns {object|null}
  */
-export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1Candles = null, config = DEFAULT_CONFIG }) {
+export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1Candles = null, btcH4Candles = null, config = DEFAULT_CONFIG }) {
   if (!candlesH4 || candlesH4.length < 90 || !candlesH1 || candlesH1.length < 15 || !candlesM15 || candlesM15.length < 5) {
     return null;
   }
@@ -207,8 +268,14 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const volAbsorptionH4 = detectVolumeAbsorption(candlesH4, candlesH4.length - 1);
   const volAbsorptionM15 = detectVolumeAbsorption(candlesM15, candlesM15.length - 1);
 
-  // Khiên BTC Macro 1H
-  const btcShield = checkBtcMacroShield(btcH1Candles);
+  // Bộ Chỉ Huy Đầu Tàu BTC (Locomotive Leader Check)
+  const isAltcoin = !symbol.includes('BTC');
+  const btcLoco = analyzeBtcLocomotive({ btcH4Candles, btcH1Candles });
+  const btcShield = {
+    canLong: isAltcoin ? btcLoco.canLongAlts : true,
+    canShort: isAltcoin ? btcLoco.canShortAlts : true,
+    reason: btcLoco.reason
+  };
   let blockedSignal = null;
 
   // =========================================================================
