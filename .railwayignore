@@ -1,0 +1,5 @@
+node_modules/
+data/cache/
+data/cache_1year/
+positions.json
+.git/
