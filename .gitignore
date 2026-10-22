@@ -3,4 +3,5 @@ data/cache/
 positions.json
 .env
 .railway/
+logs/
 
