@@ -22,7 +22,7 @@ const CASES_FILE = path.join(KNOWLEDGE_DIR, 'cases.json');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-2.5-flash', 'gemini-flash-latest'];
+const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
 
 /**
  * Đọc toàn bộ tri thức trading từ Knowledge Base
@@ -113,6 +113,110 @@ export async function callGemini(prompt, systemInstruction = '') {
   }
 
   throw new Error(`Tất cả các model Gemini đều thất bại. Lỗi cuối: ${lastError?.message}`);
+}
+
+/**
+ * Gửi ảnh biểu đồ kèm prompt tới Gemini Vision API (Multimodal)
+ * @param {string} prompt
+ * @param {string} base64Data
+ * @param {string} mimeType
+ * @returns {Promise<string>}
+ */
+export async function callGeminiVision(prompt, base64Data, mimeType = 'image/png') {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY chưa được thiết lập trong file .env');
+  }
+
+  const visionModels = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  let lastErr = null;
+
+  for (const model of visionModels) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data
+              }
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.3,
+        maxOutputTokens: 2048
+      }
+    };
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text}`);
+      }
+
+      const data = await res.json();
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        return data.candidates[0].content.parts[0].text;
+      }
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[GEMINI VISION] Model ${model} gặp lỗi: ${err.message}. Đổi model khác...`);
+    }
+  }
+
+  throw new Error(`Không thể phân tích ảnh qua Gemini: ${lastErr?.message}`);
+}
+
+/**
+ * Phân tích chuyên sâu ảnh chụp màn hình biểu đồ (Screenshot Chart Vision)
+ * Nhận diện Kháng cự/Hỗ trợ, bẫy Inducement và kịch bản dự đoán trước.
+ * @param {string} base64Image
+ * @param {string} mimeType
+ * @returns {Promise<string>}
+ */
+export async function analyzeChartScreenshot(base64Image, mimeType = 'image/png') {
+  const prompt = `
+Bạn là "Antigravity Quant AI" - Chuyên gia Đọc biểu đồ Cấp cao theo Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34 & 89).
+Dưới đây là ảnh chụp màn hình biểu đồ giao dịch do người dùng gửi tới.
+
+HÃY PHÂN TÍCH CHUYÊN SÂU THEO BỐ CỤC:
+1. 📊 <b>NHẬN DIỆN BIỂU ĐỒ</b>:
+   - Cặp coin và Khung thời gian (Timeframe) đang xem.
+   - Xu hướng chính (Uptrend / Downtrend / Sideway).
+
+2. 🗺️ <b>CẤU TRÚC KHÁNG CỰ & HỖ TRỢ (KEY LEVELS)</b>:
+   - Các mức Cản Lớn Quan Trọng (Major Key Levels) ở trên và ở dưới.
+   - Các vùng Bẫy Thanh Khoản (Equal Highs / Equal Lows / Inducement) đám đông dễ dính bẫy.
+   - Vùng mất cân bằng giá (FVG / Imbalance) nếu có.
+
+3. 🕯️ <b>HÀNH ĐỘNG GIÁ & KHỐI LƯỢNG (PRICE ACTION & VOLUME)</b>:
+   - Cách nến phản ứng tại vùng giá hiện tại (Nến có rút râu từ chối không? Có râu quét thanh khoản không?).
+   - Khối lượng giao dịch (Có Volume Absorption / Selling Climax / Buying Climax không?).
+
+4. 🎯 <b>KỊCH BẢN GIAO DỊCH DỰ ĐOÁN TRƯỚC (SCENARIO FORECAST)</b>:
+   - Kịch bản 1 (Ưu tiên đón đầu): Vùng canh Entry, Stop Loss an toàn, Take Profit mục tiêu.
+   - Kịch bản 2 (Dự phòng): Nếu giá phá vỡ thì kịch bản thay thế là gì?
+
+Định dạng Telegram HTML sạch sẽ, dùng <b>in đậm</b>, <code>code</code>, icon sinh động, tuyệt đối KHÔNG dùng thẻ markdown \`\`\` trong bài viết.
+`.trim();
+
+  return await callGeminiVision(prompt, base64Image, mimeType);
 }
 
 /**

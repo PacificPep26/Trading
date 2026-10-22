@@ -14,7 +14,9 @@ import {
   analyzeCandle,
   isMarubozu,
   findFractalPivots,
-  classifyLiquidityTiers
+  classifyLiquidityTiers,
+  detectVolumeAbsorption,
+  detectPreviousBarSweep
 } from './indicators.js';
 
 export const DEFAULT_CONFIG = {
@@ -130,20 +132,43 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const pivots = findFractalPivots(candlesH4, 2, 2);
   const resistances = pivots
     .filter(p => p.type === 'HIGH' && p.price > curPrice)
-    .map(p => p.price)
-    .sort((a, b) => a - b); // Tăng dần (gần nhất lên đầu)
+    .map(p => p.price);
 
   const supports = pivots
     .filter(p => p.type === 'LOW' && p.price < curPrice)
-    .map(p => p.price)
-    .sort((a, b) => b - a); // Giảm dần (gần nhất lên đầu)
+    .map(p => p.price);
+
+  // Bổ sung các Cản Đỉnh/Đáy gần nhất (nến liền kề prevH4 & Tier 2 Major Levels) để không bao giờ bị mù cản vừa tạo
+  const prevH4 = candlesH4[candlesH4.length - 2];
+  if (prevH4) {
+    if (prevH4.high > curPrice && !resistances.some(r => Math.abs(r - prevH4.high) / r < 0.003)) {
+      resistances.push(prevH4.high);
+    }
+    if (prevH4.low < curPrice && !supports.some(s => Math.abs(s - prevH4.low) / s < 0.003)) {
+      supports.push(prevH4.low);
+    }
+  }
+
+  // Phân cấp Thanh khoản 2 Tầng (Smart Money Inducement vs Major Key Level)
+  const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
+
+  if (liquidityTiers.tier2MajorHigh && liquidityTiers.tier2MajorHigh > curPrice && !resistances.some(r => Math.abs(r - liquidityTiers.tier2MajorHigh) / r < 0.003)) {
+    resistances.push(liquidityTiers.tier2MajorHigh);
+  }
+  if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice && !supports.some(s => Math.abs(s - liquidityTiers.tier2MajorLow) / s < 0.003)) {
+    supports.push(liquidityTiers.tier2MajorLow);
+  }
+
+  resistances.sort((a, b) => a - b); // Tăng dần (gần nhất lên đầu)
+  supports.sort((a, b) => b - a);    // Giảm dần (gần nhất lên đầu)
 
   const atrsH1 = calculateATR(candlesH1, 14);
   const atrH1 = atrsH1[atrsH1.length - 1] || (curPrice * 0.005);
   const h4Anatomy = analyzeCandle(lastH4);
 
-  // Phân cấp Thanh khoản 2 Tầng (Smart Money Inducement vs Major Key Level)
-  const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
+  // Phân tích Khối Lượng Hấp Thụ VSA (Volume Absorption)
+  const volAbsorptionH4 = detectVolumeAbsorption(candlesH4, candlesH4.length - 1);
+  const volAbsorptionM15 = detectVolumeAbsorption(candlesM15, candlesM15.length - 1);
 
   // Khiên BTC Macro 1H
   const btcShield = checkBtcMacroShield(btcH1Candles);
@@ -229,6 +254,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
             const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : (isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
+            const vsaNote = volAbsorptionH4.isAbsorption ? ` | VSA: ${volAbsorptionH4.details}` : (volAbsorptionM15.isAbsorption ? ` | VSA: ${volAbsorptionM15.details}` : '');
             return {
               strategy: stratName,
               direction: 'LONG',
@@ -239,7 +265,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               riskReward: parseFloat(rr.toFixed(2)),
               triggerTime: currentM15.ts,
               sizing,
-              reason: `${stratName}: H4 swept Support ${sup} (Râu ${(h4Anatomy.lowerWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bullish push`
+              reason: `${stratName}: H4 swept Support ${sup} (Râu ${(h4Anatomy.lowerWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bullish push${vsaNote}`
             };
           }
         }
@@ -327,6 +353,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
             const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : (isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
+            const vsaNote = volAbsorptionH4.isAbsorption ? ` | VSA: ${volAbsorptionH4.details}` : (volAbsorptionM15.isAbsorption ? ` | VSA: ${volAbsorptionM15.details}` : '');
             return {
               strategy: stratName,
               direction: 'SHORT',
@@ -337,7 +364,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
               riskReward: parseFloat(rr.toFixed(2)),
               triggerTime: currentM15.ts,
               sizing,
-              reason: `${stratName}: H4 tested Res ${res} (Râu trên ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bearish drop`
+              reason: `${stratName}: H4 tested Res ${res} (Râu trên ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bearish drop${vsaNote}`
             };
           }
         }
@@ -347,3 +374,73 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
   return blockedSignal;
 }
+
+/**
+ * Lập Bản Đồ Cản "Canh Trước" (Pre-Planned Key Level Radar)
+ * Cho phép Pro Trader và Bot biết trước vùng phục kích trước khi giá tới nơi!
+ * @param {object} params
+ * @returns {object|null}
+ */
+export function generateKeyLevelRadar({ symbol, candlesH4, curPrice }) {
+  if (!candlesH4 || candlesH4.length < 15) return null;
+
+  const closesH4 = candlesH4.map(c => c.close);
+  const ema34Arr = calculateEMA(closesH4, 34);
+  const ema89Arr = calculateEMA(closesH4, 89);
+  const ema34 = ema34Arr[ema34Arr.length - 1] || curPrice;
+  const ema89 = ema89Arr[ema89Arr.length - 1] || curPrice;
+  const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
+
+  const pivots = findFractalPivots(candlesH4, 2, 2);
+  const prevH4 = candlesH4[candlesH4.length - 1];
+
+  const candidateResistances = pivots.filter(p => p.type === 'HIGH').map(p => p.price);
+  if (prevH4) candidateResistances.push(prevH4.high);
+  if (liquidityTiers.tier2MajorHigh) candidateResistances.push(liquidityTiers.tier2MajorHigh);
+
+  const candidateSupports = pivots.filter(p => p.type === 'LOW').map(p => p.price);
+  if (prevH4) candidateSupports.push(prevH4.low);
+  if (liquidityTiers.tier2MajorLow) candidateSupports.push(liquidityTiers.tier2MajorLow);
+
+  const nearestRes = candidateResistances
+    .filter(r => r > curPrice)
+    .sort((a, b) => a - b)[0] || null;
+
+  const nearestSup = candidateSupports
+    .filter(s => s < curPrice)
+    .sort((a, b) => b - a)[0] || null;
+
+  const distToResPct = nearestRes ? ((nearestRes - curPrice) / curPrice) * 100 : null;
+  const distToSupPct = nearestSup ? ((curPrice - nearestSup) / curPrice) * 100 : null;
+
+  let radarStatus = 'NEUTRAL';
+  let scenario = 'Chờ cấu trúc tiếp tục phát triển';
+
+  if (nearestRes && distToResPct <= 1.0) {
+    radarStatus = 'APPROACHING_RESISTANCE';
+    scenario = `🎯 CẢNH BÁO CANH SHORT: Giá đang áp sát Cản ${nearestRes} (cách ${distToResPct.toFixed(2)}%). Kịch bản: Canh nến M15 thọc qua ${nearestRes} và rút râu xả kèm Volume Absorption để Short đón đỉnh!`;
+  } else if (nearestSup && distToSupPct <= 1.0) {
+    radarStatus = 'APPROACHING_SUPPORT';
+    scenario = `🎯 CẢNH BÁO CANH LONG: Giá đang áp sát Hỗ trợ ${nearestSup} (cách ${distToSupPct.toFixed(2)}%). Kịch bản: Canh nến M15 nhúng qua ${nearestSup} và rút chân mạnh kèm Volume Absorption để Long bắt đáy!`;
+  }
+
+  return {
+    symbol,
+    curPrice,
+    trendH4: ema34 >= ema89 ? 'BULL' : 'BEAR',
+    ema34: parseFloat(ema34.toFixed(2)),
+    ema89: parseFloat(ema89.toFixed(2)),
+    nearestRes,
+    distToResPct: distToResPct !== null ? parseFloat(distToResPct.toFixed(2)) : null,
+    nearestSup,
+    distToSupPct: distToSupPct !== null ? parseFloat(distToSupPct.toFixed(2)) : null,
+    tier1InducementHighs: liquidityTiers.tier1Highs,
+    tier1InducementLows: liquidityTiers.tier1Lows,
+    tier2MajorHigh: liquidityTiers.tier2MajorHigh,
+    tier2MajorLow: liquidityTiers.tier2MajorLow,
+    sweepState: liquidityTiers.sweepState,
+    radarStatus,
+    scenario
+  };
+}
+

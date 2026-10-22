@@ -16,13 +16,16 @@ import {
   detectSqueeze,
   normalizeCandle,
   validateCandleSchema,
-  classifyLiquidityTiers
+  classifyLiquidityTiers,
+  detectVolumeAbsorption,
+  detectPreviousBarSweep
 } from '../src/indicators.js';
 
 import {
   calculatePositionSize,
   checkBtcMacroShield,
   evaluateMarket,
+  generateKeyLevelRadar,
   DEFAULT_CONFIG
 } from '../src/engine.js';
 
@@ -249,6 +252,40 @@ const tiersAfterSweep = classifyLiquidityTiers(mockSweepH4, 83600);
 assert(tiersAfterSweep.sweepState === 'BEARISH_SWEEP_CONFIRMED', 'Xác nhận Liquidity Sweep thành công khi quét qua Inducement chạm cản lớn');
 assert(tiersAfterSweep.isInducementTrapRisk === false, 'Sau khi đã quét râu sạch SL thì không còn bị bẫy Inducement chặn nữa');
 
+// 11. Test Volume Absorption & Previous Bar Sweep
+console.log('\n11. Kiểm tra Volume Absorption (VSA Climax) & Previous Bar Sweep:');
+const mockVolCandles = [];
+for (let i = 0; i < 20; i++) {
+  mockVolCandles.push({ ts: i * 1000, open: 100, high: 105, low: 95, close: 102, vol: 1000, confirm: 1 });
+}
+// Nến Selling Climax: Volume tăng vọt 3000 (3x SMA20), giá nhúng xuống 70 rồi rút chân lên 98 (râu dưới > 75%)
+mockVolCandles.push({ ts: 21000, open: 100, high: 102, low: 70, close: 98, vol: 3000, confirm: 1 });
+
+const bullAbsorption = detectVolumeAbsorption(mockVolCandles);
+assert(bullAbsorption.isAbsorption === true, 'Phát hiện thành công hiện tượng Volume Absorption');
+assert(bullAbsorption.type === 'BULLISH', 'Xác định chính xác loại hình Selling Climax (Bullish Absorption)');
+assert(bullAbsorption.volRatio >= 2.5, 'Tỷ lệ Volume đạt >= 2.5x SMA20');
+
+// Test Previous Bar Low Sweep
+const mockPblSweep = [
+  { ts: 1000, open: 100, high: 110, low: 90, close: 105, vol: 100, confirm: 1 },
+  { ts: 2000, open: 105, high: 108, low: 85, close: 95, vol: 200, confirm: 1 } // Nhúng qua đáy 90 rút chân râu dưới
+];
+const pblResult = detectPreviousBarSweep(mockPblSweep, 0.35);
+assert(pblResult.isSweep === true, 'Nhận diện chuẩn xác cú quét đáy nến liền kề (PBL Sweep)');
+assert(pblResult.type === 'BULLISH', 'Hướng quét đáy nến trước kích hoạt đảo chiều tăng');
+assert(pblResult.sweptPrice === 90, 'Mức giá bị quét chính xác là 90');
+
+// 12. Test Bản Đồ Cản Canh Trước (generateKeyLevelRadar)
+console.log('\n12. Kiểm tra Bản Đồ Cản Canh Trước (generateKeyLevelRadar):');
+const radar = generateKeyLevelRadar({
+  symbol: 'BTC-USDT',
+  candlesH4: mockLiquidityH4,
+  curPrice: 83450
+});
+assert(radar !== null, 'Tạo bản đồ radar thành công');
+assert(radar.radarStatus === 'APPROACHING_RESISTANCE', 'Cảnh báo chính xác khi giá đang áp sát vùng cản trên');
+assert(typeof radar.scenario === 'string' && radar.scenario.includes('CẢNH BÁO CANH SHORT'), 'Sinh kịch bản canh Short đón đầu chi tiết');
 
 // Tổng kết
 console.log('\n======================================================');

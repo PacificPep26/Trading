@@ -581,6 +581,31 @@ export function classifyLiquidityTiers(candlesH4, curPrice, options = {}) {
     }
   }
 
+  // 5. Kiểm tra Quét râu Đỉnh/Đáy nến H4 liền kề trước (Previous Bar High / Low Sweep - PBH / PBL)
+  const prevH4 = candlesH4.length >= 2 ? candlesH4[candlesH4.length - 2] : null;
+  if (prevH4 && sweepState === 'NONE') {
+    // Quét đỉnh nến trước (PBH Sweep: Cần râu trên >= 40% để xác nhận từ chối giá quyết liệt)
+    if (lastH4.high > prevH4.high && lastAnatomy.upperWickRatio >= 0.40 && lastH4.close <= prevH4.high) {
+      sweepState = 'BEARISH_SWEEP_CONFIRMED';
+      details = {
+        levelType: 'PREVIOUS_BAR_HIGH_SWEEP',
+        sweptPrice: prevH4.high,
+        upperWickRatio: lastAnatomy.upperWickRatio,
+        note: `Smart Money quét đỉnh nến H4 trước (${prevH4.high}) tạo râu trên từ chối ${(lastAnatomy.upperWickRatio * 100).toFixed(1)}%!`
+      };
+    }
+    // Quét đáy nến trước (PBL Sweep: Cần râu dưới >= 40% để xác nhận rút chân quyết liệt)
+    else if (lastH4.low < prevH4.low && lastAnatomy.lowerWickRatio >= 0.40 && lastH4.close >= prevH4.low) {
+      sweepState = 'BULLISH_SWEEP_CONFIRMED';
+      details = {
+        levelType: 'PREVIOUS_BAR_LOW_SWEEP',
+        sweptPrice: prevH4.low,
+        lowerWickRatio: lastAnatomy.lowerWickRatio,
+        note: `Smart Money quét đáy nến H4 trước (${prevH4.low}) tạo râu dưới rút chân ${(lastAnatomy.lowerWickRatio * 100).toFixed(1)}%!`
+      };
+    }
+  }
+
   return {
     tier1Highs,
     tier1Lows,
@@ -591,6 +616,95 @@ export function classifyLiquidityTiers(candlesH4, curPrice, options = {}) {
     details
   };
 }
+
+/**
+ * Phát hiện Khối Lượng Hấp Thụ (Volume Absorption / VSA Climax)
+ * @param {Array<{high: number, low: number, close: number, open: number, vol: number}>} candles
+ * @param {number} targetIndex - Mặc định nến cuối cùng
+ * @param {number} volMultiplier - Mặc định 1.5 (Volume >= 1.5x SMA20)
+ * @param {number} wickThreshold - Mặc định 0.35 (Râu >= 35%)
+ * @returns {{ isAbsorption: boolean, type: 'BULLISH'|'BEARISH'|null, volRatio: number, currentVol: number, avgVol: number, details: string|null }}
+ */
+export function detectVolumeAbsorption(candles, targetIndex = -1, volMultiplier = 1.5, wickThreshold = 0.35) {
+  if (!candles || candles.length < 15) {
+    return { isAbsorption: false, type: null, volRatio: 1, currentVol: 0, avgVol: 0, details: null };
+  }
+  const idx = targetIndex === -1 || targetIndex >= candles.length ? candles.length - 1 : targetIndex;
+  const candle = candles[idx];
+  const anatomy = analyzeCandle(candle);
+
+  // Tính Volume SMA20
+  const slice = candles.slice(Math.max(0, idx - 20), idx);
+  if (slice.length < 5) {
+    return { isAbsorption: false, type: null, volRatio: 1, currentVol: candle.vol || 0, avgVol: 0, details: null };
+  }
+  const avgVol = slice.reduce((sum, c) => sum + (c.vol || 0), 0) / slice.length;
+  const currentVol = candle.vol || 0;
+  const volRatio = avgVol > 0 ? currentVol / avgVol : 1;
+
+  if (volRatio >= volMultiplier) {
+    if (anatomy.lowerWickRatio >= wickThreshold) {
+      return {
+        isAbsorption: true,
+        type: 'BULLISH',
+        volRatio: parseFloat(volRatio.toFixed(2)),
+        currentVol,
+        avgVol,
+        details: `Selling Climax: Khối lượng bán đột biến (${volRatio.toFixed(1)}x SMA20) bị hấp thụ hoàn toàn, nến rút chân ${(anatomy.lowerWickRatio * 100).toFixed(1)}%`
+      };
+    }
+    if (anatomy.upperWickRatio >= wickThreshold) {
+      return {
+        isAbsorption: true,
+        type: 'BEARISH',
+        volRatio: parseFloat(volRatio.toFixed(2)),
+        currentVol,
+        avgVol,
+        details: `Buying Climax: Khối lượng mua đột biến (${volRatio.toFixed(1)}x SMA20) bị chặn lại, nến xả râu trên ${(anatomy.upperWickRatio * 100).toFixed(1)}%`
+      };
+    }
+  }
+
+  return { isAbsorption: false, type: null, volRatio: parseFloat(volRatio.toFixed(2)), currentVol, avgVol, details: null };
+}
+
+/**
+ * Nhận diện Quét Thanh Khoản Đỉnh/Đáy nến H4 Liền Kề (Previous Bar High / Low Sweep)
+ * @param {Array<{high: number, low: number, close: number, open: number}>} candles
+ * @param {number} wickThreshold - Mặc định 0.35
+ * @returns {{ isSweep: boolean, type: 'BULLISH'|'BEARISH'|null, sweptPrice: number|null, wickRatio: number }}
+ */
+export function detectPreviousBarSweep(candles, wickThreshold = 0.35) {
+  if (!candles || candles.length < 2) {
+    return { isSweep: false, type: null, sweptPrice: null, wickRatio: 0 };
+  }
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  const anatomy = analyzeCandle(last);
+
+  // Bullish Sweep of Previous Low (Quét râu đáy nến trước)
+  if (last.low < prev.low && (anatomy.lowerWickRatio >= wickThreshold || last.close >= prev.low)) {
+    return {
+      isSweep: true,
+      type: 'BULLISH',
+      sweptPrice: prev.low,
+      wickRatio: anatomy.lowerWickRatio
+    };
+  }
+
+  // Bearish Sweep of Previous High (Quét râu đỉnh nến trước)
+  if (last.high > prev.high && (anatomy.upperWickRatio >= wickThreshold || last.close <= prev.high)) {
+    return {
+      isSweep: true,
+      type: 'BEARISH',
+      sweptPrice: prev.high,
+      wickRatio: anatomy.upperWickRatio
+    };
+  }
+
+  return { isSweep: false, type: null, sweptPrice: null, wickRatio: 0 };
+}
+
 
 
 
