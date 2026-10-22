@@ -51,3 +51,4 @@ Khi kết hợp Kane Sonic R và SMC:
 - **Ưu tiên 1 (Macro Filter):** EMA 34 vs EMA 89 H4 xác định dòng chảy chính.
 - **Ưu tiên 2 (Structural Filter):** 2-Tier Liquidity Model chặn các lệnh bắt dao rơi hoặc bắt đỉnh sớm tại cản con.
 - **Ưu tiên 3 (Trigger):** Râu nến H4 (Wick >= 35%) + nến xác nhận M15 bảo đảm không vào sớm khi sóng quét chưa kết thúc.
+

@@ -35,3 +35,4 @@
   - **GIỮ NGUYÊN 100% VỊ THẾ** để gồng tiếp đến Take Profit (tối thiểu 2.0R).
   - Dù thị trường có bất ngờ đảo chiều mạnh, tài khoản vẫn bỏ túi trọn vẹn +1.0R lợi nhuận, không bao giờ để lệnh thắng lớn hóa thành lệnh hòa hay lỗ.
 - **Time-Stop:** Sau 16 nến M15 (4 tiếng) nếu giá đi ngang không bứt phá, chủ động tất toán bảo toàn vốn.
+
