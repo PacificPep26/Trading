@@ -61,10 +61,9 @@ export const UNIVERSE_CONFIG = {
   // Chế độ quét: 'WATCHLIST' (Tập trung danh mục coin có Expectancy dương)
   scanMode: process.env.SCAN_MODE || 'WATCHLIST',
 
-  // Danh mục Coin tinh hoa chuẩn nến và cấu trúc tôn trọng SMC nhất sàn OKX
-  // Mặc định chạy 2 cỗ máy sinh lời thực dương mạnh nhất: ETH-USDT (+12.58R) và NEAR-USDT (+10.97R)
-  // (Loại bỏ SOL-USDT, có thể tùy biến thêm LINK, BTC qua biến môi trường WATCHLIST)
-  premierWatchlist: (process.env.WATCHLIST || 'ETH-USDT,NEAR-USDT')
+  // Danh mục Coin tinh hoa được theo dõi: Quét đồng thời toàn bộ danh mục,
+  // Đánh giá điểm chất lượng & Sức mạnh tương đối để chỉ vào "CON KHỎE NHẤT"
+  premierWatchlist: (process.env.WATCHLIST || 'ETH-USDT,NEAR-USDT,BTC-USDT,SOL-USDT,LINK-USDT')
     .split(',')
     .map(s => s.trim().toUpperCase()),
 
@@ -89,6 +88,27 @@ export const UNIVERSE_CONFIG = {
     'TSLA-USDT', 'NVDA-USDT', 'QQQ-USDT', 'MSTR-USDT', 'CRCL-USDT', 'UNITREE-USDT', 'BZ-USDT'
   ])
 };
+
+// ====================================================================
+// 3.1. CẤU HÌNH TÙY BIẾN RIÊNG CHO TỪNG TÀI SẢN (ASSET-SPECIFIC CONFIG)
+// Giúp xử lý các coin có biên độ dao động mạnh như SOL mà không cần loại bỏ
+// ====================================================================
+export const ASSET_CONFIG = {
+  'SOL-USDT': {
+    atrBufferMultiplier: 1.0,  // Nới đệm ATR từ 0.75 lên 1.0 để chống săn thanh khoản M15 hung hãn
+    maxSlDistanceRate: 0.035   // Cho phép biên độ SL tới 3.5% cho SOL
+  }
+};
+
+/**
+ * Trả về cấu hình hiệu dụng cho từng cặp coin, kết hợp cấu hình tổng và override theo tài sản
+ */
+export function getEffectiveConfig(symbol, baseConfig) {
+  const base = baseConfig || BOT_CONFIG;
+  const cleanSymbol = (symbol || '').replace('-SWAP', '').trim().toUpperCase();
+  const override = ASSET_CONFIG[cleanSymbol] || {};
+  return { ...base, ...override };
+}
 
 // ====================================================================
 // 4. BỘ CHỈ HUY ĐẦU TÀU BTC (LOCOMOTIVE LEADER ENGINE)
@@ -133,7 +153,11 @@ export const INDICATOR_CONFIG = {
   volumeAbsorptionMultiplier: 2.5,
 
   // Khoảng cách nhận diện 2 đỉnh/đáy bằng nhau (Equal Highs/Lows) tạo bẫy Inducement
-  equalLevelTolerancePct: 0.15
+  equalLevelTolerancePct: 0.15,
+
+  // Ngưỡng điểm chất lượng tối thiểu để xét duyệt vào lệnh (Thang điểm 0 - 100)
+  // Kết hợp: Râu nến + VSA Climax + Vùng Cản Tier 2/FVG + Sức mạnh tương đối so với BTC
+  minSetupQualityScore: parseInt(process.env.MIN_SETUP_QUALITY_SCORE || '75', 10)
 };
 
 // ====================================================================
@@ -202,6 +226,7 @@ export const BOT_CONFIG = {
   watchlist: UNIVERSE_CONFIG.premierWatchlist,
 
   wickRatioThreshold: INDICATOR_CONFIG.wickRatioThreshold,
+  minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   pollIntervalSec: RUNTIME_CONFIG.pollIntervalSeconds,
   okxBaseUrl: RUNTIME_CONFIG.okxBaseUrl,
 

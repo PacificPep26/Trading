@@ -9,8 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from './indicators.js';
-import { evaluateMarket } from './engine.js';
-import { BOT_CONFIG, UNIVERSE_CONFIG } from './config.js';
+import { evaluateMarket, calculateSetupQualityScore } from './engine.js';
+import { BOT_CONFIG, UNIVERSE_CONFIG, getEffectiveConfig } from './config.js';
 import {
   notifyNewSignal,
   notifyBreakevenTriggered,
@@ -339,12 +339,18 @@ export async function runScanCycle() {
   }
 
   const coinNames = symbolsToScan.map(s => s.replace('-USDT-SWAP', '')).join(', ');
-  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} coin lớn hàng đầu [${coinNames}] (Giá >= ${CONFIG.minCoinPrice} USDT)...`);
+  console.log(`[SCANNER] Đang phân tích ${symbolsToScan.length} coin lớn [${coinNames}] (Giá >= ${CONFIG.minCoinPrice} USDT)...`);
+
+  const candidateSignals = [];
 
   for (const instId of symbolsToScan) {
     const symbol = instId.replace('-SWAP', '');
 
     try {
+      // Nếu đã có vị thế mở cho cặp này thì không phân tích mở thêm
+      const hasOpenPos = activePositions.some(p => p.instId === instId);
+      if (hasOpenPos) continue;
+
       // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15
       const [candlesH4, candlesH1, candlesM15] = await Promise.all([
         fetchOkxCandles(instId, '4H', 100),
@@ -356,7 +362,7 @@ export async function runScanCycle() {
         continue;
       }
 
-      // Giá hiện tại theo thời gian thực để cập nhật TP/SL/Trailing BE
+      // Giá hiện tại theo thời gian thực
       const currentPrice = candlesM15[candlesM15.length - 1].close;
 
       // KIỂM TRA GIÁ TỐI THIỂU: Bỏ qua tuyệt đối các coin 0.xx (nhỏ hơn minCoinPrice, mặc định 1.0 USDT)
@@ -370,15 +376,6 @@ export async function runScanCycle() {
         continue; // Cặp coin đang bị đóng băng kỷ luật chờ đầu tàu BTC xác nhận
       }
 
-      // Nếu đã đạt số lượng vị thế tối đa thì không mở thêm lệnh mới
-      if (activePositions.length >= CONFIG.maxOpenPositions) {
-        continue;
-      }
-
-      // Nếu đã có vị thế mở cho cặp này thì không mở thêm
-      const hasOpenPos = activePositions.some(p => p.instId === instId);
-      if (hasOpenPos) continue;
-
       // LỌC NẾN ĐÃ ĐÓNG HOÀN TOÀN (confirm = 1) để nhận diện cấu trúc, chống Look-Ahead Bias
       const closedH4 = candlesH4.filter(c => c.confirm === 1);
       const closedH1 = candlesH1.filter(c => c.confirm === 1);
@@ -388,6 +385,9 @@ export async function runScanCycle() {
         continue;
       }
 
+      // Áp dụng cấu hình riêng theo từng coin (ví dụ SOL đệm ATR 1.0)
+      const coinConfig = getEffectiveConfig(symbol, CONFIG);
+
       // Chạy thuật toán định lượng Pure Engine trên nến đã đóng 100%
       const signal = evaluateMarket({
         symbol,
@@ -396,7 +396,7 @@ export async function runScanCycle() {
         candlesM15: closedM15,
         btcH1Candles: btcH1,
         btcH4Candles: btcH4,
-        config: CONFIG
+        config: coinConfig
       });
 
       if (signal && !signal.isBlocked) {
@@ -407,42 +407,88 @@ export async function runScanCycle() {
           continue;
         }
 
-        // ĐIỀU CHỈNH QUẢN TRỊ VỐN KHI ĐANG BỊ PHẠT CHUỖI THUA (Sizing Penalty):
-        const riskMult = getAdaptiveRiskMultiplier();
-        if (riskMult < 1.0) {
-          signal.sizing.size = signal.sizing.size * riskMult;
-          signal.sizing.notional = signal.sizing.notional * riskMult;
-          signal.sizing.margin = signal.sizing.margin * riskMult;
-          console.log(`[RISK PENALTY] Phạt giảm 50% vốn cho ${symbol}: size = ${signal.sizing.size.toFixed(4)}`);
+        // Chấm điểm chất lượng Setup & Sức mạnh tương đối (0 - 100 điểm)
+        const quality = calculateSetupQualityScore({
+          signal,
+          candlesH4: closedH4,
+          candlesH1: closedH1,
+          candlesM15: closedM15,
+          btcH1Candles: btcH1
+        });
+
+        console.log(`[QUALITY CHECK] ${symbol}: ${quality.score}/100 pts (${quality.reasons.join(', ')})`);
+
+        const minScore = CONFIG.minSetupQualityScore || 75;
+        if (quality.score >= minScore) {
+          candidateSignals.push({
+            instId,
+            symbol,
+            signal: {
+              ...signal,
+              qualityScore: quality.score,
+              qualityReasons: quality.reasons
+            },
+            score: quality.score,
+            reasons: quality.reasons
+          });
+          console.log(`  ⭐ ỨNG VIÊN ĐẠT CHUẨN: ${symbol} (${quality.score}đ >= ${minScore}đ)`);
+        } else {
+          console.log(`  ⚪ Bỏ qua ${symbol}: Điểm chất lượng thấp (${quality.score}đ < ${minScore}đ)`);
         }
-
-        console.log(`[SIGNAL FOUND] ${signal.direction} ${signal.symbol} via ${signal.strategy} | R:R 1:${signal.riskReward}`);
-        
-        // Mở vị thế Paper Trading
-        const newPos = {
-          id: `${instId}-${Date.now()}`,
-          instId,
-          symbol,
-          direction: signal.direction,
-          entry: signal.entry,
-          stopLoss: signal.stopLoss,
-          initialStopLoss: signal.stopLoss,
-          takeProfit: signal.takeProfit,
-          riskReward: signal.riskReward,
-          sizing: signal.sizing,
-          isBreakevenMoved: false,
-          openedAt: Date.now(),
-          currentBarsM15: 0
-        };
-
-        activePositions.push(newPos);
-        savePositions();
-        await notifyNewSignal(signal);
       } else if (signal && signal.isBlocked) {
         console.log(`[SIGNAL BLOCKED] ${signal.symbol} bị chặn bởi Khiên BTC: ${signal.blockReason}`);
       }
     } catch (err) {
       console.error(`[SCANNER] Lỗi phân tích ${symbol}:`, err.message);
+    }
+  }
+
+  // 3. ĐÁNH GIÁ VÀ CHỌN "CON KHỎE NHẤT" ĐỂ VÀO LỆNH (RELATIVE STRENGTH WINNER)
+  if (candidateSignals.length > 0) {
+    // Sắp xếp các setup hợp lệ theo điểm chất lượng giảm dần -> CON KHỎE NHẤT ĐỨNG ĐẦU!
+    candidateSignals.sort((a, b) => b.score - a.score);
+    console.log(`\n🏆 [BẢNG XẾP HẠNG CON KHỎE NHẤT] (${candidateSignals.length} setup hội tụ trong chu kỳ):`);
+    candidateSignals.forEach((c, idx) => {
+      console.log(`   ${idx + 1}. ${c.symbol.padEnd(12)}: ${c.score}/100 điểm [${c.reasons.join(' | ')}]`);
+    });
+
+    const availableSlots = CONFIG.maxOpenPositions - activePositions.length;
+    const winners = candidateSignals.slice(0, Math.max(0, availableSlots));
+
+    for (const winner of winners) {
+      const { instId, symbol, signal } = winner;
+      console.log(`\n🚀 [KÍCH HOẠT LỆNH] Tuyển chọn CON KHỎE NHẤT: ${signal.direction} ${symbol} (${winner.score}đ)`);
+
+      // Quản trị rủi ro thích ứng
+      const riskMult = getAdaptiveRiskMultiplier();
+      if (riskMult < 1.0) {
+        signal.sizing.size = signal.sizing.size * riskMult;
+        signal.sizing.notional = signal.sizing.notional * riskMult;
+        signal.sizing.margin = signal.sizing.margin * riskMult;
+        console.log(`[RISK PENALTY] Giảm size theo kỷ luật cho ${symbol}: size = ${signal.sizing.size.toFixed(4)}`);
+      }
+
+      const newPos = {
+        id: `${instId}-${Date.now()}`,
+        instId,
+        symbol,
+        direction: signal.direction,
+        entry: signal.entry,
+        stopLoss: signal.stopLoss,
+        initialStopLoss: signal.stopLoss,
+        takeProfit: signal.takeProfit,
+        riskReward: signal.riskReward,
+        sizing: signal.sizing,
+        qualityScore: winner.score,
+        qualityReasons: winner.reasons,
+        isBreakevenMoved: false,
+        openedAt: Date.now(),
+        currentBarsM15: 0
+      };
+
+      activePositions.push(newPos);
+      savePositions();
+      await notifyNewSignal(signal);
     }
   }
 

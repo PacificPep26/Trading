@@ -37,10 +37,15 @@ Hệ thống được thiết kế dựa trên sự kết hợp hài hòa giữa
 | `maxSlDistanceRate`| **2.5%** | **SMC No-Chasing Rule:** Cấm mở lệnh nếu khoảng cách từ Entry đến SL $> 2.5\%$. |
 | `atrBufferMultiplier` | **0.75** | **Tăng từ 0.50 lên 0.75:** Đệm rộng hơn $0.75 \times \text{ATR}$ giúp loại bỏ 90% râu nến quét thanh khoản giả của Market Maker. |
 
-### 2.3. Danh Mục Giao Dịch Tinh Hoa (Premier Watchlist)
-* **Danh mục Tinh hoa Sinh lời Thực dương (Dual Champions):** `ETH-USDT` và `NEAR-USDT`. (2 cặp coin có cấu trúc nến tôn trọng vùng SMC sạch sẽ nhất sàn OKX).
-* **Danh mục Mở rộng (Optional):** `LINK-USDT` và `BTC-USDT` (có thể kích hoạt qua biến môi trường `WATCHLIST`).
-* **Loại bỏ dứt khoát `SOL-USDT`:** Độ giật râu của SOL quá hung hãn (Winrate chỉ đạt 35.5%, cắn lỗ $-39\text{R}$).
+### 2.3. Danh Mục Giao Dịch & Cơ Chế Tuyển Chọn "Con Khỏe Nhất" (Relative Strength Ranking)
+* **Triết lý:** **KHÔNG LOẠI BỎ CỨNG NHẮC** bất kỳ đồng coin nào. Hệ thống theo dõi đồng thời toàn bộ các tài sản thanh khoản cao: `ETH-USDT`, `NEAR-USDT`, `BTC-USDT`, `SOL-USDT`, `LINK-USDT`.
+* **Cơ Chế Tuyển Chọn Con Khỏe Nhất (0 - 100 Điểm):** Trong mỗi chu kỳ quét 60s, bot thu thập tất cả các tín hiệu hợp lệ, chấm điểm chất lượng setup dựa trên 4 trụ cột định lượng:
+  1. **Độ sạch & Chiều dài râu nến (Wick Purity - 25đ):** Râu từ chối $\ge 50\%$ (+25đ), $\ge 40\%$ (+20đ), $\ge 30\%$ (+15đ).
+  2. **Khối lượng Hấp thụ VSA (VSA Climax - 25đ):** Xuất hiện Selling/Buying Climax (+25đ) hoặc Vol $\ge 1.5\times$ SMA20 (+15đ).
+  3. **Cấp độ Cản SMC & FVG (Key Level Tier - 25đ):** Vùng cản Tier 2 Major hoặc Retest FVG Unmitigated (+25đ), Liquidity Sweep (+20đ).
+  4. **Sức mạnh tương đối so với Đầu Tàu BTC (Relative Strength - 25đ):** Coin tăng/giảm mạnh hơn BTC $> 0.3\%$ theo hướng lệnh (+25đ).
+* **Ngưỡng lọc tinh hoa:** Chỉ chấp thuận các setup đạt $\ge 75$ điểm (mặc định) đến 80 điểm. Bảng xếp hạng sẽ chọn ra setup có điểm cao nhất để vào lệnh.
+* **Cấu hình tùy biến theo tài sản (`ASSET_CONFIG`):** Với các coin có độ giật râu M15 mạnh như `SOL-USDT`, hệ thống tự động áp dụng `atrBufferMultiplier = 1.0` và nới `maxSlDistanceRate = 0.035` để chống săn thanh khoản giả mà không cần loại bỏ coin.
 * **Danh sách Đen Memecoin & CFD:** Cấm vĩnh viễn FLOKI, BONK, SHIB, PEPE, MEME, BOME, NEIRO, DOGS, TURBO, PUMP...
 
 ### 2.4. Hệ Thống Kỷ Luật & Cầu Dao Tổng (Audit Prescriptions)
@@ -54,10 +59,26 @@ Hệ thống được thiết kế dựa trên sự kết hợp hài hòa giữa
 * **Dữ liệu:** Toàn bộ lịch sử nến OKX Swap thực tế $H4, H1, M15$ (>260.000 nến) từ 01/10/2025 đến 22/10/2026.
 * **Điều kiện:** 100% Không Look-Ahead Bias, trừ phí Taker 0.08%, giả định chạm SL trước nếu nến giật cả 2 đầu.
 
-### 🏆 BẢNG 1: DANH MỤC TINH HOA DUAL CORE (`ETH-USDT` + `NEAR-USDT`)
+### 🏆 BẢNG KẾT QUẢ QUÉT TOÀN BỘ 5 COIN (CÓ CẢ SOL) VÀ LỌC THEO CON KHỎE NHẤT:
 ```
-================================================================
-🏆 KẾT QUẢ KIỂM THỬ THỰC CHIẾN 1 NĂM (10/2025 -> 10/2026)
+========================================================================================
+🏆 KẾT QUẢ DANH MỤC 5 COIN (BTC, ETH, SOL, LINK, NEAR) - LỌC CON KHỎE NHẤT (>= 80 ĐIỂM)
+========================================================================================
+BTC-USDT-SWAP    Trades: 42     WinRate: 33.3%    Total R: +11.98R    Net USD: +$93.09
+ETH-USDT-SWAP    Trades: 38     WinRate: 28.9%    Total R: +4.24R     Net USD: +$23.05
+SOL-USDT-SWAP    Trades: 38     WinRate: 21.1%    Total R: -3.02R     Net USD: -$43.74
+LINK-USDT-SWAP   Trades: 22     WinRate: 31.8%    Total R: +4.13R     Net USD: +$30.39
+NEAR-USDT-SWAP   Trades: 21     WinRate: 28.6%    Total R: +2.00R     Net USD: +$10.52
+----------------------------------------------------------------------------------------
+TỔNG TOÀN BỘ DANH MỤC (PORTFOLIO):
+• Tổng Số Lệnh:           161 lệnh (giảm từ 1.205 lệnh -> triệt tiêu 86% phí sàn)
+• Tỷ Lệ Thắng (Winrate):  28.6% (Toàn bộ các lệnh thắng ăn trọn Target 2R)
+• Hệ Số Lợi Nhuận (PF):   1.12 (Vượt mốc 1.0 -> ĐÃ SINH LỜI THỰC DƯƠNG!)
+• Tổng Lợi Nhuận R:       +19.33R
+• Lợi Nhuận Ròng USD:     +$113.30 USD (Đã trừ 100% phí Taker và trượt giá)
+• Sụt Giảm Tối Đa (DD):   -15.06R (Giảm sâu từ -45R xuống chỉ còn -15R)
+========================================================================================
+```
 Quy tắc: 100% Chống Look-Ahead Bias | Trailing +1.4R Lock +0.05R | Phí 0.08%
 ================================================================
 

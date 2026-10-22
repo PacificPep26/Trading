@@ -712,3 +712,107 @@ export function generateKeyLevelRadar({ symbol, candlesH4, curPrice, candlesH1 =
   };
 }
 
+/**
+ * Chấm điểm chất lượng Setup & Sức mạnh tương đối (Relative Strength Scorer)
+ * Thang điểm 0 - 100 điểm:
+ * 1. Wick Purity (Độ dài râu nến M15/H4): tối đa 25 điểm
+ * 2. VSA Climax Absorption (Khối lượng hấp thụ): tối đa 25 điểm
+ * 3. SMC Key Level & Mitigation (Vùng cản Tier 2 / FVG / OB): tối đa 25 điểm
+ * 4. Relative Strength vs BTC (Sức mạnh so với đầu tàu BTC): tối đa 25 điểm
+ */
+export function calculateSetupQualityScore({ signal, candlesH4, candlesH1, candlesM15, btcH1Candles = null }) {
+  let score = 0;
+  const reasons = [];
+
+  const lastM15 = candlesM15 && candlesM15.length > 0 ? candlesM15[candlesM15.length - 1] : null;
+  const lastH4 = candlesH4 && candlesH4.length > 0 ? candlesH4[candlesH4.length - 1] : null;
+  const anatomyM15 = lastM15 ? analyzeCandle(lastM15) : { lowerWickRatio: 0, upperWickRatio: 0 };
+  const anatomyH4 = lastH4 ? analyzeCandle(lastH4) : { lowerWickRatio: 0, upperWickRatio: 0 };
+  const isLong = signal ? signal.direction === 'LONG' : true;
+
+  // 1. ĐỘ SẠCH VÀ CHIỀU DÀI RÂU NẾN (WICK PURITY) - Tối đa 25đ
+  const wickRatio = isLong 
+    ? Math.max(anatomyM15.lowerWickRatio, anatomyH4.lowerWickRatio)
+    : Math.max(anatomyM15.upperWickRatio, anatomyH4.upperWickRatio);
+
+  if (wickRatio >= 0.50) {
+    score += 25;
+    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Xuất sắc)`);
+  } else if (wickRatio >= 0.40) {
+    score += 20;
+    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Tốt)`);
+  } else if (wickRatio >= 0.30) {
+    score += 15;
+    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Chuẩn)`);
+  }
+
+  // 2. KHỐI LƯỢNG HẤP THỤ VSA (VOLUME CLIMAX ABSORPTION) - Tối đa 25đ
+  const volM15 = (candlesM15 && candlesM15.length > 0) ? detectVolumeAbsorption(candlesM15, candlesM15.length - 1) : { isAbsorption: false };
+  const volH4 = (candlesH4 && candlesH4.length > 0) ? detectVolumeAbsorption(candlesH4, candlesH4.length - 1) : { isAbsorption: false };
+  if (volM15.isAbsorption || volH4.isAbsorption) {
+    score += 25;
+    reasons.push('VSA Climax Absorption');
+  } else if (candlesM15 && candlesM15.length >= 20) {
+    const vols = candlesM15.map(c => c.vol);
+    const avgVol = vols.slice(-20).reduce((a, b) => a + b, 0) / 20 || 1;
+    const volRatio = (vols[vols.length - 1] || 1) / avgVol;
+    if (volRatio >= 1.5) {
+      score += 15;
+      reasons.push(`Vol M15 ${volRatio.toFixed(1)}x SMA20`);
+    } else if (volRatio >= 1.0) {
+      score += 10;
+    }
+  }
+
+  // 3. CẤP ĐỘ CẢN SMC & FVG (KEY LEVEL & MITIGATION) - Tối đa 25đ
+  const sigReason = signal ? (signal.reason || '') : '';
+  const sigStrat = signal ? (signal.strategy || '') : '';
+  if (sigReason.includes('Major') || sigStrat.includes('ZONE_REACTION')) {
+    score += 25;
+    reasons.push('Cản Lớn Tier 2');
+  } else if (sigReason.includes('FVG') || sigReason.includes('Order Block')) {
+    score += 25;
+    reasons.push('Retest FVG/OB');
+  } else if (sigReason.includes('swept Support') || sigReason.includes('swept Resistance')) {
+    score += 20;
+    reasons.push('Liquidity Sweep');
+  } else {
+    score += 10;
+  }
+
+  // 4. SỨC MẠNH TƯƠNG ĐỐI SO VỚI ĐẦU TÀU BTC (RELATIVE STRENGTH) - Tối đa 25đ
+  if (btcH1Candles && btcH1Candles.length >= 2 && candlesH1 && candlesH1.length >= 2) {
+    const lastBtc = btcH1Candles[btcH1Candles.length - 1];
+    const prevBtc = btcH1Candles[btcH1Candles.length - 2];
+    const btcPct = (lastBtc.close - prevBtc.close) / prevBtc.close;
+
+    const lastCoin = candlesH1[candlesH1.length - 1];
+    const prevCoin = candlesH1[candlesH1.length - 2];
+    const coinPct = (lastCoin.close - prevCoin.close) / prevCoin.close;
+
+    if (isLong) {
+      if (coinPct > btcPct + 0.003) {
+        score += 25;
+        reasons.push('Khỏe hơn BTC (RS Outperforming)');
+      } else if (coinPct > 0) {
+        score += 15;
+      }
+    } else {
+      if (coinPct < btcPct - 0.003) {
+        score += 25;
+        reasons.push('Yếu hơn BTC (RS Underperforming)');
+      } else if (coinPct < 0) {
+        score += 15;
+      }
+    }
+  } else {
+    score += 15;
+  }
+
+  return {
+    score: Math.min(100, score),
+    reasons
+  };
+}
+
+

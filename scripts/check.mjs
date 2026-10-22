@@ -28,8 +28,11 @@ import {
   detectMarketPhase,
   evaluateMarket,
   generateKeyLevelRadar,
+  calculateSetupQualityScore,
   DEFAULT_CONFIG
 } from '../src/engine.js';
+
+import { getEffectiveConfig, BOT_CONFIG } from '../src/config.js';
 
 import {
   inspectTradeMistake,
@@ -425,6 +428,97 @@ const mockBtcReversalH1 = [...mockBtcDumpingH1.slice(0, 19), {
 
 const checkNearLongAfterBtcReversal = checkAdaptiveTradeAllowed('NEAR-USDT', 'LONG', mockBtcReversalH1);
 assert(checkNearLongAfterBtcReversal.allowed === true, 'Đầu Tàu BTC vừa xác nhận rút râu đảo chiều: Giải phóng án phạt cho NEAR-USDT ngay lập tức!');
+
+// 16. Kiểm tra Chấm Điểm Setup & Tuyển Chọn Con Khỏe Nhất (Relative Strength & Quality Scoring)
+console.log('\n16. Kiểm tra Chấm Điểm Setup & Tuyển Chọn Con Khỏe Nhất (Relative Strength & Quality Scoring):');
+
+const ethConfig = getEffectiveConfig('ETH-USDT');
+assert(ethConfig.atrBufferMultiplier === 0.75, 'Cấu hình chuẩn ETH có đệm ATR = 0.75');
+
+const solConfig = getEffectiveConfig('SOL-USDT');
+assert(solConfig.atrBufferMultiplier === 1.0, 'SOL-USDT tự động nới đệm ATR = 1.0 chống quét râu hung hãn');
+assert(solConfig.maxSlDistanceRate === 0.035, 'SOL-USDT nới biên độ SL tối đa tới 3.5%');
+
+// Giả lập setup xuất sắc: Râu rút chân 60%, VSA Climax Absorption, Cản lớn Tier 2, Khỏe hơn BTC
+const strongM15 = [{
+  ts: 1000,
+  open: 105,
+  high: 106,
+  low: 95, // lower wick: 105 - 95 = 10, total range = 11 -> ratio = 10/11 = 90.9%
+  close: 105,
+  vol: 5000,
+  confirm: 1
+}];
+const strongH4 = [{
+  ts: 1000,
+  open: 105,
+  high: 106,
+  low: 95,
+  close: 105,
+  vol: 10000,
+  confirm: 1
+}];
+const prevM15Bars = Array.from({ length: 20 }, (_, i) => ({
+  ts: i * 900000,
+  open: 100,
+  high: 101,
+  low: 99,
+  close: 100,
+  vol: 500, // SMA20 vol = 500
+  confirm: 1
+}));
+const allM15Bars = [...prevM15Bars, ...strongM15];
+
+const mockHighQualitySignal = {
+  direction: 'LONG',
+  strategy: 'SMC_ZONE_REACTION_LONG',
+  reason: 'SMC_ZONE_REACTION_LONG: Đón đầu tại Cản Lớn Major 95'
+};
+
+const mockBtcH1 = [
+  { ts: 1000, open: 60000, high: 60100, low: 59900, close: 60000, vol: 1000, confirm: 1 },
+  { ts: 2000, open: 60000, high: 60050, low: 59950, close: 60000, vol: 1000, confirm: 1 } // BTC đi ngang 0%
+];
+const mockCoinH1 = [
+  { ts: 1000, open: 100, high: 101, low: 99, close: 100, vol: 1000, confirm: 1 },
+  { ts: 2000, open: 100, high: 103, low: 99, close: 102, vol: 1000, confirm: 1 } // Coin tăng +2% -> Khỏe hơn BTC
+];
+
+const highQualityScore = calculateSetupQualityScore({
+  signal: mockHighQualitySignal,
+  candlesH4: strongH4,
+  candlesH1: mockCoinH1,
+  candlesM15: allM15Bars,
+  btcH1Candles: mockBtcH1
+});
+
+assert(highQualityScore.score >= 80, `Setup xuất sắc đạt điểm cao >= 80 (Thực tế: ${highQualityScore.score} điểm)`);
+assert(highQualityScore.reasons.some(r => r.includes('Râu nến')), 'Nhận diện râu nến xuất sắc');
+assert(highQualityScore.reasons.some(r => r.includes('Khỏe hơn BTC') || r.includes('Cản Lớn')), 'Nhận diện cản lớn & sức mạnh so với BTC');
+
+// Giả lập setup yếu: không có râu, không có volume climax, không có cản lớn
+const weakM15 = [{
+  ts: 1000,
+  open: 100,
+  high: 101,
+  low: 100,
+  close: 101,
+  vol: 10,
+  confirm: 1
+}];
+const mockWeakSignal = {
+  direction: 'LONG',
+  strategy: 'KANE_THUAN_TREND',
+  reason: 'Test trend thông thường'
+};
+const weakQualityScore = calculateSetupQualityScore({
+  signal: mockWeakSignal,
+  candlesH4: weakM15,
+  candlesH1: mockBtcH1,
+  candlesM15: weakM15,
+  btcH1Candles: mockBtcH1
+});
+assert(weakQualityScore.score < 50, `Setup yếu bị chấm điểm thấp < 50 (Thực tế: ${weakQualityScore.score} điểm)`);
 
 // Tổng kết
 console.log('\n======================================================');
