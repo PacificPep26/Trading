@@ -204,7 +204,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
         canLong = isNormalSweep || isEngulfing || isSmcSweepLong;
       } else {
         const distBelowEma34 = (ema34 - curPrice) / curPrice;
-        if ((distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) || isSmcSweepLong) {
+        const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || isStrongSweep || isSmcSweepLong;
+        if ((distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) || isSmcSweepLong || isAtMajorSupport) {
           canLong = true;
           isNgocTrend = !isSmcSweepLong;
         }
@@ -328,6 +329,13 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
             continue; // Bỏ qua pha xả kiệt sức lết đáy (Chống Short đuổi ở đáy)!
           }
 
+          // QUY TẮC CHỐNG BÁN ĐUỔI TẠI ĐÁY HỖ TRỢ LỚN (ANTI-SHORT AT MAJOR TIER 2 SUPPORT):
+          // Nếu giá hiện tại đang áp sát Hỗ trợ lớn cấu trúc Tier 2 trong vòng 0.8%, TUYỆT ĐỐI KHÔNG SHORT!
+          const majorLow = liquidityTiers.tier2MajorLow;
+          if (majorLow && curPrice <= majorLow * 1.008) {
+            continue; // Không bán tháo trên đầu hỗ trợ cứng!
+          }
+
           const stopLoss = lastH4.high + (config.atrBufferMultiplier * atrH1);
 
           // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đỉnh cản kỹ thuật
@@ -389,15 +397,13 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   const m15Anatomy = analyzeCandle(currentM15);
 
   const majorResistances = [];
-  if (prevH4 && prevH4.high > curPrice) majorResistances.push(prevH4.high);
   if (liquidityTiers.tier2MajorHigh && liquidityTiers.tier2MajorHigh > curPrice) {
-    if (!majorResistances.includes(liquidityTiers.tier2MajorHigh)) majorResistances.push(liquidityTiers.tier2MajorHigh);
+    majorResistances.push(liquidityTiers.tier2MajorHigh);
   }
 
   const majorSupports = [];
-  if (prevH4 && prevH4.low < curPrice) majorSupports.push(prevH4.low);
   if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice) {
-    if (!majorSupports.includes(liquidityTiers.tier2MajorLow)) majorSupports.push(liquidityTiers.tier2MajorLow);
+    majorSupports.push(liquidityTiers.tier2MajorLow);
   }
 
   // 1. Zone Reaction Short tại Vùng Kháng cự Lớn
@@ -459,8 +465,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       const isM15Reversal = currentM15.close > currentM15.open && currentM15.close > prevM15.high;
 
       if (hasVsaRejection && isM15Reversal) {
-        // Nếu ngược trend giảm thì bắt buộc giá phải dãn nở xa EMA34 >= 2.0%
-        if (isBearTrend) {
+        // Nếu đang ở Hỗ trợ Lớn (Tier 2 Major Low hoặc râu rút chân M15 >= 40%) thì cho phép Long đón đáy!
+        const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || m15Anatomy.lowerWickRatio >= 0.40;
+        if (isBearTrend && !isAtMajorSupport) {
           const distBelowEma34 = (ema34 - curPrice) / curPrice;
           if (distBelowEma34 < 0.020 && !volAbsorptionM15.isAbsorption) continue;
         }
