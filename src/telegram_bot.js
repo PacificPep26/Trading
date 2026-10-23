@@ -99,38 +99,58 @@ export async function handleRadarCommand(fetchOkxCandlesFn) {
 
 /**
  * Xử lý mọi câu hỏi tự do bằng văn bản (Natural Language) qua Gemini 3.8 Flash
+ * Đạt trình độ phân tích sâu sắc, sắc bén như Antigravity AI Assistant.
  * @param {string} query 
  * @param {Function} fetchOkxCandlesFn 
  * @returns {Promise<string>}
  */
 export async function handleGeneralChatQuery(query, fetchOkxCandlesFn) {
   try {
-    const symbols = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT'];
+    const symbols = PREMIER_SYMBOLS;
     const snapshot = [];
     for (const sym of symbols) {
       try {
-        const candles = await fetchOkxCandlesFn(`${sym}-SWAP`, '1H', 5);
-        if (candles && candles.length > 0) {
-          snapshot.push(`${sym}: ${candles[candles.length - 1].close}`);
+        const instId = `${sym}-SWAP`;
+        const candlesH4 = await fetchOkxCandlesFn(instId, '4H', 60);
+        if (!candlesH4 || candlesH4.length < 20) continue;
+        const closedH4 = candlesH4.filter(c => c.confirm === 1);
+        const curPrice = closedH4[closedH4.length - 1].close;
+        const radar = generateKeyLevelRadar({ symbol: sym, candlesH4: closedH4, curPrice });
+        if (radar) {
+          snapshot.push({
+            symbol: sym,
+            price: curPrice,
+            trendH4: radar.trendH4,
+            nearestResistance: radar.nearestRes,
+            distToRes: radar.distToResPct + '%',
+            nearestSupport: radar.nearestSup,
+            distToSup: radar.distToSupPct + '%',
+            scenario: radar.scenario
+          });
         }
       } catch {}
     }
-    const marketCtx = snapshot.join(' | ');
 
-    const prompt = `Bạn là Trợ lý AI Giao Dịch Định Lượng của hệ thống Quant Bot (SMC v3.0 & Kane Sonic R EMAs 34/89).
-Người dùng trên Telegram vừa hỏi/nhắn: "${query}".
+    const marketCtx = JSON.stringify(snapshot, null, 2);
 
-Dữ liệu thị trường thời gian thực:
-${marketCtx}
+    const prompt = `Người dùng vừa hỏi: "${query}"
 
-Yêu cầu trả lời:
-1. Trả lời trực tiếp, thông minh, tận tình bằng tiếng Việt.
-2. Dùng kiến thức Smart Money Concepts (SMC - Săn thanh khoản, Đỉnh/Đáy, Bẫy Inducement, Quét râu) và Kane Sonic R.
-3. Nếu người dùng hỏi về kịch bản/kèo/thị trường, hãy tóm tắt kịch bản hành động chuẩn xác.
-4. Định dạng câu trả lời bằng HTML Telegram (<b>in đậm</b>, <code>mã/giá</code>, <i>in nghiêng</i>). KHÔNG dùng markdown **.
-5. Ngắn gọn, súc tích (khoảng 2-3 đoạn), thân thiện và chuyên nghiệp.`;
+Dữ liệu thị trường thời gian thực (Top 6 Premier Coins từ sàn OKX):
+${marketCtx}`;
 
-    const answer = await callGemini(prompt);
+    const systemInstruction = `Bạn là Antigravity Quant Trader — Chuyên gia định lượng hàng đầu thế giới về Smart Money Concepts (SMC) và Dr. Kane Sonic R (EMAs 34/89). Bạn đang hỗ trợ 1-1 cho Nhà Giao Dịch trên Telegram.
+
+Phong cách trả lời:
+1. Trả lời trực tiếp, thông minh, sắc bén, sòng phẳng, đầy đủ lý lẽ bằng tiếng Việt.
+2. Tuyệt đối không trả lời chung chung hoặc né tránh. Phải bóc tách tư duy Cá Mập (Smart Money) vs Nhỏ lẻ (Retail FOMO).
+3. Luôn đưa ra các kịch bản hành động rõ ràng:
+   - Nếu hỏi có nên mua/bán không: Phân tích tỷ lệ Risk:Reward, khoảng cách tới Cản cứng/Hỗ trợ.
+   - Nêu rõ: Vùng mua tối ưu khi Pullback là ở đâu (Entry, SL, TP, R:R).
+   - Nêu rõ: Kịch bản nếu giá không Pullback mà Breakout bay luôn thì xử lý thế nào để không bỏ lỡ sóng và không bị mua đu đỉnh.
+4. Bắt buộc định dạng câu trả lời bằng HTML chuẩn của Telegram (dùng <b>, <i>, <code>). TUYỆT ĐỐI KHÔNG dùng ký tự markdown **.
+5. Ngắn gọn, súc tích (khoảng 2-4 đoạn), cuốn hút và tạo cảm hứng giao dịch kỷ luật.`;
+
+    const answer = await callGemini(prompt, systemInstruction);
     return answer;
   } catch (err) {
     return `🤖 <b>Trợ lý Bot:</b> Tôi đã nhận được tin nhắn "${query}". Bạn có thể gõ <code>/radar</code> để xem kịch bản cản cứng Top 6 coin, <code>/status</code> để xem trạng thái bot, hoặc chụp ảnh biểu đồ gửi vào đây để tôi soi chi tiết nhé!`;
