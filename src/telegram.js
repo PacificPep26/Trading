@@ -100,12 +100,14 @@ export async function notifyNewSignal(signal) {
   const orderTypeTag = `\n🏷️ <b>Khớp Lệnh:</b> <code>Limit Post-Only (Phí Maker 0.02%)</code>`;
 
   const msg = `
+🧪 <b>[PAPER TRADE MÔ PHỎNG]</b>
 ${icon} <b>${dirText} 10X: ${signal.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 💵 <b>Entry (Limit):</b> <code>${signal.entry}</code>
 🛑 <b>SL:</b> <code>${signal.stopLoss}</code>
 🎯 <b>TP:</b> <code>${signal.takeProfit}</code>${orderTypeTag}${scoreInfo}${reasonInfo}
 📝 <b>Lý do:</b> ${signal.reason}
+🛡️ <b>Quản trị vốn:</b> Giả lập rủi ro 1R = $10 (Không mất tiền thật)
 ⏰ <b>Thời gian:</b> ${new Date(signal.triggerTime || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
 `.trim();
 
@@ -119,7 +121,7 @@ ${icon} <b>${dirText} 10X: ${signal.symbol}</b>
  */
 export async function notifyBreakevenTriggered(position, newSL) {
   const msg = `
-🔒 <b>KÍCH HOẠT KHÓA LỢI NHUẬN (+1.5R ➔ SL +1.0R): ${position.symbol}</b>
+🧪 <b>[PAPER TRADE]</b> 🔒 <b>KÍCH HOẠT KHÓA LỢI NHUẬN (+1.5R ➔ SL +1.0R): ${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 📈 Lợi nhuận tạm tính đã chạm mốc <b>+1.5R</b>!
 🔒 <b>Hành động:</b> Đã kéo Stop Loss lên mức <b>DƯƠNG +1.0R</b> (<code>${newSL}</code>) để khóa chắc 1R lợi nhuận!
@@ -139,11 +141,11 @@ export async function notifyBreakevenTriggered(position, newSL) {
  */
 export async function notifyTakeProfit(position, exitPrice, pnlR, netPnlUsd) {
   const msg = `
-🎯 <b>CHỐT LỜI THÀNH CÔNG (TP HIT): ${position.symbol}</b>
+🧪 <b>[PAPER TRADE]</b> 🎯 <b>CHỐT LỜI THÀNH CÔNG (TP HIT): ${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 🚀 <b>Đóng 100% vị thế tại TP:</b> <code>${exitPrice}</code>
 💰 <b>Lợi nhuận đạt:</b> <b>+${pnlR.toFixed(2)}R</b>
-💵 <b>Thực nhận (sau phí Taker):</b> <b>+$${netPnlUsd.toFixed(2)} USDT</b>
+💵 <b>Thực nhận (Mô phỏng):</b> <b>+$${netPnlUsd.toFixed(2)} USDT</b>
 ⏰ <b>Thời gian đóng:</b> ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
 `.trim();
 
@@ -163,7 +165,7 @@ export async function notifyStopLoss(position, exitPrice, pnlR, netPnlUsd, isBE 
     ? (pnlR > 0.5 ? '🎯 CHỐT LỜI KHÓA LỢI NHUẬN (+1.0R HIT)' : '🛡️ THOÁT VỊ THẾ HÒA VỐN (BE HIT)')
     : '🛑 CẮT LỖ (STOP LOSS HIT)';
   const msg = `
-${title}: <b>${position.symbol}</b>
+🧪 <b>[PAPER TRADE]</b> ${title}: <b>${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
 📉 <b>Giá khớp thoát:</b> <code>${exitPrice}</code>
 📊 <b>Kết quả PnL:</b> ${pnlR >= 0 ? '+' : ''}${pnlR.toFixed(2)}R ($${netPnlUsd.toFixed(2)} USDT)

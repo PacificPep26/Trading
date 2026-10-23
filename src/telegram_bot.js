@@ -276,6 +276,7 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
               reply += `⏱️ <b>Thời gian:</b> <code>${timeStr}</code>\n`;
               reply += `📡 <b>Chu kỳ quét:</b> <code>Mỗi 60 giây (Live OKX)</code>\n`;
               reply += `🎯 <b>Chiến lược:</b> <code>SMC v3.0 Alpha + Sonic R</code>\n`;
+              reply += `🧪 <b>Chế độ khớp lệnh:</b> <code>Paper Trading (Mô phỏng 100% an toàn)</code>\n`;
               reply += `💎 <b>Danh mục quét (6 coin):</b> <code>BTC, ETH, SOL, LINK, NEAR, HYPE</code>\n`;
               reply += `🛡️ <b>Bộ lọc:</b> <code>H1 ADX > 20 | Tỷ lệ nén ATR >= 0.70 | Maker 0.02%</code>\n\n`;
               if (positions && positions.length > 0) {
