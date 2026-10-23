@@ -115,6 +115,32 @@ export async function startTelegramListener(context = {}) {
 
   if (isPolling) return;
   isPolling = true;
+
+  // Xóa webhook cũ (nếu có) để getUpdates hoạt động 100% trơn tru, chống nghẽn tin nhắn
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook`);
+  } catch (e) {}
+
+  // Tự động đồng bộ Menu lệnh chuẩn Premier (loại bỏ memecoin, lệnh cũ)
+  try {
+    const commands = [
+      { command: 'status', description: '📊 Trạng thái Bot, số vị thế & quét thị trường' },
+      { command: 'radar', description: '🧭 Bản đồ cản cứng đón đầu (Top 6 Coin Lớn)' },
+      { command: 'btc', description: '🔍 Soi kịch bản nến & cản BTC-USDT' },
+      { command: 'eth', description: '🔍 Soi kịch bản nến & cản ETH-USDT' },
+      { command: 'sol', description: '🔍 Soi kịch bản nến & cản SOL-USDT' },
+      { command: 'link', description: '🔍 Soi kịch bản nến & cản LINK-USDT' },
+      { command: 'near', description: '🔍 Soi kịch bản nến & cản NEAR-USDT' },
+      { command: 'hype', description: '🔍 Soi kịch bản nến & cản HYPE-USDT' },
+      { command: 'help', description: '💡 Hướng dẫn & gửi ảnh chart cho Gemini AI' }
+    ];
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands })
+    });
+  } catch (e) {}
+
   console.log('[TELEGRAM BOT] 🚀 Đã kích hoạt Trợ lý AI Tương tác 2 Chiều (@VictorHuynh_trading_bot)...');
 
   const pollLoop = async () => {
