@@ -10,7 +10,7 @@
 
 import dotenv from 'dotenv';
 import { generateKeyLevelRadar } from './engine.js';
-import { analyzeChartScreenshot } from './ai_agent.js';
+import { analyzeChartScreenshot, callGemini } from './ai_agent.js';
 import { sendTelegramMessage } from './telegram.js';
 
 dotenv.config();
@@ -95,6 +95,46 @@ export async function handleRadarCommand(fetchOkxCandlesFn) {
   }
 
   return report;
+}
+
+/**
+ * Xử lý mọi câu hỏi tự do bằng văn bản (Natural Language) qua Gemini 3.8 Flash
+ * @param {string} query 
+ * @param {Function} fetchOkxCandlesFn 
+ * @returns {Promise<string>}
+ */
+export async function handleGeneralChatQuery(query, fetchOkxCandlesFn) {
+  try {
+    const symbols = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT'];
+    const snapshot = [];
+    for (const sym of symbols) {
+      try {
+        const candles = await fetchOkxCandlesFn(`${sym}-SWAP`, '1H', 5);
+        if (candles && candles.length > 0) {
+          snapshot.push(`${sym}: ${candles[candles.length - 1].close}`);
+        }
+      } catch {}
+    }
+    const marketCtx = snapshot.join(' | ');
+
+    const prompt = `Bạn là Trợ lý AI Giao Dịch Định Lượng của hệ thống Quant Bot (SMC v3.0 & Kane Sonic R EMAs 34/89).
+Người dùng trên Telegram vừa hỏi/nhắn: "${query}".
+
+Dữ liệu thị trường thời gian thực:
+${marketCtx}
+
+Yêu cầu trả lời:
+1. Trả lời trực tiếp, thông minh, tận tình bằng tiếng Việt.
+2. Dùng kiến thức Smart Money Concepts (SMC - Săn thanh khoản, Đỉnh/Đáy, Bẫy Inducement, Quét râu) và Kane Sonic R.
+3. Nếu người dùng hỏi về kịch bản/kèo/thị trường, hãy tóm tắt kịch bản hành động chuẩn xác.
+4. Định dạng câu trả lời bằng HTML Telegram (<b>in đậm</b>, <code>mã/giá</code>, <i>in nghiêng</i>). KHÔNG dùng markdown **.
+5. Ngắn gọn, súc tích (khoảng 2-3 đoạn), thân thiện và chuyên nghiệp.`;
+
+    const answer = await callGemini(prompt);
+    return answer;
+  } catch (err) {
+    return `🤖 <b>Trợ lý Bot:</b> Tôi đã nhận được tin nhắn "${query}". Bạn có thể gõ <code>/radar</code> để xem kịch bản cản cứng Top 6 coin, <code>/status</code> để xem trạng thái bot, hoặc chụp ảnh biểu đồ gửi vào đây để tôi soi chi tiết nhé!`;
+  }
 }
 
 /**
@@ -186,21 +226,28 @@ export async function startTelegramListener(context = {}) {
               continue;
             }
 
-            // 2. Xử lý lệnh text
-            if (text === '/start' || text === '/help') {
+            // 2. Xử lý tin nhắn text (hỗ trợ cả lệnh /command lẫn ngôn ngữ tự nhiên không cần gõ gạch chéo)
+            const rawText = (msg.text || '').trim();
+            const lowerText = rawText.toLowerCase();
+            const cleanText = lowerText.replace(/^\//, '').trim();
+
+            if (lowerText === '/start' || lowerText === '/help' || cleanText === 'help' || cleanText === 'trợ giúp' || cleanText === 'tro giup') {
               const welcome = `
 🤖 <b>CHÀO MỪNG ĐẾN VỚI ANTIGRAVITY QUANT TRADING BOT</b>
 ━━━━━━━━━━━━━━━━━━━━
 Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) tích hợp siêu trí tuệ <b>Gemini 3.8 Flash</b>.
 
-📌 <b>CÁC LỆNH HỖ TRỢ:</b>
+📌 <b>CÁC LỆNH HỖ TRỢ (Gõ có hoặc không có dấu / đều được):</b>
 • <code>/status</code>: Kiểm tra trạng thái server, số vị thế mở, danh sách coin quét.
-• <code>/canh</code> hoặc <code>/radar</code> hoặc <code>/plan</code>: Xem Bản Đồ Cản Canh Trước (Đón đầu tại đỉnh/đáy) Top 6 Coin lớn.
+• <code>/radar</code> hoặc <code>/canh</code> hoặc <code>kịch bản</code>: Xem Bản Đồ Cản Canh Trước (Đón đầu tại đỉnh/đáy) Top 6 Coin lớn.
 • <code>/btc</code>, <code>/eth</code>, <code>/sol</code>, <code>/link</code>, <code>/near</code>, <code>/hype</code>: Soi nhanh coin cụ thể.
+• 💬 <b>HỎI BẤT KỲ CÂU HỎI NÀO:</b> Bạn có thể nhắn bất kỳ câu hỏi nào bằng tiếng Việt, Gemini 3.8 Flash sẽ trả lời kèm dữ liệu thị trường trực tiếp!
 • 📸 <b>GỬI ẢNH BIỂU ĐỒ (SCREENSHOT):</b> Chụp ảnh biểu đồ trên OKX / TradingView gửi vào đây, Gemini 3.8 Flash sẽ lập tức soi cản và đưa ra kịch bản chi tiết!
               `.trim();
               await sendTelegramMessage(welcome);
-            } else if (text === '/status' || text === '/positions' || text === '/ping') {
+            } else if (
+              ['status', 'positions', 'ping', 'trạng thái', 'trang thai', 'tình hình', 'tinh hinh', 'vị thế', 'vi the'].some(k => cleanText === k || cleanText.startsWith(k))
+            ) {
               const getPositionsFn = context.getActivePositions;
               const positions = typeof getPositionsFn === 'function' ? getPositionsFn() : [];
               const timeStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
@@ -221,11 +268,22 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
               }
               reply += `\n💡 <i>Gõ /radar để xem khoảng cách tới các cản gần nhất.</i>`;
               await sendTelegramMessage(reply);
-            } else if (text === '/canh' || text === '/radar' || text === '/plan' || text === '/keo') {
+            } else if (
+              ['canh', 'radar', 'plan', 'keo', 'kèo', 'kịch bản', 'kich ban', 'bản đồ', 'ban do'].some(k => cleanText.includes(k))
+            ) {
               const report = await handleRadarCommand(fetchOkxCandles);
               await sendTelegramMessage(report);
-            } else if (text.startsWith('/btc') || text.startsWith('/eth') || text.startsWith('/sol') || text.startsWith('/link') || text.startsWith('/near') || text.startsWith('/hype')) {
-              const sym = text.replace('/', '').toUpperCase() + '-USDT';
+            } else if (
+              PREMIER_SYMBOLS.some(s => {
+                const coinName = s.replace('-USDT', '').toLowerCase();
+                return cleanText === coinName || cleanText.startsWith(coinName) || cleanText.endsWith(coinName);
+              })
+            ) {
+              const matchedSym = PREMIER_SYMBOLS.find(s => {
+                const coinName = s.replace('-USDT', '').toLowerCase();
+                return cleanText.includes(coinName);
+              });
+              const sym = matchedSym || 'BTC-USDT';
               const instId = `${sym}-SWAP`;
               const candlesH4 = await fetchOkxCandles(instId, '4H', 60);
               if (candlesH4 && candlesH4.length >= 20) {
@@ -245,6 +303,10 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
                   await sendTelegramMessage(reply);
                 }
               }
+            } else if (rawText.length > 0) {
+              // Bất kỳ câu hỏi / tin nhắn tự do nào khác -> Gemini 3.8 Flash trả lời thông minh
+              const reply = await handleGeneralChatQuery(rawText, fetchOkxCandles);
+              await sendTelegramMessage(reply);
             }
           }
         }
