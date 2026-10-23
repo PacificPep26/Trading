@@ -168,11 +168,33 @@ export async function startTelegramListener(context = {}) {
 Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) tích hợp siêu trí tuệ <b>Gemini 3.8 Flash</b>.
 
 📌 <b>CÁC LỆNH HỖ TRỢ:</b>
+• <code>/status</code>: Kiểm tra trạng thái server, số vị thế mở, danh sách coin quét.
 • <code>/canh</code> hoặc <code>/radar</code> hoặc <code>/plan</code>: Xem Bản Đồ Cản Canh Trước (Đón đầu tại đỉnh/đáy) Top 6 Coin lớn.
 • <code>/btc</code>, <code>/eth</code>, <code>/sol</code>, <code>/link</code>, <code>/near</code>, <code>/hype</code>: Soi nhanh coin cụ thể.
 • 📸 <b>GỬI ẢNH BIỂU ĐỒ (SCREENSHOT):</b> Chụp ảnh biểu đồ trên OKX / TradingView gửi vào đây, Gemini 3.8 Flash sẽ lập tức soi cản và đưa ra kịch bản chi tiết!
               `.trim();
               await sendTelegramMessage(welcome);
+            } else if (text === '/status' || text === '/positions' || text === '/ping') {
+              const getPositionsFn = context.getActivePositions;
+              const positions = typeof getPositionsFn === 'function' ? getPositionsFn() : [];
+              const timeStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+              let reply = `🟢 <b>SERVER BOT HOẠT ĐỘNG BÌNH THƯỜNG</b>\n`;
+              reply += `━━━━━━━━━━━━━━━━━━━━\n`;
+              reply += `⏱️ <b>Thời gian:</b> <code>${timeStr}</code>\n`;
+              reply += `📡 <b>Chu kỳ quét:</b> <code>Mỗi 60 giây (Live OKX)</code>\n`;
+              reply += `🎯 <b>Chiến lược:</b> <code>SMC v3.0 Alpha + Sonic R</code>\n`;
+              reply += `💎 <b>Danh mục quét (6 coin):</b> <code>BTC, ETH, SOL, LINK, NEAR, HYPE</code>\n`;
+              reply += `🛡️ <b>Bộ lọc:</b> <code>H1 ADX > 20 | Tỷ lệ nén ATR >= 0.70 | Maker 0.02%</code>\n\n`;
+              if (positions && positions.length > 0) {
+                reply += `📊 <b>VỊ THẾ ĐANG MỞ (${positions.length}/2):</b>\n`;
+                for (const pos of positions) {
+                  reply += `  • <b>${pos.symbol}</b> ${pos.direction} (Entry: ${pos.entry}, SL: ${pos.stopLoss}, TP: ${pos.takeProfit})\n`;
+                }
+              } else {
+                reply += `📊 <b>Vị thế đang mở:</b> <code>0/2 (Đang rình setup A+)</code>\n`;
+              }
+              reply += `\n💡 <i>Gõ /radar để xem khoảng cách tới các cản gần nhất.</i>`;
+              await sendTelegramMessage(reply);
             } else if (text === '/canh' || text === '/radar' || text === '/plan' || text === '/keo') {
               const report = await handleRadarCommand(fetchOkxCandles);
               await sendTelegramMessage(report);

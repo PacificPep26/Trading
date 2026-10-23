@@ -607,7 +607,7 @@ async function main() {
   console.log(`[RUNTIME] Khởi động Bot Live Scanner (Chu kỳ: ${CONFIG.pollIntervalSec}s)...`);
   
   // Khởi động Trợ lý AI Tương tác 2 Chiều trên Telegram (Gemini 3.8 Flash Vision)
-  startTelegramListener({ fetchOkxCandles });
+  startTelegramListener({ fetchOkxCandles, getActivePositions: () => activePositions });
 
   await safeRunScanCycle();
 

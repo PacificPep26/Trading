@@ -83,9 +83,11 @@ export const UNIVERSE_CONFIG = {
 
   // Danh mục Coin tinh hoa được theo dõi: Quét đồng thời toàn bộ danh mục,
   // Đánh giá điểm chất lượng & Sức mạnh tương đối để chỉ vào "CON KHỎE NHẤT"
-  premierWatchlist: (process.env.WATCHLIST || 'ETH-USDT,NEAR-USDT,BTC-USDT,SOL-USDT,LINK-USDT')
-    .split(',')
-    .map(s => s.trim().toUpperCase()),
+  // Hỗ trợ phân cách bằng dấu phẩy (,), dấu cách hoặc xuống dòng linh hoạt
+  premierWatchlist: (process.env.WATCHLIST || 'ETH-USDT,NEAR-USDT,BTC-USDT,SOL-USDT,LINK-USDT,HYPE-USDT')
+    .split(/[,\s]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean),
 
   // Bộ lọc giá tối thiểu: Chặn triệt để coin rác có giá 0.xx (< 1.0 USDT)
   minCoinPrice: parseFloat(process.env.MIN_COIN_PRICE || '1.0'),
