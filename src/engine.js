@@ -216,6 +216,21 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   // Nhận diện Giai đoạn Thị trường (Market Regime): STRONG_UPTREND, STRONG_DOWNTREND, RANGING
   const marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
 
+  // CHỈ BÁO BIẾN ĐỘNG NHANH (RECENT MOMENTUM): detectMarketPhase dùng EMA34/89
+  // nên phản ứng CHẬM với các cú trượt giá nhanh (ví dụ giảm 6% chỉ trong ~4 ngày)
+  // -> EMA chưa kịp doãng ra đủ để báo STRONG_DOWNTREND, khiến bộ lọc "cấm bắt dao
+  // rơi" không kích hoạt đúng lúc. Bổ sung % thay đổi giá trong N nến H4 gần nhất
+  // để bắt được đúng các cú trượt nhanh mà EMA còn đang "RANGING".
+  const momentumLookbackBars = config.momentumLookbackBars || 6;
+  const momentumThresholdPct = config.momentumThresholdPct || 4;
+  let recentMovePct = 0;
+  if (candlesH4.length > momentumLookbackBars) {
+    const refClose = candlesH4[candlesH4.length - 1 - momentumLookbackBars].close;
+    recentMovePct = (lastH4.close - refClose) / refClose * 100;
+  }
+  const isActiveDownMove = recentMovePct <= -momentumThresholdPct;
+  const isActiveUpMove = recentMovePct >= momentumThresholdPct;
+
   // BỘ LỌC CHẾ ĐỘ THỊ TRƯỜNG V3.0 (H1 ADX & DYNAMIC ATR COMPRESSION)
   // Triệt tiêu tử huyệt Sideway / Summer Chop làm thua lỗ các tháng mùa hè
   if (candlesH1 && candlesH1.length >= 30 && config.regime?.enableChopSleepMode !== false) {
@@ -325,7 +340,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
     if (lastH4.low < sup) {
       // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
       // Nếu đang trong bão giảm dốc đứng một chiều (STRONG_DOWNTREND), CẤM Long bắt đáy dao rơi!
-      if (marketPhase === 'STRONG_DOWNTREND') {
+      // Bổ sung isActiveDownMove: bắt cả trường hợp đang trượt nhanh mà EMA34/89 (chậm)
+      // chưa kịp báo STRONG_DOWNTREND (ví dụ rớt 6% chỉ trong ~4 ngày).
+      if (marketPhase === 'STRONG_DOWNTREND' || isActiveDownMove) {
         continue;
       }
 
@@ -437,7 +454,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
     if (testedRes) {
       // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
       // Nếu đang trong bão tăng dốc mạnh một chiều (STRONG_UPTREND), CẤM Short cản tàu!
-      if (marketPhase === 'STRONG_UPTREND') {
+      // Bổ sung isActiveUpMove: bắt cả trường hợp đang bơm nhanh mà EMA34/89 (chậm)
+      // chưa kịp báo STRONG_UPTREND.
+      if (marketPhase === 'STRONG_UPTREND' || isActiveUpMove) {
         continue;
       }
 

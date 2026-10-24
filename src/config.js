@@ -184,7 +184,15 @@ export const INDICATOR_CONFIG = {
   // QUY TẮC ĐỘ TƯƠI MỚI: Số nến M15 tối đa kể từ lúc H4 đóng nến để Kane Long/Short
   // còn được coi là "mới" (trong khoảng này mới chạy chiến lược H4 truyền thống,
   // qua khỏi mốc này chỉ còn SMC Zone Reaction hoạt động). Mặc định 4 (1 tiếng).
-  freshH4Bars: parseInt(process.env.FRESH_H4_BARS || '8', 10)
+  freshH4Bars: parseInt(process.env.FRESH_H4_BARS || '8', 10),
+
+  // CHỈ BÁO BIẾN ĐỘNG NHANH (RECENT MOMENTUM): detectMarketPhase() dùng EMA34/89
+  // phản ứng chậm, có thể bỏ sót cú trượt giá nhanh (vd giảm 4%+ chỉ trong vài
+  // ngày) chưa kịp làm EMA doãng ra đủ để báo STRONG_UPTREND/DOWNTREND. Bổ sung
+  // kiểm tra % thay đổi giá trong N nến H4 gần nhất để cấm bắt dao rơi/cản tàu
+  // đúng lúc ngay cả khi EMA-phase còn báo RANGING.
+  momentumLookbackBars: parseInt(process.env.MOMENTUM_LOOKBACK_BARS || '6', 10),
+  momentumThresholdPct: parseFloat(process.env.MOMENTUM_THRESHOLD_PCT || '4', 10)
 };
 
 // ====================================================================
@@ -254,6 +262,8 @@ export const BOT_CONFIG = {
 
   wickRatioThreshold: INDICATOR_CONFIG.wickRatioThreshold,
   freshH4Bars: INDICATOR_CONFIG.freshH4Bars,
+  momentumLookbackBars: INDICATOR_CONFIG.momentumLookbackBars,
+  momentumThresholdPct: INDICATOR_CONFIG.momentumThresholdPct,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
