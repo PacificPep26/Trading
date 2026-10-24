@@ -109,13 +109,27 @@ trên baseline 1 năm thuận lợi (PF 1.36→1.48, DD -12.66R→-9.17R) NHƯNG
 -4.77→-5.87). Lý do: đợi phá dứt khoát = vào trễ hơn, trong thị trường chop vào
 trễ thường đúng lúc giá sắp quay đầu — ngược hướng cần. **Revert hoàn toàn.**
 
-**Chưa xử lý — ưu tiên cao cho phiên sau:** whipsaw 2023/sideway vẫn chưa có
-hướng xử lý nào thành công. Các hướng còn lại cần thử (chưa test):
-- Lọc theo ATR Compression chặt hơn RIÊNG cho giai đoạn kéo dài (không phải
-  đệm breakout) — ví dụ coin có `atrRatio` dưới ngưỡng N ngày liên tục thì tạm
-  dừng hẳn Kane Long/Short, không chỉ 1 bar như hiện tại.
-- Time-stop ngắn hơn khi đang whipsaw (thoát sớm hơn nếu không có lợi nhuận
-  sau N nến, thay vì chờ đủ 24 nến M15 như hiện tại).
+**Đã thử thêm 1 lần nữa cho Range Trade (v2, bỏ lớp lọc marketPhase H4) — vẫn
+THẤT BẠI:** debug độc lập (iterate H1 trực tiếp) tìm thấy 22 tín hiệu "lý thuyết"
+hợp lệ cho BTC tháng 10 (chop + áp sát biên range + râu từ chối + RR≥1.2), nghi
+ngờ do `marketPhase` H4 chặn nhầm. Implement lại Range Trade Fade KHÔNG check
+marketPhase, test qua `backtest_1year.mjs` (harness thật, có D1 wiring đầy đủ):
+tháng 10 vẫn **y hệt 0 lệnh mới** (-4.77R/14L không đổi), và tổng thể còn tệ hơn
+(PF 1.36→1.29, DD -12.66R→-15.09R). Kết luận: 22 tín hiệu "lý thuyết" không khớp
+cơ chế thật (ADX tính trên cửa sổ dữ liệu giới hạn trong backtest + trigger thật
+dùng M15 không phải H1 như debug độc lập). **Revert hoàn toàn.**
+
+**Chưa xử lý — đã thử hết các hướng hợp lý trong phạm vi kiến trúc hiện tại.**
+Tổng cộng 8 thử nghiệm riêng cho whipsaw 2023/tháng 10 đều thất bại (TP xa hơn,
+Runner Mode, RR thấp hơn toàn cục, Range Trade RR=2.0, Range Trade Fade RR=1.2,
+miễn chop cho Zone Reaction, breakout buffer, Range Trade Fade v2 bỏ marketPhase).
+Các hướng còn lại CHƯA thử, nhưng đòi hỏi thay đổi kiến trúc lớn hơn nhiều, không
+còn là tinh chỉnh tham số:
+- Lọc theo ATR Compression chặt hơn RIÊNG cho giai đoạn kéo dài nhiều ngày liên
+  tục (không phải 1 bar tức thời như hiện tại).
+- Time-stop ngắn hơn khi đang whipsaw.
+- Setup hoàn toàn mới dùng chỉ báo khác (VWAP/EMA9 - xem Phần 5) thay vì cố nặn
+  thêm từ kiến trúc Fractal Pivot + Liquidity Tier hiện tại.
 KHÔNG được chỉnh mù, phải backtest lại cụ thể trên 2023 + tháng 10 trước khi
 đụng live, vì baseline hiện tại (2025-2026) đang dương rất tốt, không được làm
 hỏng nó khi cố sửa 2023.
