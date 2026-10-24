@@ -49,7 +49,8 @@ backtest:
 | TP chốt ở mốc cản/hỗ trợ **xa nhất** đạt đủ RR (thay vì gần nhất) | 2026-10-24 | PF 1.16→0.82, Tổng R +23.37R→-18.83R, Drawdown -18.19R→-42.69R | **Revert** — đã xác nhận tệ hơn nhiều |
 | Runner Mode: khóa SL tại TP rồi trailing 1.0R tới khi đảo chiều | 2026-10-24 | PF 1.16→1.06, Tổng R +23.37R→+10.26R, Drawdown -18.19R→-21.69R | **Revert** — vẫn tệ hơn baseline |
 | Nới `MIN_H1_ADX` 20→16 + `MIN_ATR_COMPRESSION_RATIO` 0.70→0.60 | 2026-10-24 | PF 1.16→1.13, riêng tháng 10 R -4.77→-5.77 (tệ hơn) | Không áp dụng — không cải thiện |
-| **Nới cửa sổ "độ tươi mới" H4** (`freshH4Bars`, Kane Long/Short chỉ chạy trong N nến M15 đầu sau khi H4 đóng) | 2026-10-24 | Quét 4/6/8/10/16: PF 1.16/1.21/**1.18**/1.11/1.03, Tổng R +23.37/+33.63/**+34.19**/+25.77/+12.71R, DD -18.19/-18.05/**-15.86**/-17.35/-21.93R | **ÁP DỤNG `freshH4Bars=8`** (2 tiếng thay vì 1) — cải thiện mọi chỉ số so với baseline, đã verify `npm run check` 76/76 + single-run sạch, **đang chờ xác nhận deploy** |
+| **Nới cửa sổ "độ tươi mới" H4** (`freshH4Bars`, Kane Long/Short chỉ chạy trong N nến M15 đầu sau khi H4 đóng) | 2026-10-24 | Quét 4/6/8/10/16: PF 1.16/1.21/**1.18**/1.11/1.03, Tổng R +23.37/+33.63/**+34.19**/+25.77/+12.71R, DD -18.19/-18.05/**-15.86**/-17.35/-21.93R | **ĐÃ DEPLOY `freshH4Bars=8`** (commit `444e500`, 2026-10-24) lên Railway — xác nhận chạy sạch sau deploy |
+| Freshness theo CẤU TRÚC (qua `freshH4Bars`, vẫn cho Kane Long/Short chạy nếu giá chưa đóng cửa phá đáy/đỉnh H4 gốc, bất kể thời gian) | 2026-10-24 | PF 1.18→1.05, Tổng R +34.19R→+15.47R, Net +$302.19→+$105.38, DD -15.86R→-20.50R, lệnh 303→378 (nhiều hơn nhưng kém chất lượng hơn) | **Revert** — mọi cách nới rộng thêm (giờ hay cấu trúc) đều làm PF giảm, `freshH4Bars=8` là điểm cân bằng tốt nhất đã tìm được |
 
 **Baseline cũ đang deploy trên Railway (commit `eb2ec92`, `freshH4Bars=4`):** PF 1.16,
 +23.37R, +$201.92/năm, win rate 47%, max drawdown -18.19R (1 năm 10/2025-10/2026,
