@@ -60,6 +60,16 @@ backtest:
 **Baseline mới nhất (sau D1 Regime Gate, đã deploy):** PF 1.36, +50.96R, +$475.34/năm,
 win rate 49.0%, max drawdown -12.66R, 255 lệnh.
 
+**Xác nhận lại bằng `backtest_by_regime.mjs` sau khi D1 Gate deploy:** giai đoạn
+STRONG_DOWNTREND (gộp mọi setup) lật từ **-10.52R → +7.74R**. Tổ hợp từng lỗ nặng
+`STRONG_DOWNTREND × SMC_SWEEP_REVERSAL_LONG` giảm từ 27 lệnh/-14.90R xuống còn 4
+lệnh/-4.00R (phần sót lại do D1 EMA vẫn có độ trễ nhỏ, chấp nhận được).
+
+Các ô còn âm nhẹ sau cùng (đã xem, KHÔNG xử lý tiếp — mẫu nhỏ/noise, rủi ro overfit):
+`STRONG_UPTREND×KANE_THUAN_TREND_LONG` -0.72R/13L, `RANGING×SMC_SWEEP_REVERSAL_SHORT`
+-2.31R/35L, `RANGING×SMC_ZONE_REACTION_LONG/SHORT` -2.52R gộp/16L,
+`STRONG_DOWNTREND×SMC_SWEEP_REVERSAL_LONG` còn sót -4.00R/4L.
+
 **Baseline cũ đang deploy trên Railway (commit `eb2ec92`, `freshH4Bars=4`):** PF 1.16,
 +23.37R, +$201.92/năm, win rate 47%, max drawdown -18.19R (1 năm 10/2025-10/2026,
 236 lệnh, đã áp đúng cổng quality-score + BTC H4 macro shield).
