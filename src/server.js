@@ -357,13 +357,9 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         continue;
       }
 
-      // Giá hiện tại theo thời gian thực
+      // Giá hiện tại theo thời gian thực (lọc giá tối thiểu đã được evaluateMarket()
+      // trong engine.js thực thi thống nhất cho cả live lẫn backtest, không lặp lại ở đây)
       const currentPrice = candlesM15[candlesM15.length - 1].close;
-
-      // KIỂM TRA GIÁ TỐI THIỂU: Bỏ qua tuyệt đối các coin 0.xx (nhỏ hơn minCoinPrice, mặc định 1.0 USDT)
-      if (currentPrice < CONFIG.minCoinPrice) {
-        continue;
-      }
 
       // KIỂM TRA HÌNH PHẠT HỌC HỎI (ADAPTIVE PENALTY GATE THEO ĐẦU TÀU BTC):
       const generalCheck = checkAdaptiveTradeAllowed(symbol, null, btcH1, btcH4);
