@@ -1,7 +1,10 @@
 /**
  * DOWNLOAD_1YEAR_HISTORY.MJS
- * Tải toàn bộ dữ liệu nến lịch sử từ 01/09/2025 đến nay (hơn 1 năm) từ OKX API.
- * Hỗ trợ các khung thời gian 4H, 1H, 15m cho danh mục Premier (BTC, ETH, SOL, LINK, NEAR).
+ * Tải TOÀN BỘ dữ liệu nến lịch sử từ lúc mỗi coin được niêm yết trên OKX Swap đến
+ * nay (phân trang lùi tới khi API trả rỗng = chạm ngày niêm yết, tự nhiên dừng đúng
+ * lúc, không cần biết trước ngày). Hỗ trợ 4H, 1H, 15m, 1Dutc cho danh mục Premier
+ * (BTC, ETH, SOL, LINK, NEAR). 1Dutc dùng để phân loại giai đoạn thị trường lớn
+ * (xem docs/REGIME_ADAPTIVE_PLAN.md Phần 1-2).
  */
 
 import fs from 'fs';
@@ -24,10 +27,7 @@ const SYMBOLS = [
   'NEAR-USDT-SWAP'
 ];
 
-const TIMEFRAMES = ['4H', '1H', '15m'];
-
-// Bắt đầu từ 01/09/2025 để EMA 89 trên H4 được làm ấm (warmup) hoàn chỉnh trước 01/10/2025
-const TARGET_START_TS = new Date('2025-09-01T00:00:00Z').getTime();
+const TIMEFRAMES = ['4H', '1H', '15m', '1Dutc'];
 
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -63,6 +63,7 @@ async function fetchHistoryBatch(instId, bar, after = '') {
 
 async function downloadCandlesForSymbolAndBar(instId, bar) {
   const filePath = path.join(CACHE_DIR, `${instId}_${bar}.json`);
+  const genesisMarkerPath = `${filePath}.genesis`;
 
   let candleMap = new Map();
   if (fs.existsSync(filePath)) {
@@ -76,28 +77,29 @@ async function downloadCandlesForSymbolAndBar(instId, bar) {
   }
 
   // Xác định điểm bắt đầu tải
-  let oldestTsInMap = Infinity;
   let newestTsInMap = 0;
   for (const ts of candleMap.keys()) {
-    if (ts < oldestTsInMap) oldestTsInMap = ts;
     if (ts > newestTsInMap) newestTsInMap = ts;
   }
 
-  // Nếu đã có dữ liệu chạm TARGET_START_TS và nến mới nhất gần đây (< 6 tiếng)
+  // Nếu đã từng tải tới tận ngày niêm yết (marker .genesis) VÀ nến mới nhất gần đây
+  // (< 6 tiếng) -> bỏ qua, không cần tải lại toàn bộ lịch sử mỗi lần chạy.
   const sixHoursAgo = Date.now() - 6 * 3600 * 1000;
-  if (oldestTsInMap <= TARGET_START_TS && newestTsInMap >= sixHoursAgo) {
-    console.log(`  ✅ Dữ liệu ${instId} (${bar}) đã đầy đủ từ ${new Date(oldestTsInMap).toISOString().slice(0, 10)} đến nay. Bỏ qua tải!`);
+  if (fs.existsSync(genesisMarkerPath) && newestTsInMap >= sixHoursAgo) {
+    console.log(`  ✅ Dữ liệu ${instId} (${bar}) đã đầy đủ từ lúc niêm yết đến nay. Bỏ qua tải!`);
     return;
   }
 
-  console.log(`  ⏳ Bắt đầu tải ${instId} (${bar}) về đến 01/09/2025...`);
+  console.log(`  ⏳ Bắt đầu tải ${instId} (${bar}) lùi về tới ngày niêm yết...`);
   let after = '';
   let batchCount = 0;
+  let reachedGenesis = false;
 
   while (true) {
     const rawBatch = await fetchHistoryBatch(instId, bar, after);
     if (!rawBatch || rawBatch.length === 0) {
-      console.log(`  ℹ️ Không còn nến nào cũ hơn từ API.`);
+      console.log(`\n  🎯 API trả rỗng -> Đã chạm ngày niêm yết của ${instId}!`);
+      reachedGenesis = true;
       break;
     }
 
@@ -112,14 +114,9 @@ async function downloadCandlesForSymbolAndBar(instId, bar) {
 
     after = rawBatch[rawBatch.length - 1][0]; // timestamp của nến cũ nhất trong batch
 
-    if (batchCount % 10 === 0 || batchOldestTs <= TARGET_START_TS) {
+    if (batchCount % 10 === 0) {
       const oldestDateStr = new Date(batchOldestTs).toISOString().slice(0, 10);
       process.stdout.write(`    Batch ${batchCount} -> Đến ngày: ${oldestDateStr} (Tổng: ${candleMap.size} nến)\r`);
-    }
-
-    if (batchOldestTs <= TARGET_START_TS) {
-      console.log(`\n  🎯 Đã đạt mốc thời gian mục tiêu: ${new Date(batchOldestTs).toISOString().slice(0, 10)}!`);
-      break;
     }
 
     await sleep(75); // Tránh rate limit OKX (tối đa ~13 req/s)
@@ -128,12 +125,15 @@ async function downloadCandlesForSymbolAndBar(instId, bar) {
   // Sắp xếp theo thứ tự thời gian tăng dần
   const sorted = Array.from(candleMap.values()).sort((a, b) => a.ts - b.ts);
   fs.writeFileSync(filePath, JSON.stringify(sorted), 'utf8');
+  if (reachedGenesis) {
+    fs.writeFileSync(genesisMarkerPath, new Date().toISOString(), 'utf8');
+  }
   console.log(`  💾 Đã lưu ${sorted.length} nến vào ${path.basename(filePath)} (${(fs.statSync(filePath).size / 1024 / 1024).toFixed(2)} MB)\n`);
 }
 
 async function main() {
   console.log('================================================================');
-  console.log('🚀 TẢI DỮ LIỆU NẾN LỊCH SỬ 1 NĂM (09/2025 -> 10/2026) TỪ OKX');
+  console.log('🚀 TẢI TOÀN BỘ DỮ LIỆU NẾN LỊCH SỬ TỪ LÚC NIÊM YẾT TỪ OKX');
   console.log('================================================================\n');
 
   const selectedSymbol = process.argv[2];
