@@ -315,11 +315,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   let blockedSignal = null;
 
   // =========================================================================
-  // SETUP 1 & 2: KANE SWING & TREND (CHỈ CHẠY KHI H4 VỪA ĐÓNG NẾN FRESH <= 4 BARS)
+  // SETUP 1: KANE LONG (CHỈ CHẠY KHI H4 VỪA ĐÓNG NẾN FRESH <= 4 BARS)
+  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
   // =========================================================================
-  if (isFreshH4) {
-    // SETUP 1: KANE LONG
-    for (const sup of supports) {
+  function tryKaneLongSetup() {
+  if (!isFreshH4) return null;
+  for (const sup of supports) {
     if (lastH4.low < sup) {
       // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
       // Nếu đang trong bão giảm dốc đứng một chiều (STRONG_DOWNTREND), CẤM Long bắt đáy dao rơi!
@@ -418,13 +419,18 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
     }
   }
+  return null;
+  }
 
   // =========================================================================
   // SETUP 2: KANE SHORT (Kèo ETH & LINK H4 của Kane)
   // - Thuận trend Bear (EMA34 < EMA89): Test Kháng cự & EMA34/89
   // - Ngược trend Bull (EMA34 >= EMA89): CÔNG THỨC KANE: CHỈ KHI GIÁ CÁCH XA EMA34 (>= 3.0%),
   //   Râu trên H4 >= 45% & Khoảng cách về EMA 34 phải cho RR >= 1.0!
+  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
   // =========================================================================
+  function tryKaneShortSetup() {
+  if (!isFreshH4) return null;
   for (const res of resistances) {
     const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
     if (testedRes) {
@@ -530,7 +536,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       }
     }
   }
-  } // Đóng if (isFreshH4)
+  return null;
+  }
 
   // =========================================================================
   // SETUP 3: SMC ZONE REACTION (VÀO LỆNH ĐÓN ĐẦU TẠI CẢN & HỖ TRỢ LỚN THEO M15)
@@ -542,7 +549,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   // - BTC & ETH: Là 2 coin dẫn dắt thanh khoản lớn nhất, vùng cản Tier 2 giữ rất chuẩn.
   // - Altcoin (SOL, LINK, NEAR): Rất dễ bị kéo xuyên cản theo quán tính BTC,
   //   do đó đối với Altcoin BẮT BUỘC PHẢI CÓ VOLUME ABSORPTION (VSA Climax) mới được bắt đỉnh/đáy!
+  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
   // =========================================================================
+  function tryZoneReactionSetup() {
   const isLeader = symbol.includes('BTC') || symbol.includes('ETH');
   const m15Anatomy = analyzeCandle(currentM15);
 
@@ -660,6 +669,22 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
     }
   }
   } // Đóng if (marketPhase !== 'STRONG_DOWNTREND')
+
+  return null;
+  }
+
+  // Thực thi 3 setup theo đúng thứ tự ưu tiên như trước khi tách hàm:
+  // Kane Long -> Kane Short -> SMC Zone Reaction. blockedSignal được các
+  // closure trên mutate trực tiếp qua scope chung, trả về cuối cùng nếu
+  // không có setup nào khớp.
+  const kaneLongSignal = tryKaneLongSetup();
+  if (kaneLongSignal) return kaneLongSignal;
+
+  const kaneShortSignal = tryKaneShortSetup();
+  if (kaneShortSignal) return kaneShortSignal;
+
+  const zoneReactionSignal = tryZoneReactionSetup();
+  if (zoneReactionSignal) return zoneReactionSignal;
 
   return blockedSignal;
 }
