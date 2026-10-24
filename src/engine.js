@@ -176,7 +176,7 @@ export function detectMarketPhase(candlesH4, ema34Arr, ema89Arr) {
  * @param {object} params
  * @returns {object|null}
  */
-export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1Candles = null, btcH4Candles = null, config = DEFAULT_CONFIG }) {
+export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candlesD1 = null, btcH1Candles = null, btcH4Candles = null, config = DEFAULT_CONFIG }) {
   if (!candlesH4 || candlesH4.length < 90 || !candlesH1 || candlesH1.length < 15 || !candlesM15 || candlesM15.length < 5) {
     return null;
   }
@@ -215,6 +215,21 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
 
   // Nhận diện Giai đoạn Thị trường (Market Regime): STRONG_UPTREND, STRONG_DOWNTREND, RANGING
   const marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
+
+  // GIAI ĐOẠN THỊ TRƯỜNG KHUNG LỚN (D1): phát hiện qua phân tích thực tế — bộ lọc
+  // marketPhase theo H4 ở trên không thấy được xu hướng giảm/tăng dốc đứng đang
+  // diễn ra ở khung Ngày (ví dụ H4 báo RANGING cục bộ trong khi D1 đang downtrend
+  // mạnh xuyên suốt nhiều ngày), khiến SMC_SWEEP_REVERSAL_LONG cứ bắt đáy giữa
+  // một downtrend D1 thật và thua liên tục (-14.90R/27 lệnh riêng tổ hợp này khi
+  // backtest 1 năm). Tùy chọn (candlesD1 có thể null nếu caller chưa truyền vào,
+  // giữ tương thích ngược hoàn toàn).
+  let d1Phase = 'RANGING';
+  if (candlesD1 && candlesD1.length >= 90) {
+    const closesD1 = candlesD1.map(c => c.close);
+    const ema34D1Arr = calculateEMA(closesD1, 34);
+    const ema89D1Arr = calculateEMA(closesD1, 89);
+    d1Phase = detectMarketPhase(candlesD1, ema34D1Arr, ema89D1Arr);
+  }
 
   // CHỈ BÁO BIẾN ĐỘNG NHANH (RECENT MOMENTUM): detectMarketPhase dùng EMA34/89
   // nên phản ứng CHẬM với các cú trượt giá nhanh (ví dụ giảm 6% chỉ trong ~4 ngày)
@@ -342,7 +357,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       // Nếu đang trong bão giảm dốc đứng một chiều (STRONG_DOWNTREND), CẤM Long bắt đáy dao rơi!
       // Bổ sung isActiveDownMove: bắt cả trường hợp đang trượt nhanh mà EMA34/89 (chậm)
       // chưa kịp báo STRONG_DOWNTREND (ví dụ rớt 6% chỉ trong ~4 ngày).
-      if (marketPhase === 'STRONG_DOWNTREND' || isActiveDownMove) {
+      // Bổ sung d1Phase: H4 có thể báo RANGING cục bộ trong khi khung Ngày (D1)
+      // đang downtrend mạnh xuyên suốt -> vẫn phải cấm bắt đáy theo bức tranh lớn.
+      if (marketPhase === 'STRONG_DOWNTREND' || isActiveDownMove || d1Phase === 'STRONG_DOWNTREND') {
         continue;
       }
 
@@ -456,7 +473,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
       // Nếu đang trong bão tăng dốc mạnh một chiều (STRONG_UPTREND), CẤM Short cản tàu!
       // Bổ sung isActiveUpMove: bắt cả trường hợp đang bơm nhanh mà EMA34/89 (chậm)
       // chưa kịp báo STRONG_UPTREND.
-      if (marketPhase === 'STRONG_UPTREND' || isActiveUpMove) {
+      // Bổ sung d1Phase: H4 có thể báo RANGING cục bộ trong khi khung Ngày (D1)
+      // đang uptrend mạnh xuyên suốt -> vẫn phải cấm cản tàu theo bức tranh lớn.
+      if (marketPhase === 'STRONG_UPTREND' || isActiveUpMove || d1Phase === 'STRONG_UPTREND') {
         continue;
       }
 

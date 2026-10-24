@@ -28,6 +28,7 @@ const CONFIG = BOT_CONFIG;
 const M15_MS = 15 * 60 * 1000;
 const H1_MS = 60 * 60 * 1000;
 const H4_MS = 4 * 60 * 60 * 1000;
+const D1_MS = 24 * 60 * 60 * 1000;
 
 // Bắt đầu backtest chính thức từ 01/10/2025 (dữ liệu tháng 09/2025 dùng để warmup EMA 89 và Pivots)
 const START_BACKTEST_TS = new Date('2025-10-01T00:00:00Z').getTime();
@@ -38,6 +39,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
   const fH4 = path.join(CACHE_DIR, `${instId}_4H.json`);
   const fH1 = path.join(CACHE_DIR, `${instId}_1H.json`);
   const fM15 = path.join(CACHE_DIR, `${instId}_15m.json`);
+  const fD1 = path.join(CACHE_DIR, `${instId}_1Dutc.json`);
 
   if (!fs.existsSync(fH4) || !fs.existsSync(fH1) || !fs.existsSync(fM15)) {
     console.warn(`[WARN] Thiếu dữ liệu cache 1 năm cho ${instId}`);
@@ -47,6 +49,9 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
   const candlesH4 = JSON.parse(fs.readFileSync(fH4, 'utf8')).map(normalizeCandle);
   const candlesH1 = JSON.parse(fs.readFileSync(fH1, 'utf8')).map(normalizeCandle);
   const candlesM15 = JSON.parse(fs.readFileSync(fM15, 'utf8')).map(normalizeCandle);
+  // D1 của chính coin này (không phải BTC) dùng để nhận diện giai đoạn khung Ngày
+  // (d1Phase trong engine.js) — tùy chọn, bỏ qua nếu chưa có cache.
+  const candlesD1 = fs.existsSync(fD1) ? JSON.parse(fs.readFileSync(fD1, 'utf8')).map(normalizeCandle) : [];
 
   const closedTrades = [];
   let activeTrade = null;
@@ -58,6 +63,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
   // Pointers tối ưu hiệu năng O(1)
   let h4Pointer = 0;
   let h1Pointer = 0;
+  let d1Pointer = 0;
   let btcH1Pointer = 0;
   let btcH4Pointer = 0;
 
@@ -147,6 +153,11 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           btcH4Pointer++;
         }
       }
+      if (candlesD1.length > 0) {
+        while (d1Pointer + 1 < candlesD1.length && candlesD1[d1Pointer + 1].ts + D1_MS <= m15CloseTime) {
+          d1Pointer++;
+        }
+      }
 
       // Đảm bảo đủ nến làm ấm (EMA 89 cần ~90 nến H4)
       if (h4Pointer >= 90 && h1Pointer >= 15 && i >= 5) {
@@ -171,11 +182,18 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           visibleBtcH4 = btcH4Candles.slice(btcH4Start, btcH4Pointer + 1);
         }
 
+        let visibleD1 = null;
+        if (candlesD1.length > 0 && d1Pointer >= 90) {
+          const d1Start = Math.max(0, d1Pointer - 150);
+          visibleD1 = candlesD1.slice(d1Start, d1Pointer + 1);
+        }
+
         const signal = evaluateMarket({
           symbol,
           candlesH4: visibleH4,
           candlesH1: visibleH1,
           candlesM15: visibleM15,
+          candlesD1: visibleD1,
           btcH1Candles: visibleBtcH1,
           btcH4Candles: visibleBtcH4,
           config: cfg

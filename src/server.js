@@ -346,11 +346,14 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
       const hasOpenPos = activePositions.some(p => p.instId === instId);
       if (hasOpenPos) continue;
 
-      // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15
-      const [candlesH4, candlesH1, candlesM15] = await Promise.all([
+      // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15, D1
+      // (D1 dùng để nhận diện giai đoạn khung Ngày -> cấm bắt đáy/cản tàu ngược
+      // hướng D1 ngay cả khi H4 còn báo RANGING cục bộ, xem docs/REGIME_ADAPTIVE_PLAN.md)
+      const [candlesH4, candlesH1, candlesM15, candlesD1] = await Promise.all([
         fetchOkxCandles(instId, '4H', 100),
         fetchOkxCandles(instId, '1H', 30),
-        fetchOkxCandles(instId, '15m', 30)
+        fetchOkxCandles(instId, '15m', 30),
+        fetchOkxCandles(instId, '1Dutc', 100)
       ]);
 
       if (candlesH4.length < 20 || candlesH1.length < 15 || candlesM15.length < 10) {
@@ -371,6 +374,7 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
       const closedH4 = candlesH4.filter(c => c.confirm === 1);
       const closedH1 = candlesH1.filter(c => c.confirm === 1);
       const closedM15 = candlesM15.filter(c => c.confirm === 1);
+      const closedD1 = candlesD1.filter(c => c.confirm === 1);
 
       if (closedH4.length < 15 || closedH1.length < 15 || closedM15.length < 5) {
         continue;
@@ -385,6 +389,7 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         candlesH4: closedH4,
         candlesH1: closedH1,
         candlesM15: closedM15,
+        candlesD1: closedD1,
         btcH1Candles: btcH1,
         btcH4Candles: btcH4,
         config: coinConfig
