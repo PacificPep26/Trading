@@ -60,6 +60,21 @@ backtest:
 **Baseline mới nhất (sau D1 Regime Gate, đã deploy):** PF 1.36, +50.96R, +$475.34/năm,
 win rate 49.0%, max drawdown -12.66R, 255 lệnh.
 
+**Mở rộng `momentumLookbackBars` 6->12 (ĐÃ DEPLOY, commit `ac81d1e`):** phân tích
+chi tiết từng lệnh tháng 10 phát hiện 11/11 lệnh Long đều thua trong khi 2/2
+lệnh Short đều thắng lớn — cửa sổ momentum cũ (24h) quá ngắn để thấy cú giảm
+nhiều ngày (SOL giảm tới -9% trong 4 ngày nhưng chỉ -1.6% trong 24h gần nhất).
+Quét 4 mốc (6/12/18/24), 12 là đỉnh: PF 1.36->**1.47**, Tổng R +50.96R->**+60.32R**,
+Net +$475.34->**+$569.42**, và quan trọng nhất **tháng 10: -4.77R->+0.02R** (gần hòa).
+**Baseline hiện tại (đang live):** PF 1.47, +60.32R, +$569.42/năm, DD -13.20R, 245 lệnh.
+
+**Thử Breakout Continuation ("bể nền đu theo", momentum-chase) — THẤT BẠI THẢM HẠI,
+đã revert:** PF 1.47->**1.02**, Tổng R +60.32R->**+13.12R** (giảm 78%), Net
++$569.42->**+$57.87** (giảm 90%), Max DD -13.20R->**-37.02R** (gần gấp 3), tháng 10
++0.02R->**-1.64R** (quay lại lỗ). Xác nhận triết lý SMC No-Chasing của engine hiện
+tại là đúng đắn — chase breakout bị cá mập quét liên tục trong dữ liệu thật.
+KHÔNG thử lại hướng này nữa trừ khi có cơ sở hoàn toàn khác.
+
 **Xác nhận lại bằng `backtest_by_regime.mjs` sau khi D1 Gate deploy:** giai đoạn
 STRONG_DOWNTREND (gộp mọi setup) lật từ **-10.52R → +7.74R**. Tổ hợp từng lỗ nặng
 `STRONG_DOWNTREND × SMC_SWEEP_REVERSAL_LONG` giảm từ 27 lệnh/-14.90R xuống còn 4
