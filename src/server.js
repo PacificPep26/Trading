@@ -295,41 +295,36 @@ export async function updateOpenPositions(instId, candleOrPrice) {
 }
 
 /**
- * Chu kỳ quét thị trường chính
+ * Cập nhật giá thời gian thực cho tất cả vị thế đang mở (tách từ runScanCycle,
+ * logic giữ nguyên 100%).
  */
-export async function runScanCycle() {
-  const timeStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
-  console.log(`\n======================================================`);
-  console.log(`[SCAN CYCLE] Bắt đầu quét thị trường lúc: ${timeStr}`);
-  console.log(`[MODE] ${CONFIG.scanMode} | Đang mở: ${activePositions.length} vị thế`);
-
-  // 1. Tải nến Đầu Tàu BTC (H4 & 1H) để kích hoạt Bộ Chỉ Huy Đầu Tàu
-  const [rawBtcH4, rawBtcH1] = await Promise.all([
-    fetchOkxCandles('BTC-USDT-SWAP', '4H', 40),
-    fetchOkxCandles('BTC-USDT-SWAP', '1H', 30)
-  ]);
-  const btcH4 = rawBtcH4.filter(c => c.confirm === 1);
-  const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
-
-  // 1.1. Luôn cập nhật giá thời gian thực cho TẤT CẢ các vị thế đang mở
-  if (activePositions.length > 0) {
-    console.log(`[POSITIONS ACTIVE] Danh sách vị thế đang mở:`);
-    for (const pos of [...activePositions]) {
-      try {
-        const candles = await fetchOkxCandles(pos.instId, '15m', 5);
-        if (candles && candles.length > 0) {
-          const curCandle = candles[candles.length - 1];
-          const curPrice = curCandle.close;
-          const pnlR = (pos.direction === 'LONG' ? (curPrice - pos.entry) : (pos.entry - curPrice)) / Math.abs(pos.entry - pos.initialStopLoss);
-          console.log(`  • ${pos.symbol} ${pos.direction} (Entry: ${pos.entry}, Hiện tại: ${curPrice}, PnL: ${pnlR.toFixed(2)}R, SL: ${pos.stopLoss}, TP: ${pos.takeProfit})`);
-          await updateOpenPositions(pos.instId, curCandle);
-        }
-      } catch (err) {
-        console.error(`[UPDATE POS] Lỗi cập nhật ${pos.symbol}:`, err.message);
+async function updateOpenPositionPrices() {
+  if (activePositions.length === 0) return;
+  console.log(`[POSITIONS ACTIVE] Danh sách vị thế đang mở:`);
+  for (const pos of [...activePositions]) {
+    try {
+      const candles = await fetchOkxCandles(pos.instId, '15m', 5);
+      if (candles && candles.length > 0) {
+        const curCandle = candles[candles.length - 1];
+        const curPrice = curCandle.close;
+        const pnlR = (pos.direction === 'LONG' ? (curPrice - pos.entry) : (pos.entry - curPrice)) / Math.abs(pos.entry - pos.initialStopLoss);
+        console.log(`  • ${pos.symbol} ${pos.direction} (Entry: ${pos.entry}, Hiện tại: ${curPrice}, PnL: ${pnlR.toFixed(2)}R, SL: ${pos.stopLoss}, TP: ${pos.takeProfit})`);
+        await updateOpenPositions(pos.instId, curCandle);
       }
+    } catch (err) {
+      console.error(`[UPDATE POS] Lỗi cập nhật ${pos.symbol}:`, err.message);
     }
   }
+}
 
+/**
+ * Quét toàn bộ universe/watchlist và trả về danh sách ứng viên đạt chuẩn
+ * điểm chất lượng (tách từ runScanCycle, logic giữ nguyên 100%).
+ * @param {object} btcH4 Nến H4 BTC đã lọc confirm=1
+ * @param {object} btcH1 Nến H1 BTC đã lọc confirm=1
+ * @returns {Promise<Array>} candidateSignals
+ */
+async function scanUniverseForCandidates(btcH4, btcH1) {
   // 2. Xác định danh sách cặp cần quét (Khóa chặt Danh mục Coin Lớn: BTC, ETH, SOL, LINK, NEAR, HYPE)
   let symbolsToScan = [];
   if (CONFIG.scanMode === 'WATCHLIST') {
@@ -443,6 +438,15 @@ export async function runScanCycle() {
     }
   }
 
+  return candidateSignals;
+}
+
+/**
+ * Xếp hạng ứng viên theo điểm chất lượng, chọn "Con Khỏe Nhất" trong số
+ * slot còn trống và mở lệnh (tách từ runScanCycle, logic giữ nguyên 100%).
+ * @param {Array} candidateSignals
+ */
+async function pickAndExecuteWinners(candidateSignals) {
   // 3. ĐÁNH GIÁ VÀ CHỌN "CON KHỎE NHẤT" ĐỂ VÀO LỆNH (RELATIVE STRENGTH WINNER)
   if (candidateSignals.length > 0) {
     // Sắp xếp các setup hợp lệ theo điểm chất lượng giảm dần -> CON KHỎE NHẤT ĐỨNG ĐẦU!
@@ -491,6 +495,31 @@ export async function runScanCycle() {
       await notifyNewSignal(signal);
     }
   }
+}
+
+/**
+ * Chu kỳ quét thị trường chính
+ */
+export async function runScanCycle() {
+  const timeStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  console.log(`\n======================================================`);
+  console.log(`[SCAN CYCLE] Bắt đầu quét thị trường lúc: ${timeStr}`);
+  console.log(`[MODE] ${CONFIG.scanMode} | Đang mở: ${activePositions.length} vị thế`);
+
+  // 1. Tải nến Đầu Tàu BTC (H4 & 1H) để kích hoạt Bộ Chỉ Huy Đầu Tàu
+  const [rawBtcH4, rawBtcH1] = await Promise.all([
+    fetchOkxCandles('BTC-USDT-SWAP', '4H', 40),
+    fetchOkxCandles('BTC-USDT-SWAP', '1H', 30)
+  ]);
+  const btcH4 = rawBtcH4.filter(c => c.confirm === 1);
+  const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
+
+  // 1.1. Luôn cập nhật giá thời gian thực cho TẤT CẢ các vị thế đang mở
+  await updateOpenPositionPrices();
+
+  // 2 & 3. Quét universe tìm ứng viên, rồi chọn Con Khỏe Nhất để vào lệnh
+  const candidateSignals = await scanUniverseForCandidates(btcH4, btcH1);
+  await pickAndExecuteWinners(candidateSignals);
 
   // Tự động kiểm tra và phát Bản tin Smart Money AI vào đầu mỗi buổi sáng (07:00 VN)
   await checkAndTriggerDailyBriefing();

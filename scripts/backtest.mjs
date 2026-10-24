@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from '../src/indicators.js';
-import { evaluateMarket, DEFAULT_CONFIG } from '../src/engine.js';
+import { evaluateMarket, calculateSetupQualityScore, DEFAULT_CONFIG } from '../src/engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, '../data/cache');
@@ -39,7 +39,7 @@ const H1_MS = 60 * 60 * 1000;
 const H4_MS = 4 * 60 * 60 * 1000;
 const START_OCTOBER_TS = new Date('2026-10-01T00:00:00Z').getTime();
 
-async function backtestSymbol(instId, btcH1Candles) {
+async function backtestSymbol(instId, btcH1Candles, btcH4Candles) {
   const symbol = instId.replace('-SWAP', '');
   const fH4 = path.join(CACHE_DIR, `${instId}_4H_october.json`);
   const fH1 = path.join(CACHE_DIR, `${instId}_1H_october.json`);
@@ -134,6 +134,7 @@ async function backtestSymbol(instId, btcH1Candles) {
       const visibleH1 = candlesH1.filter(c => c.ts + H1_MS <= m15CloseTime);
       const visibleM15 = candlesM15.slice(0, i + 1);
       const visibleBtcH1 = btcH1Candles.filter(c => c.ts + H1_MS <= m15CloseTime);
+      const visibleBtcH4 = (btcH4Candles || []).filter(c => c.ts + H4_MS <= m15CloseTime);
 
       const signal = evaluateMarket({
         symbol,
@@ -141,17 +142,31 @@ async function backtestSymbol(instId, btcH1Candles) {
         candlesH1: visibleH1,
         candlesM15: visibleM15,
         btcH1Candles: visibleBtcH1,
+        btcH4Candles: visibleBtcH4,
         config: CONFIG
       });
 
+      // Áp đúng cổng chấm điểm chất lượng Setup như server.js live để backtest
+      // phản ánh trung thực điều kiện vào lệnh thực tế (không nhận tín hiệu thô).
       if (signal && !signal.isBlocked) {
-        activeTrade = {
-          ...signal,
-          entryTime: currentM15.ts,
-          initialStopLoss: signal.stopLoss,
-          isBreakevenMoved: false,
-          barsHeld: 0
-        };
+        const quality = calculateSetupQualityScore({
+          signal,
+          candlesH4: visibleH4,
+          candlesH1: visibleH1,
+          candlesM15: visibleM15,
+          btcH1Candles: visibleBtcH1
+        });
+        const minScore = CONFIG.minSetupQualityScore || 75;
+        if (quality.score >= minScore) {
+          activeTrade = {
+            ...signal,
+            qualityScore: quality.score,
+            entryTime: currentM15.ts,
+            initialStopLoss: signal.stopLoss,
+            isBreakevenMoved: false,
+            barsHeld: 0
+          };
+        }
       }
     }
   }
@@ -207,11 +222,12 @@ async function runBacktest() {
   console.log('================================================================\n');
 
   const btcH1 = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, 'BTC-USDT-SWAP_1H_october.json'), 'utf8')).map(normalizeCandle);
+  const btcH4 = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, 'BTC-USDT-SWAP_4H_october.json'), 'utf8')).map(normalizeCandle);
   const allTrades = [];
   const symbolStats = [];
 
   for (const instId of BACKTEST_SYMBOLS) {
-    const trades = await backtestSymbol(instId, btcH1);
+    const trades = await backtestSymbol(instId, btcH1, btcH4);
     allTrades.push(...trades);
     const m = calculateMetrics(trades);
     symbolStats.push({

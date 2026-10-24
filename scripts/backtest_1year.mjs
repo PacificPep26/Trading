@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from '../src/indicators.js';
-import { evaluateMarket } from '../src/engine.js';
+import { evaluateMarket, calculateSetupQualityScore } from '../src/engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -181,14 +181,27 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           config: cfg
         });
 
+        // Áp đúng cổng chấm điểm chất lượng Setup như server.js live để backtest
+        // phản ánh trung thực điều kiện vào lệnh thực tế (không nhận tín hiệu thô).
         if (signal && !signal.isBlocked) {
-          activeTrade = {
-            ...signal,
-            entryTime: currentM15.ts,
-            initialStopLoss: signal.stopLoss,
-            isProfitLocked: false,
-            barsHeld: 0
-          };
+          const quality = calculateSetupQualityScore({
+            signal,
+            candlesH4: visibleH4,
+            candlesH1: visibleH1,
+            candlesM15: visibleM15,
+            btcH1Candles: visibleBtcH1
+          });
+          const minScore = cfg.minSetupQualityScore || 75;
+          if (quality.score >= minScore) {
+            activeTrade = {
+              ...signal,
+              qualityScore: quality.score,
+              entryTime: currentM15.ts,
+              initialStopLoss: signal.stopLoss,
+              isProfitLocked: false,
+              barsHeld: 0
+            };
+          }
         }
       }
     }
