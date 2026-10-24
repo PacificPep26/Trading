@@ -77,6 +77,37 @@ Các ô còn âm nhẹ sau cùng (đã xem, KHÔNG xử lý tiếp — mẫu nh�
 **Baseline mới (`freshH4Bars=8`, đã verify, CHƯA deploy):** PF 1.18, +34.19R,
 +$302.19/năm, win rate 46.2%, max drawdown -15.86R, 303 lệnh.
 
+## Walk-forward test đa năm (2021-2026) — phát hiện rủi ro còn tồn tại
+
+Dùng `scripts/backtest_multi_year.mjs` (mới) test D1 Gate qua 5 giai đoạn thị
+trường khác nhau, không chỉ sample 1 năm thuận lợi vừa verify:
+
+| Năm | Lệnh | Win Rate | PF | Tổng R |
+|---|---|---|---|---|
+| 2021 (Bull mạnh) | 63 | 47.6% | 1.32 | +10.57R |
+| 2022 (Bear mạnh - Luna/FTX) | 125 | 45.6% | 1.16 | +11.21R |
+| **2023 (Tích lũy/Sideway kéo dài)** | **272** | **36.8%** | **0.77** | **-40.27R** |
+| 2024 (Bull trở lại) | 180 | 41.1% | 1.09 | +9.18R |
+| 2025 (tới nay) | 392 | 46.2% | 1.25 | +53.53R |
+
+**2023 lỗ nặng -40.27R — CHƯA GIẢI QUYẾT, rủi ro còn tồn tại.** Đào sâu bằng
+`scripts/analyze_2023.mjs` (mới): nguyên nhân là **whipsaw/fakeout** (phá vỡ giả
+rồi đảo chiều liên tục), KHÁC với vấn đề D1 Gate vừa sửa (bỏ sót trend thật).
+Ngay cả setup "thuận trend" cũng lỗ nặng trong 2023 (`STRONG_UPTREND ×
+KANE_THUAN_TREND_LONG` -7.03R/22L, `STRONG_DOWNTREND × KANE_THUAN_TREND_SHORT`
+-10.51R/19L) — khác hẳn pattern "bắt dao rơi" đã sửa. Theo tháng: 5/12 tháng lỗ
+nặng (-10 đến -20R/tháng) xen giữa tháng lãi tốt — đặc trưng "crypto winter"
+2023 (biến động thấp, nhiễu cao). Điểm sáng duy nhất: `RANGING ×
+KANE_THUAN_TREND_LONG` vẫn lãi +8.88R/26L suốt năm — chưa rõ lý do, cần tìm hiểu
+thêm.
+
+**Chưa xử lý — ưu tiên cao cho phiên sau:** cần thêm bộ lọc chống whipsaw/fakeout
+(có thể dùng ADX threshold chặt hơn riêng cho giai đoạn biến động thấp kéo dài,
+hoặc yêu cầu xác nhận breakout bằng nhiều nến thay vì 1 nến như hiện tại) —
+KHÔNG được chỉnh mù, phải backtest lại cụ thể trên 2023 trước khi đụng live,
+vì baseline hiện tại (2025-2026) đang dương rất tốt, không được làm hỏng nó khi
+cố sửa 2023.
+
 ## Quy tắc bắt buộc cho các bước tiếp theo
 1. Mọi thay đổi logic thoát lệnh/entry phải test qua backtest full-history (không
    chỉ 1 tháng) TRƯỚC khi áp vào `src/engine.js`/`src/server.js`.
