@@ -75,6 +75,16 @@ Net +$475.34->**+$569.42**, và quan trọng nhất **tháng 10: -4.77R->+0.02R*
 tại là đúng đắn — chase breakout bị cá mập quét liên tục trong dữ liệu thật.
 KHÔNG thử lại hướng này nữa trừ khi có cơ sở hoàn toàn khác.
 
+**Thử Partial Exit (chốt 50% sớm, dời SL phần còn lại — kiểu Dr. Kane trade
+thủ công, người dùng gửi ảnh livestream thực tế) — THẤT BẠI, đã revert:**
+partialExitR=1.0: PF 1.47->**1.22**, Tổng R +60.32R->**+29.10R** (giảm 52%), Net
++$569.42->**+$255.75** (giảm 55%). partialExitR=1.5 (sát beTriggerR=1.4 sẵn có):
+gần như trung lập, không cải thiện (+60.08R, không đáng kể). Lý do: chốt sớm cắt
+mất lợi nhuận của các lệnh lẽ ra chạy trọn tới TP 2R+. Kết luận: cách Dr. Kane
+trade thủ công (chọn lọc bằng mắt, không áp dụng máy móc cho MỌI lệnh) không
+chuyển thành luật cứng cho bot được — thành công của ông đến từ phán đoán chọn
+lọc từng setup cụ thể, không phải 1 công thức partial-exit áp dụng đồng loạt.
+
 **Xác nhận lại bằng `backtest_by_regime.mjs` sau khi D1 Gate deploy:** giai đoạn
 STRONG_DOWNTREND (gộp mọi setup) lật từ **-10.52R → +7.74R**. Tổ hợp từng lỗ nặng
 `STRONG_DOWNTREND × SMC_SWEEP_REVERSAL_LONG` giảm từ 27 lệnh/-14.90R xuống còn 4
