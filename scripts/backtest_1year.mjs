@@ -33,7 +33,7 @@ const D1_MS = 24 * 60 * 60 * 1000;
 // Bắt đầu backtest chính thức từ 01/10/2025 (dữ liệu tháng 09/2025 dùng để warmup EMA 89 và Pivots)
 const START_BACKTEST_TS = new Date('2025-10-01T00:00:00Z').getTime();
 
-export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, customConfig = null) {
+export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, customConfig = null, startTs = null, endTs = null) {
   const cfg = customConfig || CONFIG;
   const symbol = instId.replace('-SWAP', '');
   const fH4 = path.join(CACHE_DIR, `${instId}_4H.json`);
@@ -56,9 +56,12 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
   const closedTrades = [];
   let activeTrade = null;
 
-  // Tìm index M15 bắt đầu từ 01/10/2025
-  let startIndex = candlesM15.findIndex(c => c.ts >= START_BACKTEST_TS);
+  // Tìm index M15 bắt đầu (mặc định 01/10/2025, có thể override để walk-forward
+  // test qua các giai đoạn lịch sử khác nhau - xem scripts/backtest_multi_year.mjs)
+  const effectiveStartTs = startTs !== null ? startTs : START_BACKTEST_TS;
+  let startIndex = candlesM15.findIndex(c => c.ts >= effectiveStartTs);
   if (startIndex < 50) startIndex = 50;
+  const effectiveEndTs = endTs !== null ? endTs : Infinity;
 
   // Pointers tối ưu hiệu năng O(1)
   let h4Pointer = 0;
@@ -70,6 +73,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
   for (let i = startIndex; i < candlesM15.length; i++) {
     const currentM15 = candlesM15[i];
     const m15CloseTime = currentM15.ts + M15_MS;
+    if (currentM15.ts > effectiveEndTs) break;
 
     // 1. Quản lý vị thế đang mở
     if (activeTrade) {
