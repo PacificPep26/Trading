@@ -101,12 +101,24 @@ nặng (-10 đến -20R/tháng) xen giữa tháng lãi tốt — đặc trưng "
 KANE_THUAN_TREND_LONG` vẫn lãi +8.88R/26L suốt năm — chưa rõ lý do, cần tìm hiểu
 thêm.
 
-**Chưa xử lý — ưu tiên cao cho phiên sau:** cần thêm bộ lọc chống whipsaw/fakeout
-(có thể dùng ADX threshold chặt hơn riêng cho giai đoạn biến động thấp kéo dài,
-hoặc yêu cầu xác nhận breakout bằng nhiều nến thay vì 1 nến như hiện tại) —
-KHÔNG được chỉnh mù, phải backtest lại cụ thể trên 2023 trước khi đụng live,
-vì baseline hiện tại (2025-2026) đang dương rất tốt, không được làm hỏng nó khi
-cố sửa 2023.
+**Đã thử 1 hướng cho whipsaw 2023/tháng 10 — THẤT BẠI, đã revert:** thêm đệm %
+yêu cầu breakout "dứt khoát" (`breakoutBufferPct`, đệm 0.1% qua đỉnh/đáy nến
+trước thay vì chỉ cần đóng cửa cao/thấp hơn 1 tick). Kết quả: cải thiện PF/DD
+trên baseline 1 năm thuận lợi (PF 1.36→1.48, DD -12.66R→-9.17R) NHƯNG làm tệ hơn
+đúng ở 2023 (PF 0.77→0.67, R -40.27→-40.71) và tháng 10 (PF 0.52→0.27, R
+-4.77→-5.87). Lý do: đợi phá dứt khoát = vào trễ hơn, trong thị trường chop vào
+trễ thường đúng lúc giá sắp quay đầu — ngược hướng cần. **Revert hoàn toàn.**
+
+**Chưa xử lý — ưu tiên cao cho phiên sau:** whipsaw 2023/sideway vẫn chưa có
+hướng xử lý nào thành công. Các hướng còn lại cần thử (chưa test):
+- Lọc theo ATR Compression chặt hơn RIÊNG cho giai đoạn kéo dài (không phải
+  đệm breakout) — ví dụ coin có `atrRatio` dưới ngưỡng N ngày liên tục thì tạm
+  dừng hẳn Kane Long/Short, không chỉ 1 bar như hiện tại.
+- Time-stop ngắn hơn khi đang whipsaw (thoát sớm hơn nếu không có lợi nhuận
+  sau N nến, thay vì chờ đủ 24 nến M15 như hiện tại).
+KHÔNG được chỉnh mù, phải backtest lại cụ thể trên 2023 + tháng 10 trước khi
+đụng live, vì baseline hiện tại (2025-2026) đang dương rất tốt, không được làm
+hỏng nó khi cố sửa 2023.
 
 ## Quy tắc bắt buộc cho các bước tiếp theo
 1. Mọi thay đổi logic thoát lệnh/entry phải test qua backtest full-history (không
