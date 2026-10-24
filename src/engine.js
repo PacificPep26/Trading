@@ -201,7 +201,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, btcH1
   if (barsSinceH4Close < 0) {
     return null;
   }
-  const isFreshH4 = barsSinceH4Close <= 4;
+  const freshH4Bars = config.freshH4Bars !== undefined ? config.freshH4Bars : 4;
+  const isFreshH4 = barsSinceH4Close <= freshH4Bars;
 
   // 1. Chỉ báo Kane VIP: EMA 34 & EMA 89 trên khung H4
   const closesH4 = candlesH4.map(c => c.close);
