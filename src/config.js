@@ -191,7 +191,7 @@ export const INDICATOR_CONFIG = {
   // ngày) chưa kịp làm EMA doãng ra đủ để báo STRONG_UPTREND/DOWNTREND. Bổ sung
   // kiểm tra % thay đổi giá trong N nến H4 gần nhất để cấm bắt dao rơi/cản tàu
   // đúng lúc ngay cả khi EMA-phase còn báo RANGING.
-  momentumLookbackBars: parseInt(process.env.MOMENTUM_LOOKBACK_BARS || '6', 10),
+  momentumLookbackBars: parseInt(process.env.MOMENTUM_LOOKBACK_BARS || '12', 10),
   momentumThresholdPct: parseFloat(process.env.MOMENTUM_THRESHOLD_PCT || '4', 10)
 };
 
