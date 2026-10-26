@@ -88,6 +88,20 @@ TỨC** (0 cũng thỏa >=0) thay vì tắt tính năng — đã thêm guard
 **ĐÃ DEPLOY** (commit `4268b2e`, Railway `TIME_STOP_BARS=0`) — baseline hiện
 tại trùng khớp chính xác số liệu đã verify ở trên.
 
+## Review kỹ thuật bên ngoài (26/10) — xác minh từng điểm bằng công cụ thật
+
+| Claim | Kết quả xác minh | Hành động |
+|---|---|---|
+| Lỗi cú pháp crash (`-` đầu dòng, thiếu `*`) | **SAI** — `node --check` pass sạch, grep không tìm thấy pattern lỗi nào | Không làm gì |
+| Chop filter chặn luôn `tryZoneReactionSetup` qua `return` sớm | **ĐÚNG** | **Đã sửa** (commit `1956540`) — dùng cờ `chopBlockedSignal`, chỉ gate Kane Long/Short. Backtest xác nhận an toàn 100% (245 lệnh/PF 1.47 y hệt trước sửa) |
+| Thiếu `hasBearishPattern` trong Kane Short | Đã đúng sẵn (đang edit dở lúc review chụp ảnh) | Không cần sửa |
+| `lastH1` BTC có thể là nến đang chạy, giật cờ | **SAI** — `server.js:563` đã filter `confirm===1` trước khi truyền vào | Không làm gì |
+| Lệch chuẩn tiêu chí quét cản Long (`low<sup` xuyên qua) vs Short (`<=0.8%` chạm hờ) | **ĐÚNG** | **Đã sửa, BẬT mặc định** (commit `7c8423a`) — PF 1.47→**1.52**, +$569→**+$596** |
+| RS Score cho 15đ dù coin chỉ +0.1% khi BTC +5% (dùng ngưỡng tuyệt đối thay vì spread) | **ĐÚNG** (logic flaw có thật) | **Đã thử sửa theo spread — THẤT BẠI**, PF 1.52→1.42, Tổng R +62.92R→+42.70R, **tháng 10: +0.02R→-11.85R** (tệ nhất cả phiên). Đã revert. Ngưỡng strict hơn lọc bớt quá nhiều lệnh tốt |
+
+**Baseline cuối cùng sau review (đang live):** PF 1.52, +62.92R/năm, +$596.55,
+Max DD -15.55R, 238 lệnh.
+
 **Mở rộng `momentumLookbackBars` 6->12 (ĐÃ DEPLOY, commit `ac81d1e`):** phân tích
 chi tiết từng lệnh tháng 10 phát hiện 11/11 lệnh Long đều thua trong khi 2/2
 lệnh Short đều thắng lớn — cửa sổ momentum cũ (24h) quá ngắn để thấy cú giảm
