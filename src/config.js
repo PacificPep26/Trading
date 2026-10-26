@@ -64,8 +64,20 @@ export const EXIT_CONFIG = {
   // Đệm bù phí sàn khi dời hòa vốn (0.12% để gánh trọn vẹn phí Taker + trượt giá)
   beBufferRate: 0.0012,
 
-  // Time-stop: Sau 24 nến M15 (6 tiếng) cho SMC M15 đủ thời gian phát triển trọn vẹn sóng
-  timeStopBars: parseInt(process.env.TIME_STOP_BARS || '24', 10),
+  // Time-stop: TẮT HẲN theo mặc định (0). Backtest full-history xác nhận: mọi
+  // giá trị Time-Stop đã test (16/48/96/150 nến) đều làm hồi quy nghiêm trọng
+  // so với tắt hẳn (16 nến: PF 0.86/-7.48R, 150 nến: PF 1.20/+29.10R, TẮT: PF
+  // 1.47/+60.32R) - cắt cụt setup H4 đang tích lũy lành mạnh trước khi có đủ
+  // 2-4 nến H4 (8-16h) để phát triển. Xem docs/REGIME_ADAPTIVE_PLAN.md.
+  timeStopBars: parseInt(process.env.TIME_STOP_BARS || '0', 10),
+
+  // CHẾ ĐỘ TIME-STOP: 'BARS' (mặc định, đếm nến M15 cố định - hành vi cũ) hoặc
+  // 'H4_CONDITION' (thử nghiệm: đóng khi nến H4 gần nhất đảo hướng HOẶC giá
+  // chưa di chuyển đủ 0.5xATR(H4), không đếm nến cố định - xem
+  // docs/ENGINE_LOGIC_GUIDE.md Phần 7). timeStopMinBars = sàn tối thiểu trước
+  // khi xét điều kiện H4_CONDITION (mặc định 16 = ~1 nến H4/4h).
+  timeStopMode: process.env.TIME_STOP_MODE || 'BARS',
+  timeStopMinBars: parseInt(process.env.TIME_STOP_MIN_BARS || '16', 10),
 
   // Quy tắc SMC Không Đuổi Giá (No-Chasing Rule): Không mở lệnh nếu khoảng cách SL > 2.5% giá vào
   maxSlDistanceRate: 0.025,
@@ -251,6 +263,8 @@ export const BOT_CONFIG = {
   lockProfitR: EXIT_CONFIG.lockProfitR,
   beBufferRate: EXIT_CONFIG.beBufferRate,
   timeStopBars: EXIT_CONFIG.timeStopBars,
+  timeStopMode: EXIT_CONFIG.timeStopMode,
+  timeStopMinBars: EXIT_CONFIG.timeStopMinBars,
   maxSlDistanceRate: EXIT_CONFIG.maxSlDistanceRate,
   atrBufferMultiplier: EXIT_CONFIG.atrBufferMultiplier,
 

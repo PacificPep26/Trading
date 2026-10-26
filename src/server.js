@@ -320,8 +320,13 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     return;
   }
 
-  // 3. Kiểm tra Time-Stop (16 nến M15 = 4 tiếng lình xình đi ngang +-0.3R)
-  if (pos.currentBarsM15 >= CONFIG.timeStopBars && Math.abs(currentR) <= 0.3) {
+  // 3. Kiểm tra Time-Stop (lình xình đi ngang +-0.3R sau N nến M15).
+  // timeStopBars=0 hoặc falsy = TẮT HẲN (backtest full-history xác nhận Time-
+  // Stop ngắn làm cắt cụt setup H4 đang tích lũy lành mạnh -> lật từ +60.32R
+  // thành -7.48R/năm, xem docs/REGIME_ADAPTIVE_PLAN.md). Bắt buộc check
+  // > 0 tường minh, không dùng trực tiếp >= vì 0 nến cũng thỏa >= khiến lệnh
+  // bị đóng ngay lập tức thay vì tắt tính năng.
+  if (CONFIG.timeStopBars > 0 && pos.currentBarsM15 >= CONFIG.timeStopBars && Math.abs(currentR) <= 0.3) {
     const pnlPrice = isLong ? (currentPrice - pos.entry) : (pos.entry - currentPrice);
     const grossPnl = pnlPrice * pos.sizing.size;
     const fee = pos.sizing.notional * CONFIG.feeRate;

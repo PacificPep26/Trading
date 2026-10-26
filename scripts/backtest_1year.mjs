@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { normalizeCandle } from '../src/indicators.js';
+import { normalizeCandle, calculateATR } from '../src/indicators.js';
 import { evaluateMarket, calculateSetupQualityScore } from '../src/engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
 
@@ -75,6 +75,31 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
     const m15CloseTime = currentM15.ts + M15_MS;
     if (currentM15.ts > effectiveEndTs) break;
 
+    // Cập nhật con trỏ nến khung lớn LUÔN LUÔN (kể cả khi đang có lệnh mở) để
+    // Time-Stop theo điều kiện H4 (bên dưới) có đúng ngữ cảnh khung lớn tại
+    // mọi thời điểm, không chỉ lúc quét tín hiệu mới.
+    while (h4Pointer + 1 < candlesH4.length && candlesH4[h4Pointer + 1].ts + H4_MS <= m15CloseTime) {
+      h4Pointer++;
+    }
+    while (h1Pointer + 1 < candlesH1.length && candlesH1[h1Pointer + 1].ts + H1_MS <= m15CloseTime) {
+      h1Pointer++;
+    }
+    if (btcH1Candles && btcH1Candles.length > 0) {
+      while (btcH1Pointer + 1 < btcH1Candles.length && btcH1Candles[btcH1Pointer + 1].ts + H1_MS <= m15CloseTime) {
+        btcH1Pointer++;
+      }
+    }
+    if (btcH4Candles && btcH4Candles.length > 0) {
+      while (btcH4Pointer + 1 < btcH4Candles.length && btcH4Candles[btcH4Pointer + 1].ts + H4_MS <= m15CloseTime) {
+        btcH4Pointer++;
+      }
+    }
+    if (candlesD1.length > 0) {
+      while (d1Pointer + 1 < candlesD1.length && candlesD1[d1Pointer + 1].ts + D1_MS <= m15CloseTime) {
+        d1Pointer++;
+      }
+    }
+
     // 1. Quản lý vị thế đang mở
     if (activeTrade) {
       activeTrade.barsHeld++;
@@ -92,6 +117,51 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         activeTrade.stopLoss = isLong
           ? activeTrade.entry + (cfg.lockProfitR * riskDist)
           : activeTrade.entry - (cfg.lockProfitR * riskDist);
+      }
+
+      // TIME-STOP: 2 chế độ (cfg.timeStopMode, mặc định 'BARS' = hành vi live
+      // hiện tại - đếm nến M15 cố định). 'H4_CONDITION' là thử nghiệm mới:
+      // không đếm nến cố định mà đóng chủ động CHỈ KHI nến H4 gần nhất đã
+      // đóng NGƯỢC hướng kỳ vọng, HOẶC giá chưa di chuyển đủ 0.5xATR(H4) kể
+      // từ lúc vào lệnh - tránh cắt cụt 1 cấu trúc H4 (8-16h) chỉ vì đếm nến
+      // M15 đơn thuần (góp ý review kỹ thuật, xem docs/ENGINE_LOGIC_GUIDE.md).
+      const currentR = isLong
+        ? (currentM15.close - activeTrade.entry) / riskDist
+        : (activeTrade.entry - currentM15.close) / riskDist;
+      const timeStopMode = cfg.timeStopMode || 'BARS';
+      let isTimeStopTriggered = false;
+      if (timeStopMode === 'BARS') {
+        isTimeStopTriggered = cfg.timeStopBars && activeTrade.barsHeld >= cfg.timeStopBars && Math.abs(currentR) <= 0.3;
+      } else if (timeStopMode === 'H4_CONDITION') {
+        const minBars = cfg.timeStopMinBars || 16; // sàn tối thiểu ~1 nến H4 (4h)
+        if (activeTrade.barsHeld >= minBars && h4Pointer >= 14) {
+          const visH4ForAtr = candlesH4.slice(Math.max(0, h4Pointer - 30), h4Pointer + 1);
+          const atrArrH4 = calculateATR(visH4ForAtr, 14);
+          const atrH4 = atrArrH4[atrArrH4.length - 1];
+          const lastH4Candle = candlesH4[h4Pointer];
+          const isH4Reversed = lastH4Candle ? (isLong ? lastH4Candle.close < lastH4Candle.open : lastH4Candle.close > lastH4Candle.open) : false;
+          const displacement = Math.abs(currentM15.close - activeTrade.entry);
+          const isStalled = atrH4 ? displacement < 0.5 * atrH4 : false;
+          isTimeStopTriggered = isH4Reversed || isStalled;
+        }
+      }
+      if (isTimeStopTriggered) {
+        const exitPrice = currentM15.close;
+        const grossPnl = isLong
+          ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
+          : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
+        const fee = activeTrade.sizing.notional * cfg.feeRate;
+        const netPnl = grossPnl - fee;
+        closedTrades.push({
+          ...activeTrade,
+          exitTime: m15CloseTime,
+          exitPrice,
+          outcome: 'TIME_STOP',
+          netR: currentR,
+          netUsd: netPnl
+        });
+        activeTrade = null;
+        continue;
       }
 
       // Kiểm tra chạm SL và TP
@@ -138,30 +208,9 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
       }
     }
 
-    // 2. Quét tín hiệu vào lệnh mới nếu chưa có vị thế
+    // 2. Quét tín hiệu vào lệnh mới nếu chưa có vị thế (con trỏ đã cập nhật ở
+    // trên, dùng chung cho cả quản lý lệnh mở lẫn quét tín hiệu mới)
     if (!activeTrade) {
-      // Cập nhật pointers để lọc hoàn toàn Look-Ahead Bias cực nhanh
-      while (h4Pointer + 1 < candlesH4.length && candlesH4[h4Pointer + 1].ts + H4_MS <= m15CloseTime) {
-        h4Pointer++;
-      }
-      while (h1Pointer + 1 < candlesH1.length && candlesH1[h1Pointer + 1].ts + H1_MS <= m15CloseTime) {
-        h1Pointer++;
-      }
-      if (btcH1Candles && btcH1Candles.length > 0) {
-        while (btcH1Pointer + 1 < btcH1Candles.length && btcH1Candles[btcH1Pointer + 1].ts + H1_MS <= m15CloseTime) {
-          btcH1Pointer++;
-        }
-      }
-      if (btcH4Candles && btcH4Candles.length > 0) {
-        while (btcH4Pointer + 1 < btcH4Candles.length && btcH4Candles[btcH4Pointer + 1].ts + H4_MS <= m15CloseTime) {
-          btcH4Pointer++;
-        }
-      }
-      if (candlesD1.length > 0) {
-        while (d1Pointer + 1 < candlesD1.length && candlesD1[d1Pointer + 1].ts + D1_MS <= m15CloseTime) {
-          d1Pointer++;
-        }
-      }
 
       // Đảm bảo đủ nến làm ấm (EMA 89 cần ~90 nến H4)
       if (h4Pointer >= 90 && h1Pointer >= 15 && i >= 5) {
