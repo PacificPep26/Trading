@@ -8,3 +8,5 @@ logs/
 data/last_briefing.txt
 data/trade_history.json
 
+data/parameter_sweep_results.json
+data/variants_multi_year_results.json

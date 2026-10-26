@@ -201,6 +201,39 @@ KHÔNG được chỉnh mù, phải backtest lại cụ thể trên 2023 + thán
 đụng live, vì baseline hiện tại (2025-2026) đang dương rất tốt, không được làm
 hỏng nó khi cố sửa 2023.
 
+## Phần 6 — Research mở rộng kỹ thuật ngoài (26/10): Volume Profile & ICT Breaker Block
+Theo yêu cầu "mở rộng tư duy, tìm nguồn trên mạng cải thiện" — research qua
+WebSearch 3 hướng (Volume Profile/Order Flow, ICT SMC nâng cao, Wyckoff). Kết
+luận research (xem chi tiết đầy đủ tại
+`docs/strategies/VOLUME_PROFILE_BREAKER.md`): Order Flow/CVD thật **không khả
+thi** (OKX public REST không có tick/footprint data). Wyckoff Spring/UTAD về
+bản chất **đã có sẵn** trong engine (trùng `classifyLiquidityTiers` sweep
+logic). 2 ý tưởng mới thật sự khả thi với OHLCV sẵn có, đã code + test:
+
+| Kỹ thuật | Hàm | Trạng thái | Kết quả backtest 1 năm (so baseline PF 1.52/+62.92R/238L) |
+|---|---|---|---|
+| Volume Profile POC/VAH/VAL làm cản bổ sung Zone Reaction | `calculateVolumeProfile()` indicators.js | ❌ Test xong, KHÔNG bật mặc định | PF 1.52→**1.44** (giảm), Tổng R +62.92→**+78.70R** (tăng do 334L thay 238L), DD -15.55→-15.72R (tệ hơn nhẹ). Thêm nhiều lệnh nhưng pha loãng chất lượng — PF giảm rõ, không đạt chuẩn "cải thiện thật" của dự án. |
+| ICT Breaker Block retest làm cản bổ sung Zone Reaction | `findBreakerBlocks()` indicators.js | ❌ Test xong, KHÔNG bật mặc định | PF 1.52→**1.27** (giảm mạnh), Tổng R +62.92→**+46.13R** (giảm), DD -15.55→**-18.32R** (tệ hơn). Tệ hơn baseline ở cả 3/3 chỉ số chính — revert hoàn toàn. |
+
+**Update cùng ngày — đã thử tiếp cả 2 hướng gợi ý (V2):** Volume Profile chỉ
+bật khi `d1Phase==='RANGING'` → **TỆ HƠN cả V1** (PF 1.34, +53.68R). Breaker
+Block đổi từ OR (thêm cản mới) sang AND filter (chỉ giữ cản hiện có trùng
+vùng breaker) → PF nhích nhẹ 1.52→1.55 nhưng DD tệ hơn rõ -15.55→-17.74R, 2/4
+chỉ số đứng yên — không đạt chuẩn đánh đổi được. Cả 4 lần thử (V1×2, V2×2) đều
+không vượt baseline. Dừng research hướng này. Chi tiết đầy đủ:
+`docs/strategies/VOLUME_PROFILE_BREAKER.md` Phần 5.
+
+**Quyết định:** Giữ `useVolumeProfile`/`useBreakerBlocks` mặc định `false` trong
+`src/config.js` (opt-in qua env `USE_VOLUME_PROFILE=true`/`USE_BREAKER_BLOCKS=true`
+để ai muốn tái test sau có thể làm ngay, không cần sửa code). Code (hàm +
+test unit `scripts/check.mjs` mục 19, 88/88 PASS) **vẫn giữ lại trong repo**
+làm thư viện tham khảo cho agent sau — có thể hữu ích nếu kết hợp với điều
+kiện lọc khác (ví dụ chỉ dùng VP làm cản khi `d1Phase === 'RANGING'` thay vì
+luôn luôn), nhưng đó là hướng CHƯA thử, không phải kết luận cuối. Không deploy
+lên Railway (live path vẫn chạy baseline `7c8423a`, verify qua
+`node src/server.js --single-run` xác nhận scanner hoạt động bình thường với
+cờ mặc định tắt).
+
 ## Quy tắc bắt buộc cho các bước tiếp theo
 1. Mọi thay đổi logic thoát lệnh/entry phải test qua backtest full-history (không
    chỉ 1 tháng) TRƯỚC khi áp vào `src/engine.js`/`src/server.js`.

@@ -219,7 +219,30 @@ export const INDICATOR_CONFIG = {
   // (đòi Short cũng phải lastH4.high>res) cải thiện: PF 1.47->1.52, Tổng R
   // +60.32R->+62.92R, Net +$569->+$596 (DD hơi tệ hơn -13.20R->-15.55R, chấp
   // nhận được vì 3/4 chỉ số chính đều tốt lên). BẬT mặc định.
-  strictShortSweep: process.env.STRICT_SHORT_SWEEP !== 'false'
+  strictShortSweep: process.env.STRICT_SHORT_SWEEP !== 'false',
+
+  // VOLUME PROFILE (POC/VAH/VAL) làm cản bổ sung cho SMC Zone Reaction. Mặc
+  // định TẮT - PHẢI backtest trước khi bật, xem calculateVolumeProfile() trong
+  // src/indicators.js và docs/strategies/VOLUME_PROFILE_BREAKER.md.
+  useVolumeProfile: process.env.USE_VOLUME_PROFILE === 'true',
+  volumeProfileMode: process.env.VOLUME_PROFILE_MODE || 'RANGING_ONLY',
+  volumeProfileLookback: parseInt(process.env.VOLUME_PROFILE_LOOKBACK || '50', 10),
+  volumeProfileValueAreaPct: parseFloat(process.env.VOLUME_PROFILE_VA_PCT || '0.70'),
+  volumeProfileNumBins: parseInt(process.env.VOLUME_PROFILE_NUM_BINS || '24', 10),
+
+  // ICT BREAKER BLOCK RETEST làm bộ lọc xác nhận thêm (AND) cho các cản SMC
+  // Zone Reaction đã có. Kiểm chứng chặt (Parameter Sweep 38 tổ hợp + backtest
+  // đa năm 2021-2026, >1.1 triệu nến M15 - xem docs/strategies/VOLUME_PROFILE_BREAKER.md
+  // Phần 7-9): bộ pivotL=1/pivotR=1 + AND_FILTER thắng baseline trên CẢ 1-năm
+  // (PF 1.52->1.59, Tổng R +62.92R->+62.21R gần như ngang) VÀ multi-year
+  // (PF 1.10->1.13, Tổng R +50.45R->+61.81R, +11.36R thật trên 5 năm, cả 5/5
+  // năm bằng hoặc tốt hơn, 2021 lật từ âm sang dương). Đánh đổi duy nhất: Max
+  // DD 1-năm tệ hơn -15.55R->-17.74R (~+14%, chấp nhận được, cùng mức đánh đổi
+  // đã chấp nhận trước đó với strictShortSweep). BẬT mặc định.
+  useBreakerBlocks: process.env.USE_BREAKER_BLOCKS !== 'false',
+  breakerBlockMode: process.env.BREAKER_BLOCK_MODE || 'AND_FILTER',
+  breakerPivotL: parseInt(process.env.BREAKER_PIVOT_L || '1', 10),
+  breakerPivotR: parseInt(process.env.BREAKER_PIVOT_R || '1', 10)
 };
 
 // ====================================================================
@@ -295,6 +318,15 @@ export const BOT_CONFIG = {
   momentumThresholdPct: INDICATOR_CONFIG.momentumThresholdPct,
   requirePricePattern: INDICATOR_CONFIG.requirePricePattern,
   strictShortSweep: INDICATOR_CONFIG.strictShortSweep,
+  useVolumeProfile: INDICATOR_CONFIG.useVolumeProfile,
+  volumeProfileMode: INDICATOR_CONFIG.volumeProfileMode,
+  volumeProfileLookback: INDICATOR_CONFIG.volumeProfileLookback,
+  volumeProfileValueAreaPct: INDICATOR_CONFIG.volumeProfileValueAreaPct,
+  volumeProfileNumBins: INDICATOR_CONFIG.volumeProfileNumBins,
+  useBreakerBlocks: INDICATOR_CONFIG.useBreakerBlocks,
+  breakerBlockMode: INDICATOR_CONFIG.breakerBlockMode,
+  breakerPivotL: INDICATOR_CONFIG.breakerPivotL,
+  breakerPivotR: INDICATOR_CONFIG.breakerPivotR,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,

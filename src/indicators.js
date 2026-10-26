@@ -929,6 +929,164 @@ export function calculateATRCompression(candles, atrPeriod = 14, smaPeriod = 50)
   return curAtr / avgAtr;
 }
 
+/**
+ * VOLUME PROFILE (POC / VALUE AREA HIGH / VALUE AREA LOW)
+ * Phân bổ khối lượng giao dịch (vol) của N nến gần nhất (mặc định 50 nến H4,
+ * ~8.3 ngày) vào các "bin" giá, mô phỏng Market Profile / Volume Profile mà
+ * trader chuyên nghiệp dùng để tìm vùng giá "được công nhận giá trị nhất".
+ * - POC (Point of Control): mức giá (bin) có khối lượng giao dịch lớn nhất.
+ * - Value Area (VAH/VAL): vùng giá hẹp nhất chứa >= valueAreaPct (mặc định 70%)
+ *   tổng khối lượng, mở rộng ra từ POC theo bin có volume lớn hơn ở mỗi bước.
+ * CẢNH BÁO (đã kiểm chứng qua research bên ngoài): đây là chỉ báo mean-reversion
+ * thuần túy, dùng riêng lẻ "revert to POC" sẽ bị trend mạnh nghiền nát - BẮT
+ * BUỘC kết hợp với bộ lọc marketPhase/d1Phase đã có trong engine.js, không
+ * dùng làm điều kiện đứng một mình.
+ * @param {Array<{high:number, low:number, close:number, vol:number}>} candles
+ * @param {number} lookback - Số nến gần nhất đưa vào tính Volume Profile (mặc định 50)
+ * @param {number} numBins - Số bin chia biên độ giá (mặc định 24)
+ * @param {number} valueAreaPct - Tỷ lệ khối lượng Value Area (mặc định 0.70)
+ * @returns {{poc:number|null, vah:number|null, val:number|null, bins:Array<{price:number, vol:number}>, totalVol:number}}
+ */
+const VP_MEMO = new Map();
+export function calculateVolumeProfile(candles, lookback = 50, numBins = 24, valueAreaPct = 0.70) {
+  if (!candles || candles.length < 5) {
+    return { poc: null, vah: null, val: null, bins: [], totalVol: 0 };
+  }
+  const lastC = candles[candles.length - 1];
+  const memoKey = `${lastC?.ts}_${lastC?.close}_${candles.length}_${lookback}_${numBins}_${valueAreaPct}`;
+  if (VP_MEMO.has(memoKey)) return VP_MEMO.get(memoKey);
+  const slice = candles.slice(-lookback);
+  const high = Math.max(...slice.map(c => c.high));
+  const low = Math.min(...slice.map(c => c.low));
+  const range = high - low;
+  if (range <= 0) return { poc: null, vah: null, val: null, bins: [], totalVol: 0 };
+
+  const binSize = range / numBins;
+  const binVols = new Array(numBins).fill(0);
+
+  // Phân bổ đều volume mỗi nến vào các bin mà biên độ [low, high] của nến đó phủ qua
+  // (xấp xỉ chuẩn ngành khi không có dữ liệu tick thật - "uniform distribution proxy")
+  for (const c of slice) {
+    const cLow = Math.max(c.low, low);
+    const cHigh = Math.min(c.high, high);
+    if (cHigh <= cLow) continue;
+    const startBin = Math.floor((cLow - low) / binSize);
+    const endBin = Math.min(numBins - 1, Math.floor((cHigh - low) / binSize));
+    const spanBins = endBin - startBin + 1;
+    const volPerBin = (c.vol || 0) / spanBins;
+    for (let b = startBin; b <= endBin; b++) {
+      binVols[b] += volPerBin;
+    }
+  }
+
+  const totalVol = binVols.reduce((a, b) => a + b, 0);
+  const bins = binVols.map((vol, i) => ({ price: low + (i + 0.5) * binSize, vol }));
+  if (totalVol <= 0) return { poc: null, vah: null, val: null, bins, totalVol: 0 };
+
+  let pocIdx = 0;
+  for (let i = 1; i < binVols.length; i++) {
+    if (binVols[i] > binVols[pocIdx]) pocIdx = i;
+  }
+
+  // Mở rộng Value Area từ POC ra 2 bên, luôn chọn bên có volume lớn hơn để thêm vào
+  let lowIdx = pocIdx;
+  let highIdx = pocIdx;
+  let accVol = binVols[pocIdx];
+  const targetVol = totalVol * valueAreaPct;
+
+  while (accVol < targetVol && (lowIdx > 0 || highIdx < numBins - 1)) {
+    const nextLowVol = lowIdx > 0 ? binVols[lowIdx - 1] : -1;
+    const nextHighVol = highIdx < numBins - 1 ? binVols[highIdx + 1] : -1;
+    if (nextHighVol >= nextLowVol) {
+      highIdx++;
+      accVol += binVols[highIdx];
+    } else {
+      lowIdx--;
+      accVol += binVols[lowIdx];
+    }
+  }
+
+  const vpResult = {
+    poc: bins[pocIdx].price,
+    vah: bins[highIdx].price + binSize / 2,
+    val: bins[lowIdx].price - binSize / 2,
+    bins,
+    totalVol
+  };
+  if (VP_MEMO.size > 10000) VP_MEMO.clear();
+  VP_MEMO.set(memoKey, vpResult);
+  return vpResult;
+}
+
+/**
+ * ICT BREAKER BLOCK: order block (vùng tích lũy trước cú đẩy mạnh) đã bị PHÁ
+ * VỠ THẤT BẠI (giá quay lại xuyên qua nó) rồi sau đó được RETEST từ phía đối
+ * diện - khác biệt với Zone Reaction (test lại pivot/cản còn "nguyên vẹn"),
+ * breaker đòi hỏi đã có 1 lần thất bại trước đó, lọc chặt hơn cho giai đoạn
+ * sideway nhiều cản giả.
+ *
+ * Quy tắc nhận diện (giản lược, dùng được với OHLCV H4/H1):
+ * 1. Bullish Breaker: tìm swing low (fractal) bị quét xuyên qua (giá sau đó
+ *    đóng nến dưới đáy đó = "order block giảm thất bại"), rồi giá bật tăng
+ *    mạnh phá qua swing high gần nhất sau đó (xác nhận cấu trúc đảo chiều) ->
+ *    vùng [low thấp nhất của chuỗi nến đã tạo ra swing low đó, high của nến
+ *    đó] trở thành breaker hỗ trợ cho lần retest tiếp theo.
+ * 2. Bearish Breaker: đối xứng, swing high bị quét xuyên qua rồi giá gãy
+ *    mạnh qua swing low gần nhất -> vùng đó trở thành breaker kháng cự.
+ * @param {Array} candles Nến H4 hoặc H1 theo thứ tự tăng dần, đã confirm=1
+ * @param {number} pivotL/pivotR Tham số fractal pivot (mặc định 2/2)
+ * @returns {Array<{type:'BULLISH'|'BEARISH', top:number, bottom:number, formedAtIndex:number, isMitigated:boolean}>}
+ */
+const BREAKER_MEMO = new Map();
+export function findBreakerBlocks(candles, pivotL = 2, pivotR = 2) {
+  if (!candles || candles.length < pivotL + pivotR + 5) return [];
+  const lastC = candles[candles.length - 1];
+  const memoKey = `${lastC?.ts}_${lastC?.close}_${candles.length}_${pivotL}_${pivotR}`;
+  if (BREAKER_MEMO.has(memoKey)) return BREAKER_MEMO.get(memoKey);
+  const pivots = findFractalPivots(candles, pivotL, pivotR);
+  const breakers = [];
+
+  const highs = pivots.filter(p => p.type === 'HIGH');
+  const lows = pivots.filter(p => p.type === 'LOW');
+
+  // Bearish Breaker: swing high bị quét xuyên qua (giá đóng vượt lên), sau đó
+  // gãy mạnh xuống phá qua swing low kế tiếp gần nhất -> vùng swing high đó
+  // (từ chính nến tạo pivot) trở thành breaker kháng cự cho lần retest sau.
+  for (const sh of highs) {
+    const breakIdx = candles.findIndex((c, i) => i > sh.index + pivotR && c.close > sh.price);
+    if (breakIdx === -1) continue;
+    const nextLow = lows.find(l => l.index > sh.index && l.index <= breakIdx);
+    const structureBreakIdx = candles.findIndex((c, i) => i > breakIdx && nextLow && c.close < nextLow.price);
+    if (!nextLow || structureBreakIdx === -1) continue;
+
+    const formedCandle = candles[sh.index];
+    const top = formedCandle.high;
+    const bottom = Math.min(formedCandle.open, formedCandle.close);
+    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.high >= bottom && c.high <= top);
+    breakers.push({ type: 'BEARISH', top, bottom, formedAtIndex: sh.index, isMitigated });
+  }
+
+  // Bullish Breaker: đối xứng - swing low bị quét xuyên qua, giá bật mạnh
+  // phá qua swing high kế tiếp -> vùng swing low đó trở thành breaker hỗ trợ.
+  for (const sl of lows) {
+    const breakIdx = candles.findIndex((c, i) => i > sl.index + pivotR && c.close < sl.price);
+    if (breakIdx === -1) continue;
+    const nextHigh = highs.find(h => h.index > sl.index && h.index <= breakIdx);
+    const structureBreakIdx = candles.findIndex((c, i) => i > breakIdx && nextHigh && c.close > nextHigh.price);
+    if (!nextHigh || structureBreakIdx === -1) continue;
+
+    const formedCandle = candles[sl.index];
+    const bottom = formedCandle.low;
+    const top = Math.max(formedCandle.open, formedCandle.close);
+    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.low <= top && c.low >= bottom);
+    breakers.push({ type: 'BULLISH', top, bottom, formedAtIndex: sl.index, isMitigated });
+  }
+
+  if (BREAKER_MEMO.size > 10000) BREAKER_MEMO.clear();
+  BREAKER_MEMO.set(memoKey, breakers);
+  return breakers;
+}
+
 
 
 

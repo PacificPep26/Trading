@@ -21,7 +21,9 @@ import {
   detectPreviousBarSweep,
   calculateADX,
   calculateATRCompression,
-  detectCandlePattern
+  detectCandlePattern,
+  calculateVolumeProfile,
+  findBreakerBlocks
 } from '../src/indicators.js';
 
 import {
@@ -629,6 +631,53 @@ console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Pric
   assert(detectCandlePattern(insideBar, 1).includes('INSIDE_BAR'), 'Nhận diện chuẩn xác Inside Bar (nằm trọn trong biên độ nến trước)');
 
   assert(detectCandlePattern([], 0).length === 0, 'Trả về mảng rỗng an toàn khi không có dữ liệu nến');
+}
+
+// ==========================================================================
+// 19. KIỂM TRA VOLUME PROFILE (POC/VAH/VAL) & ICT BREAKER BLOCK
+// ==========================================================================
+{
+  console.log('\n19. Kiểm tra Volume Profile & ICT Breaker Block:');
+
+  // POC phải nằm đúng tại bin có volume cao nhất (nến giữa, volume đột biến)
+  const vpCandles = [];
+  for (let i = 0; i < 10; i++) {
+    vpCandles.push({ ts: i, open: 100, high: 101, low: 99, close: 100, vol: 10 });
+  }
+  vpCandles.push({ ts: 10, open: 110, high: 111, low: 109, close: 110, vol: 500 });
+  for (let i = 11; i < 20; i++) {
+    vpCandles.push({ ts: i, open: 100, high: 101, low: 99, close: 100, vol: 10 });
+  }
+  const vp = calculateVolumeProfile(vpCandles, 50, 24, 0.70);
+  assert(vp.poc !== null && vp.poc >= 109 && vp.poc <= 111, `POC trúng vùng volume đột biến (poc=${vp.poc?.toFixed(2)})`);
+  assert(vp.vah !== null && vp.val !== null && vp.vah > vp.val, 'VAH luôn lớn hơn VAL (Value Area hợp lệ)');
+
+  const emptyVp = calculateVolumeProfile([], 50);
+  assert(emptyVp.poc === null, 'Volume Profile trả về null an toàn khi không có dữ liệu nến');
+
+  // Breaker Block: swing low pivot rõ ràng (idx4), sau đó giá quét xuyên qua
+  // (đóng dưới đáy đó = order block "thất bại"), rồi bật tăng mạnh phá qua
+  // swing high kế tiếp (idx7) -> xác nhận cấu trúc đảo chiều BULLISH breaker.
+  const breakerCandles = [
+    { ts: 0, open: 100, high: 101, low: 99, close: 100 },
+    { ts: 1, open: 100, high: 102, low: 98, close: 101 },
+    { ts: 2, open: 101, high: 103, low: 97, close: 102 },
+    { ts: 3, open: 102, high: 103, low: 96, close: 101 },
+    { ts: 4, open: 101, high: 102, low: 95, close: 100 }, // swing low pivot = 95
+    { ts: 5, open: 100, high: 103, low: 97, close: 102 },
+    { ts: 6, open: 102, high: 104, low: 98, close: 103 },
+    { ts: 7, open: 103, high: 106, low: 100, close: 105 }, // swing high pivot = 106
+    { ts: 8, open: 105, high: 104, low: 101, close: 103 },
+    { ts: 9, open: 103, high: 103, low: 99, close: 101 },
+    { ts: 10, open: 101, high: 102, low: 93, close: 94 },  // phá dưới swing low 95
+    { ts: 11, open: 94, high: 96, low: 93, close: 95 },
+    { ts: 12, open: 95, high: 108, low: 94, close: 107 }   // phá qua swing high 106 -> xác nhận
+  ];
+
+  const breakers = findBreakerBlocks(breakerCandles, 2, 2);
+  assert(breakers.some(b => b.type === 'BULLISH'), `Nhận diện ICT Bullish Breaker Block khi order block giảm thất bại rồi giá đảo chiều mạnh (tìm thấy: ${breakers.map(b => b.type).join(',') || 'none'})`);
+
+  assert(findBreakerBlocks([]).length === 0, 'Breaker Block trả về mảng rỗng an toàn khi không có dữ liệu nến');
 }
 
 // Tổng kết

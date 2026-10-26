@@ -22,7 +22,9 @@ import {
   classifyLiquidityTiers,
   detectVolumeAbsorption,
   detectPreviousBarSweep,
-  detectCandlePattern
+  detectCandlePattern,
+  calculateVolumeProfile,
+  findBreakerBlocks
 } from './indicators.js';
 
 import { BOT_CONFIG, DEFAULT_CONFIG } from './config.js';
@@ -632,6 +634,45 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   const majorSupports = [];
   if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice) {
     majorSupports.push(liquidityTiers.tier2MajorLow);
+  }
+
+  // VOLUME PROFILE VAH/VAL (mặc định TẮT - config.useVolumeProfile):
+  // V1: Thêm cản mới vô điều kiện (config.volumeProfileMode === 'ALWAYS')
+  // V2: CHỈ bổ sung cản VAH/VAL khi d1Phase === 'RANGING' (mặc định)
+  if (config.useVolumeProfile) {
+    const shouldAddVP = config.volumeProfileMode === 'ALWAYS' || d1Phase === 'RANGING';
+    if (shouldAddVP) {
+      const lookback = config.volumeProfileLookback || 50;
+      const numBins = config.volumeProfileNumBins || 24;
+      const vaPct = config.volumeProfileValueAreaPct !== undefined ? config.volumeProfileValueAreaPct : 0.70;
+      const vp = calculateVolumeProfile(candlesH4, lookback, numBins, vaPct);
+      if (vp && vp.vah && vp.vah > curPrice) majorResistances.push(vp.vah);
+      if (vp && vp.val && vp.val < curPrice) majorSupports.push(vp.val);
+    }
+  }
+
+  // ICT BREAKER BLOCK RETEST (mặc định TẮT - config.useBreakerBlocks):
+  // V1: Thêm breaker làm cản độc lập (config.breakerBlockMode === 'ADD_ZONES')
+  // V2: Dùng breaker làm BỘ LỌC XÁC NHẬN THÊM (AND) cho cản Tier 2 (mặc định)
+  let breakerZones = null;
+  if (config.useBreakerBlocks) {
+    const pL = config.breakerPivotL || 2;
+    const pR = config.breakerPivotR || 2;
+    breakerZones = findBreakerBlocks(candlesH4, pL, pR).filter(b => !b.isMitigated);
+    if (config.breakerBlockMode === 'ADD_ZONES') {
+      for (const b of breakerZones) {
+        if (b.type === 'BEARISH' && b.top > curPrice) majorResistances.push(b.top);
+        if (b.type === 'BULLISH' && b.bottom < curPrice) majorSupports.push(b.bottom);
+      }
+    } else {
+      const inBreakerZone = (price, type) => breakerZones.some(b => b.type === type && price >= b.bottom && price <= b.top);
+      for (let i = majorResistances.length - 1; i >= 0; i--) {
+        if (!inBreakerZone(majorResistances[i], 'BEARISH')) majorResistances.splice(i, 1);
+      }
+      for (let i = majorSupports.length - 1; i >= 0; i--) {
+        if (!inBreakerZone(majorSupports[i], 'BULLISH')) majorSupports.splice(i, 1);
+      }
+    }
   }
 
   // 1. Zone Reaction Short tại Vùng Kháng cự Lớn
