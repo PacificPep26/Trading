@@ -98,8 +98,11 @@ Chạy mỗi chu kỳ cho MỌI vị thế mở, theo thứ tự:
 2. **Profit Lock:** `curMaxR >= beTriggerR(1.4)` → dời SL lên `entry + lockProfitR(0.05)*riskDist`
 3. **Check SL trước TP** (nguyên tắc bảo toàn vốn — nếu 1 nến giật cả 2 đầu)
 4. **Check TP:** đóng 100%, ghi `logClosedTrade(..., 'TP', ...)`
-5. **Time-Stop:** sau `timeStopBars(24 nến M15=6h)` mà `|currentR|<=0.3` → đóng
-   chủ động (chính là 2 lệnh hôm qua, cả 2 đều dính Time-Stop)
+5. **Time-Stop:** sau `timeStopBars` mà `|currentR|<=0.3` → đóng chủ động
+   (chính là 2 lệnh hôm qua, cả 2 đều dính Time-Stop). ⚠️ **Mặc định code là
+   24 nến M15 (6h), nhưng Railway đang override `TIME_STOP_BARS=16` (4h)** —
+   luôn kiểm tra `railway variables` trước khi tin vào giá trị default trong
+   `src/config.js`, 2 nơi có thể lệch nhau.
 
 **Lưu ý quan trọng:** không có Runner Mode, không có Partial Exit — cả 2 đã
 test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
@@ -116,7 +119,7 @@ test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
 | `MIN_H1_ADX` | 20 | Ngưỡng Chop Sleep Mode | Đã test 16 → tệ hơn |
 | `MIN_SETUP_QUALITY_SCORE` | 75 | Điểm tối thiểu để vào lệnh | Chưa test riêng |
 | `BE_TRIGGER_R` | 1.4 | Mốc dời SL hòa vốn | Chưa test riêng |
-| `TIME_STOP_BARS` | 24 | Số nến M15 trước khi đóng chủ động | Chưa test riêng (là ứng viên tốt cho whipsaw, xem Phần 7) |
+| `TIME_STOP_BARS` | 24 (code) / **16 (Railway đang dùng)** | Số nến M15 trước khi đóng chủ động | Xem Phần 7 — KHÔNG rút ngắn thêm, nên đổi điều kiện thay vì đổi số |
 | `SCAN_MODE` | WATCHLIST | 6 coin cố định hay quét Top volume | Giữ WATCHLIST theo khuyến nghị cũ |
 
 ## 6. Nơi dữ liệu được lưu
@@ -134,14 +137,37 @@ test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
 Đọc kỹ `docs/REGIME_ADAPTIVE_PLAN.md` TRƯỚC khi thử bất kỳ gì — **11 hướng đã
 thử và thất bại được liệt kê rõ ràng ở đó**, tránh lặp lại công sức. Hướng còn
 mở, có cơ sở từ hôm nay nhưng chưa test:
-- **`TIME_STOP_BARS` ngắn hơn** (ví dụ 12-16 nến thay vì 24): 2 lệnh hôm qua đều
-  dính Time-Stop sau đúng 16 nến (4h) — rút ngắn có thể giảm phí cơ hội kẹt vốn
-  trong lúc thị trường giằng co, nhưng cũng có thể cắt sớm những lệnh cần thêm
-  thời gian để chạy. Cần backtest kỹ trên 2023 (năm whipsaw nặng) trước khi đổi.
-- **ATR Compression chặt hơn theo chuỗi ngày liên tục** (không phải 1 nến tức
-  thời) — đã ghi trong kế hoạch, chưa làm.
+
+- **Time-Stop theo ĐIỀU KIỆN cấu trúc, KHÔNG đếm nến M15 cố định** (góp ý từ
+  review kỹ thuật bên ngoài, đã xác nhận đúng): setup vào lệnh dựa trên cấu
+  trúc H4, nhưng Time-Stop hiện tại đo bằng số nến M15 cố định (Railway đang
+  là 16 nến = 4h = chỉ ~1 nến H4) — ngắn hơn nhiều so với chu kỳ 2-4 nến H4
+  (8-16h) một cấu trúc H4 thường cần để phát triển trọn vẹn. **KHÔNG rút ngắn
+  thêm số nến** (sẽ cắt cụt sóng H4 còn tệ hơn) — thay vào đó đổi ĐIỀU KIỆN
+  thoát: chỉ kích hoạt Time-Stop nếu nến H4 gần nhất đã đóng cửa NGƯỢC hướng kỳ
+  vọng, hoặc giá chưa di chuyển đủ `0.5 × ATR(H4)`, thay vì đếm nến M15 đơn
+  thuần cho 1 setup gốc khung H4.
+- **ATR Compression chặt hơn theo chuỗi ngày liên tục** (ví dụ
+  `ATR(H1) < 0.75 × SMA(ATR(H1), 24)` duy trì liên tục ≥3 nến H1, không phải 1
+  nến tức thời như hiện tại) — rất phù hợp đặc tính crypto hay nén volume
+  trước khi xả mạnh. Đã ghi trong kế hoạch, chưa làm.
 - Mọi backtest PHẢI qua `scripts/backtest_1year.mjs` (so baseline PF 1.47) +
   `scripts/backtest_multi_year.mjs` (test qua 2021-2025, tránh overfit vào 1 năm).
+
+### Lưu ý hạ tầng (Railway)
+- `positions.json` và `data/trade_history.json` đều đã trỏ vào Railway Volume
+  bền vững (`/data/...` qua `STATE_FILE`/`TRADE_HISTORY_FILE`) — sống sót qua
+  redeploy/restart. **Mọi file dữ liệu runtime mới thêm sau này đều phải trỏ
+  vào `/data/` qua biến môi trường tương tự, nếu không sẽ mất sạch khi
+  redeploy** (đã từng thiếu sót với `trade_history.json` lúc mới thêm,
+  đã sửa — xem commit theo sau `d289ed4`).
+- Mỗi chu kỳ quét fetch ~26 request OKX public API (2 cho BTC macro + 6 coin ×
+  4 khung H4/H1/M15/D1), cấu trúc là **tuần tự giữa các coin, song song trong
+  từng coin** (`Promise.all` cho 4 khung của 1 coin, nhưng `for` loop tuần tự
+  giữa 6 coin) — không phải full-parallel 26 request cùng lúc. Thực tế quan
+  sát qua log: chu kỳ luôn đóng đúng ~60-61s, chưa thấy trượt chu kỳ hay lỗi
+  429 Rate Limit — nhưng nếu sau này tăng số coin quét (vd mở `DYNAMIC_TOP`),
+  cần theo dõi lại điểm này.
 
 ## 8. Quy trình bắt buộc trước khi đổi bất cứ gì (theo CLAUDE.md)
 
