@@ -497,7 +497,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   if (chopBlockedSignal) return null;
   if (!isFreshH4) return null;
   for (const res of resistances) {
-    const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
+    const testedRes = config.strictShortSweep ? lastH4.high > res : (Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res);
     if (testedRes) {
       // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
       // Nếu đang trong bão tăng dốc mạnh một chiều (STRONG_UPTREND), CẤM Short cản tàu!

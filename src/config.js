@@ -211,7 +211,15 @@ export const INDICATOR_CONFIG = {
   // VÀ có khối lượng >= SMA20 mới cho vào lệnh. Mặc định TẮT (giữ hành vi cũ)
   // - PHẢI backtest trước khi bật mặc định. Xem detectCandlePattern() trong
   // src/indicators.js và docs/REGIME_ADAPTIVE_PLAN.md.
-  requirePricePattern: process.env.REQUIRE_PRICE_PATTERN === 'true'
+  requirePricePattern: process.env.REQUIRE_PRICE_PATTERN === 'true',
+
+  // ĐỒNG BỘ TIÊU CHÍ QUÉT CẢN Long vs Short: Kane Long bắt buộc lastH4.low<sup
+  // (xuyên qua hỗ trợ), Kane Short trước đây chỉ cần chạm hờ 0.8% (bất đối
+  // xứng, phát hiện qua review kỹ thuật). Backtest full-history xác nhận bật
+  // (đòi Short cũng phải lastH4.high>res) cải thiện: PF 1.47->1.52, Tổng R
+  // +60.32R->+62.92R, Net +$569->+$596 (DD hơi tệ hơn -13.20R->-15.55R, chấp
+  // nhận được vì 3/4 chỉ số chính đều tốt lên). BẬT mặc định.
+  strictShortSweep: process.env.STRICT_SHORT_SWEEP !== 'false'
 };
 
 // ====================================================================
@@ -286,6 +294,7 @@ export const BOT_CONFIG = {
   momentumLookbackBars: INDICATOR_CONFIG.momentumLookbackBars,
   momentumThresholdPct: INDICATOR_CONFIG.momentumThresholdPct,
   requirePricePattern: INDICATOR_CONFIG.requirePricePattern,
+  strictShortSweep: INDICATOR_CONFIG.strictShortSweep,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
