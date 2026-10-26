@@ -98,11 +98,12 @@ Chạy mỗi chu kỳ cho MỌI vị thế mở, theo thứ tự:
 2. **Profit Lock:** `curMaxR >= beTriggerR(1.4)` → dời SL lên `entry + lockProfitR(0.05)*riskDist`
 3. **Check SL trước TP** (nguyên tắc bảo toàn vốn — nếu 1 nến giật cả 2 đầu)
 4. **Check TP:** đóng 100%, ghi `logClosedTrade(..., 'TP', ...)`
-5. **Time-Stop:** sau `timeStopBars` mà `|currentR|<=0.3` → đóng chủ động
-   (chính là 2 lệnh hôm qua, cả 2 đều dính Time-Stop). ⚠️ **Mặc định code là
-   24 nến M15 (6h), nhưng Railway đang override `TIME_STOP_BARS=16` (4h)** —
-   luôn kiểm tra `railway variables` trước khi tin vào giá trị default trong
-   `src/config.js`, 2 nơi có thể lệch nhau.
+5. **Time-Stop:** ⚠️ **ĐÃ TẮT HẲN (26/10, `timeStopBars=0` cả code lẫn
+   Railway)** sau khi phát hiện backtest trước đó không hề mô phỏng bước này —
+   khi vá đúng, số liệu lật từ +60.32R thành -7.48R với `TIME_STOP_BARS=16`
+   (giá trị Railway cũ, chính là nguyên nhân 2 lệnh Time-Stop thật ngày
+   25/10). Mọi mốc đã test (16/48/96/150 nến, và cả kiểu đổi điều kiện theo H4)
+   đều tệ hơn tắt hẳn — xem bảng đầy đủ trong `REGIME_ADAPTIVE_PLAN.md`.
 
 **Lưu ý quan trọng:** không có Runner Mode, không có Partial Exit — cả 2 đã
 test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
@@ -119,7 +120,7 @@ test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
 | `MIN_H1_ADX` | 20 | Ngưỡng Chop Sleep Mode | Đã test 16 → tệ hơn |
 | `MIN_SETUP_QUALITY_SCORE` | 75 | Điểm tối thiểu để vào lệnh | Chưa test riêng |
 | `BE_TRIGGER_R` | 1.4 | Mốc dời SL hòa vốn | Chưa test riêng |
-| `TIME_STOP_BARS` | 24 (code) / **16 (Railway đang dùng)** | Số nến M15 trước khi đóng chủ động | Xem Phần 7 — KHÔNG rút ngắn thêm, nên đổi điều kiện thay vì đổi số |
+| `TIME_STOP_BARS` | **0 (TẮT HẲN, đã deploy)** | Số nến M15 trước khi đóng chủ động | Đã quét 16/48/96/150/H4_CONDITION — tắt hẳn là tốt nhất (PF 1.47), xem bảng đầy đủ trong REGIME_ADAPTIVE_PLAN.md |
 | `SCAN_MODE` | WATCHLIST | 6 coin cố định hay quét Top volume | Giữ WATCHLIST theo khuyến nghị cũ |
 
 ## 6. Nơi dữ liệu được lưu
@@ -138,15 +139,10 @@ test và làm TỆ HƠN baseline (xem Phần "Quyết định & Lý do" trong
 thử và thất bại được liệt kê rõ ràng ở đó**, tránh lặp lại công sức. Hướng còn
 mở, có cơ sở từ hôm nay nhưng chưa test:
 
-- **Time-Stop theo ĐIỀU KIỆN cấu trúc, KHÔNG đếm nến M15 cố định** (góp ý từ
-  review kỹ thuật bên ngoài, đã xác nhận đúng): setup vào lệnh dựa trên cấu
-  trúc H4, nhưng Time-Stop hiện tại đo bằng số nến M15 cố định (Railway đang
-  là 16 nến = 4h = chỉ ~1 nến H4) — ngắn hơn nhiều so với chu kỳ 2-4 nến H4
-  (8-16h) một cấu trúc H4 thường cần để phát triển trọn vẹn. **KHÔNG rút ngắn
-  thêm số nến** (sẽ cắt cụt sóng H4 còn tệ hơn) — thay vào đó đổi ĐIỀU KIỆN
-  thoát: chỉ kích hoạt Time-Stop nếu nến H4 gần nhất đã đóng cửa NGƯỢC hướng kỳ
-  vọng, hoặc giá chưa di chuyển đủ `0.5 × ATR(H4)`, thay vì đếm nến M15 đơn
-  thuần cho 1 setup gốc khung H4.
+- ✅ **ĐÃ XONG (26/10): Time-Stop tắt hẳn.** Đã test cả đếm nến cố định
+  (16/48/96/150) lẫn đổi điều kiện theo H4 (H4_CONDITION) — tắt hẳn luôn tốt
+  nhất. Xem bảng đầy đủ trong `REGIME_ADAPTIVE_PLAN.md`. Không cần làm gì thêm
+  ở mục này trừ khi muốn thử lại với giả thuyết hoàn toàn khác.
 - **ATR Compression chặt hơn theo chuỗi ngày liên tục** (ví dụ
   `ATR(H1) < 0.75 × SMA(ATR(H1), 24)` duy trì liên tục ≥3 nến H1, không phải 1
   nến tức thời như hiện tại) — rất phù hợp đặc tính crypto hay nén volume

@@ -60,6 +60,34 @@ backtest:
 **Baseline mới nhất (sau D1 Regime Gate, đã deploy):** PF 1.36, +50.96R, +$475.34/năm,
 win rate 49.0%, max drawdown -12.66R, 255 lệnh.
 
+**🚨 PHÁT HIỆN NGHIÊM TRỌNG (26/10): backtest_1year.mjs trước đây KHÔNG mô phỏng
+Time-Stop** (`barsHeld` đếm nhưng không dùng để đóng lệnh) — mọi số liệu "PF 1.47"
+verify cả ngày 24/10 KHÔNG phản ánh đúng live thật (Railway đang chạy
+`TIME_STOP_BARS=16`, khớp đúng 2 lệnh Time-Stop thật ngày 25/10). Đã vá mô phỏng
+đầy đủ, quét nhiều mốc:
+
+| TIME_STOP_BARS | PF | Tổng R/năm | Net USD |
+|---|---|---|---|
+| 16 (Railway cũ) | 0.86 | -7.48R | -$118.22 |
+| 48 | 0.96 | -0.15R | -$41.01 |
+| 96 | 1.17 | +24.18R | +$204.70 |
+| 150 | 1.20 | +29.10R | +$254.39 |
+| **0 (TẮT HẲN, đã deploy)** | **1.47** | **+60.32R** | **+$569.42** |
+
+Thử cả hướng "đổi điều kiện thay vì đổi số" (H4_CONDITION: đóng khi nến H4 đảo
+hướng/stall theo ATR) theo góp ý review kỹ thuật — **còn tệ hơn** (PF 0.77,
+-14.90R). Kết luận: Time-Stop (ở MỌI hình thức đã test) đang cắt cụt setup H4
+đang tích lũy lành mạnh trước khi có đủ 2-4 nến H4 (8-16h) để phát triển —
+**TẮT HẲN Time-Stop là lựa chọn tốt nhất đã tìm được.**
+
+Cũng sửa 1 lỗi nghiêm trọng ở `src/server.js`: điều kiện cũ
+`pos.currentBarsM15 >= CONFIG.timeStopBars` nếu set =0 sẽ **TRIGGER NGAY LẬP
+TỨC** (0 cũng thỏa >=0) thay vì tắt tính năng — đã thêm guard
+`CONFIG.timeStopBars > 0` tường minh trước khi set Railway env var =0.
+
+**ĐÃ DEPLOY** (commit `4268b2e`, Railway `TIME_STOP_BARS=0`) — baseline hiện
+tại trùng khớp chính xác số liệu đã verify ở trên.
+
 **Mở rộng `momentumLookbackBars` 6->12 (ĐÃ DEPLOY, commit `ac81d1e`):** phân tích
 chi tiết từng lệnh tháng 10 phát hiện 11/11 lệnh Long đều thua trong khi 2/2
 lệnh Short đều thắng lớn — cửa sổ momentum cũ (24h) quá ngắn để thấy cú giảm
