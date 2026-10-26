@@ -6,4 +6,5 @@ positions.json
 .railway/
 logs/
 data/last_briefing.txt
+data/trade_history.json
 

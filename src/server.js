@@ -114,6 +114,44 @@ function savePositions() {
   }
 }
 
+const TRADE_HISTORY_FILE = process.env.TRADE_HISTORY_FILE || path.join(__dirname, '../data/trade_history.json');
+
+/**
+ * Ghi lại 1 lệnh đã đóng vào sổ lệnh lâu dài (append-only, không mất dữ liệu
+ * khi redeploy/mất log Railway). Dùng để trả lời "hôm qua bot vào lệnh gì".
+ * @param {object} pos Vị thế vừa đóng
+ * @param {string} outcome 'TP' | 'SL' | 'TIME_STOP'
+ * @param {number} exitPrice
+ * @param {number} finalR
+ * @param {number} netPnl
+ */
+function logClosedTrade(pos, outcome, exitPrice, finalR, netPnl) {
+  try {
+    let history = [];
+    if (fs.existsSync(TRADE_HISTORY_FILE)) {
+      history = JSON.parse(fs.readFileSync(TRADE_HISTORY_FILE, 'utf8'));
+    }
+    history.push({
+      symbol: pos.symbol,
+      direction: pos.direction,
+      strategy: pos.strategy,
+      entry: pos.entry,
+      exitPrice,
+      initialStopLoss: pos.initialStopLoss,
+      takeProfit: pos.takeProfit,
+      outcome,
+      finalR: parseFloat(finalR.toFixed(3)),
+      netPnl: parseFloat(netPnl.toFixed(2)),
+      qualityScore: pos.qualityScore,
+      openedAt: pos.openedAt,
+      closedAt: Date.now()
+    });
+    fs.writeFileSync(TRADE_HISTORY_FILE, JSON.stringify(history, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[TRADE HISTORY] Lỗi ghi trade_history.json:', err.message);
+  }
+}
+
 /**
  * Lấy dữ liệu nến từ OKX Public API
  * @param {string} instId - Ví dụ: BTC-USDT-SWAP
@@ -230,6 +268,7 @@ export async function updateOpenPositions(instId, candleOrPrice) {
 
     const logPrefix = pos.isProfitLocked ? `[LOCKED PROFIT HIT]` : `[STOP LOSS]`;
     console.log(`${logPrefix} ${pos.symbol} closed at ${pos.stopLoss} (${finalR >= 0 ? '+' : ''}${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
+    logClosedTrade(pos, pos.isProfitLocked ? 'LOCKED_PROFIT' : 'SL', pos.stopLoss, finalR, netPnl);
     await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isProfitLocked);
 
     // BỘ MỔ XẺ SAI LẦM & ÁP DỤNG HÌNH PHẠT HỌC HỎI
@@ -273,6 +312,7 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     const finalR = riskDist > 0 ? (pnlPrice / riskDist) : pos.riskReward;
 
     console.log(`[TAKE PROFIT] ${pos.symbol} 100% closed at ${pos.takeProfit} (+${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
+    logClosedTrade(pos, 'TP', pos.takeProfit, finalR, netPnl);
     rewardWinAndClearPenalty(pos.symbol);
     await notifyTakeProfit(pos, pos.takeProfit, finalR, netPnl);
     activePositions.splice(posIndex, 1);
@@ -288,6 +328,7 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     const netPnl = grossPnl - fee;
 
     console.log(`[TIME-STOP] ${pos.symbol} lình xình sau ${pos.currentBarsM15} nến M15 -> Đóng tại ${currentPrice}`);
+    logClosedTrade(pos, 'TIME_STOP', currentPrice, currentR, netPnl);
     await notifyTimeStop(pos, currentPrice, netPnl);
     activePositions.splice(posIndex, 1);
     savePositions();
@@ -478,6 +519,7 @@ async function pickAndExecuteWinners(candidateSignals) {
         instId,
         symbol,
         direction: signal.direction,
+        strategy: signal.strategy,
         entry: signal.entry,
         stopLoss: signal.stopLoss,
         initialStopLoss: signal.stopLoss,
