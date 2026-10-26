@@ -20,7 +20,8 @@ import {
   detectVolumeAbsorption,
   detectPreviousBarSweep,
   calculateADX,
-  calculateATRCompression
+  calculateATRCompression,
+  detectCandlePattern
 } from '../src/indicators.js';
 
 import {
@@ -596,6 +597,36 @@ const chopMarketResult = evaluateMarket({
 });
 assert(chopMarketResult && chopMarketResult.isBlocked === true, 'evaluateMarket tự động chặn lệnh trong Chop Sleep Mode khi H1 ADX <= 20');
 assert(chopMarketResult && chopMarketResult.blockReason.includes('CHOP_SLEEP_MODE'), 'Lý do chặn nêu rõ CHOP_SLEEP_MODE');
+
+console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Price Action Pattern Recognition):');
+{
+  const doji = [{ ts: 1, open: 100, high: 101, low: 99, close: 100.02, vol: 10, confirm: 1 }];
+  assert(detectCandlePattern(doji, 0).includes('DOJI'), 'Nhận diện chuẩn xác nến Doji (thân cực nhỏ)');
+
+  const hammerShape = [{ ts: 1, open: 99.8, high: 100, low: 97, close: 100, vol: 10, confirm: 1 }];
+  assert(detectCandlePattern(hammerShape, 0, 'DOWN').includes('HAMMER'), 'Nhận diện Hammer khi trước đó là downtrend');
+  assert(detectCandlePattern(hammerShape, 0, 'UP').includes('HANGING_MAN'), 'Cùng hình dạng nhưng gọi Hanging Man khi trước đó là uptrend');
+
+  const bullEngulf = [
+    { ts: 1, open: 100, high: 101, low: 95, close: 96, vol: 10, confirm: 1 },
+    { ts: 2, open: 95, high: 102, low: 94, close: 101, vol: 10, confirm: 1 }
+  ];
+  assert(detectCandlePattern(bullEngulf, 1).includes('BULLISH_ENGULFING'), 'Nhận diện chuẩn xác Bullish Engulfing (nến sau nuốt trọn nến trước)');
+
+  const bearEngulf = [
+    { ts: 1, open: 95, high: 101, low: 94, close: 100, vol: 10, confirm: 1 },
+    { ts: 2, open: 101, high: 102, low: 93, close: 94, vol: 10, confirm: 1 }
+  ];
+  assert(detectCandlePattern(bearEngulf, 1).includes('BEARISH_ENGULFING'), 'Nhận diện chuẩn xác Bearish Engulfing');
+
+  const insideBar = [
+    { ts: 1, open: 95, high: 105, low: 90, close: 100, vol: 10, confirm: 1 },
+    { ts: 2, open: 98, high: 102, low: 96, close: 99, vol: 10, confirm: 1 }
+  ];
+  assert(detectCandlePattern(insideBar, 1).includes('INSIDE_BAR'), 'Nhận diện chuẩn xác Inside Bar (nằm trọn trong biên độ nến trước)');
+
+  assert(detectCandlePattern([], 0).length === 0, 'Trả về mảng rỗng an toàn khi không có dữ liệu nến');
+}
 
 // Tổng kết
 console.log('\n======================================================');

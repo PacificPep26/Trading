@@ -142,6 +142,117 @@ export function analyzeCandle(candle) {
 }
 
 /**
+ * Nhận diện mẫu hình nến cổ điển (Price Action) tại vị trí `index` trong mảng
+ * `candles`. Thuần túy "nhìn thấy" - KHÔNG dùng để quyết định vào lệnh (chưa
+ * backtest), chỉ trả về danh sách tên mẫu hình khớp tại vị trí đó để tham
+ * khảo/log. Tái dùng analyzeCandle() có sẵn, không tính lại râu/thân.
+ * @param {Array} candles Mảng nến đã chuẩn hóa, theo thứ tự thời gian tăng dần
+ * @param {number} index Vị trí nến cần xét (mặc định nến cuối cùng)
+ * @param {'UP'|'DOWN'|null} priorTrend Xu hướng trước đó (để phân biệt Hammer
+ *   vs Hanging Man, Shooting Star vs Inverted Hammer - cùng hình dạng, khác
+ *   tên tùy ngữ cảnh). Bỏ qua (null) nếu không biết trend trước.
+ * @returns {string[]} Danh sách tên mẫu hình khớp (có thể nhiều, hoặc rỗng)
+ */
+export function detectCandlePattern(candles, index = candles.length - 1, priorTrend = null) {
+  const patterns = [];
+  if (!candles || index < 0 || index >= candles.length) return patterns;
+
+  const cur = candles[index];
+  const a = analyzeCandle(cur);
+  if (a.range <= 0) return patterns;
+
+  // --- Mẫu hình 1 nến ---
+  if (a.bodyRatio <= 0.1) {
+    patterns.push('DOJI');
+  }
+  const isHammerShape = a.lowerWickRatio >= 0.6 && a.bodyRatio <= 0.3 && a.upperWickRatio <= 0.1;
+  if (isHammerShape) {
+    patterns.push(priorTrend === 'UP' ? 'HANGING_MAN' : 'HAMMER');
+  }
+  const isStarShape = a.upperWickRatio >= 0.6 && a.bodyRatio <= 0.3 && a.lowerWickRatio <= 0.1;
+  if (isStarShape) {
+    patterns.push(priorTrend === 'DOWN' ? 'INVERTED_HAMMER' : 'SHOOTING_STAR');
+  }
+  if (!isHammerShape && !isStarShape && a.bodyRatio <= 0.3 && a.upperWickRatio >= 0.25 && a.lowerWickRatio >= 0.25) {
+    patterns.push('SPINNING_TOP');
+  }
+
+  // --- Mẫu hình 2 nến ---
+  if (index >= 1) {
+    const prev = candles[index - 1];
+    const p = analyzeCandle(prev);
+
+    if (p.isRed && a.isGreen && cur.open <= prev.close && cur.close >= prev.open) {
+      patterns.push('BULLISH_ENGULFING');
+    }
+    if (p.isGreen && a.isRed && cur.open >= prev.close && cur.close <= prev.open) {
+      patterns.push('BEARISH_ENGULFING');
+    }
+
+    if (p.isRed && p.bodyRatio >= 0.5 && a.bodyRatio <= p.bodyRatio * 0.5 &&
+        Math.max(cur.open, cur.close) <= Math.max(prev.open, prev.close) &&
+        Math.min(cur.open, cur.close) >= Math.min(prev.open, prev.close)) {
+      patterns.push(a.isGreen ? 'BULLISH_HARAMI' : 'BEARISH_HARAMI');
+    }
+
+    const prevMid = (prev.open + prev.close) / 2;
+    if (p.isRed && a.isGreen && cur.open < prev.low && cur.close > prevMid && cur.close < prev.open) {
+      patterns.push('PIERCING_LINE');
+    }
+    if (p.isGreen && a.isRed && cur.open > prev.high && cur.close < prevMid && cur.close > prev.open) {
+      patterns.push('DARK_CLOUD_COVER');
+    }
+
+    const highDiffPct = Math.abs(cur.high - prev.high) / prev.high;
+    const lowDiffPct = Math.abs(cur.low - prev.low) / prev.low;
+    if (p.isGreen && a.isRed && highDiffPct <= 0.001) {
+      patterns.push('TWEEZER_TOP');
+    }
+    if (p.isRed && a.isGreen && lowDiffPct <= 0.001) {
+      patterns.push('TWEEZER_BOTTOM');
+    }
+
+    if (cur.high <= prev.high && cur.low >= prev.low) {
+      patterns.push('INSIDE_BAR');
+    }
+    if (cur.high >= prev.high && cur.low <= prev.low) {
+      patterns.push('OUTSIDE_BAR');
+    }
+  }
+
+  // --- Mẫu hình 3 nến ---
+  if (index >= 2) {
+    const c1 = candles[index - 2];
+    const c2 = candles[index - 1];
+    const a1 = analyzeCandle(c1);
+    const a2 = analyzeCandle(c2);
+    const c1Mid = (c1.open + c1.close) / 2;
+
+    if (a1.isRed && a1.bodyRatio >= 0.5 && a2.bodyRatio <= 0.3 && a.isGreen && cur.close > c1Mid) {
+      patterns.push('MORNING_STAR');
+    }
+    if (a1.isGreen && a1.bodyRatio >= 0.5 && a2.bodyRatio <= 0.3 && a.isRed && cur.close < c1Mid) {
+      patterns.push('EVENING_STAR');
+    }
+
+    const isSoldier = (x, prevX) => x.close > x.open && prevX.close > prevX.open &&
+      x.open >= Math.min(prevX.open, prevX.close) && x.open <= Math.max(prevX.open, prevX.close) &&
+      x.close > prevX.close;
+    if (isSoldier(c2, c1) && isSoldier(cur, c2)) {
+      patterns.push('THREE_WHITE_SOLDIERS');
+    }
+    const isCrow = (x, prevX) => x.close < x.open && prevX.close < prevX.open &&
+      x.open <= Math.max(prevX.open, prevX.close) && x.open >= Math.min(prevX.open, prevX.close) &&
+      x.close < prevX.close;
+    if (isCrow(c2, c1) && isCrow(cur, c2)) {
+      patterns.push('THREE_BLACK_CROWS');
+    }
+  }
+
+  return patterns;
+}
+
+/**
  * Kiểm tra nến Marubozu (dùng cho Khiên BTC Macro 1H)
  * @param {{open: number, high: number, low: number, close: number}} candle
  * @param {number} atr - ATR tại thời điểm nến
