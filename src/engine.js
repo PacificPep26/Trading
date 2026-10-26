@@ -21,7 +21,8 @@ import {
   findFairValueGaps,
   classifyLiquidityTiers,
   detectVolumeAbsorption,
-  detectPreviousBarSweep
+  detectPreviousBarSweep,
+  detectCandlePattern
 } from './indicators.js';
 
 import { BOT_CONFIG, DEFAULT_CONFIG } from './config.js';
@@ -246,26 +247,53 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   const isActiveDownMove = recentMovePct <= -momentumThresholdPct;
   const isActiveUpMove = recentMovePct >= momentumThresholdPct;
 
+  // XÁC NHẬN MẪU HÌNH NẾN + KHỐI LƯỢNG (Price Action Confirmation) tại nến
+  // M15 kích hoạt entry: mẫu hình nến phản ánh lực mua/bán thật tại thời
+  // điểm đó, nhưng CHỈ đáng tin khi có khối lượng thật đứng sau (không phải
+  // hình dạng suông do nhiễu giá) - đúng nguyên lý "tôn trọng chỉ báo, đi
+  // ngược chỉ báo đông người tin thì rủi ro cao". Dùng làm điều kiện bổ sung
+  // (AND) cho M15 trigger của Kane Long/Short khi config.requirePricePattern
+  // bật (mặc định TẮT, giữ hành vi cũ, phải backtest trước khi bật mặc định).
+  let hasBullishPattern = true;
+  let hasBearishPattern = true;
+  if (config.requirePricePattern && candlesM15 && candlesM15.length >= 20) {
+    const m15VolSma = calculateSMA(candlesM15.map(c => c.vol), 20);
+    const curM15VolSma = m15VolSma[m15VolSma.length - 1];
+    const hasM15VolumeConfirm = curM15VolSma ? currentM15.vol >= curM15VolSma : true;
+    const m15Patterns = detectCandlePattern(candlesM15, candlesM15.length - 1);
+    const bullishMatch = m15Patterns.some(p => ['BULLISH_ENGULFING', 'HAMMER', 'MORNING_STAR', 'PIERCING_LINE', 'THREE_WHITE_SOLDIERS', 'TWEEZER_BOTTOM'].includes(p));
+    const bearishMatch = m15Patterns.some(p => ['BEARISH_ENGULFING', 'SHOOTING_STAR', 'EVENING_STAR', 'DARK_CLOUD_COVER', 'THREE_BLACK_CROWS', 'TWEEZER_TOP'].includes(p));
+    hasBullishPattern = bullishMatch && hasM15VolumeConfirm;
+    hasBearishPattern = bearishMatch && hasM15VolumeConfirm;
+  }
+
   // BỘ LỌC CHẾ ĐỘ THỊ TRƯỜNG V3.0 (H1 ADX & DYNAMIC ATR COMPRESSION)
   // Triệt tiêu tử huyệt Sideway / Summer Chop làm thua lỗ các tháng mùa hè
+  // CHỈ chặn Kane Long/Short (trend-following) bằng cờ chopBlockedSignal, KHÔNG
+  // return sớm khỏi evaluateMarket - để tryZoneReactionSetup() (mean-reversion,
+  // đón đầu tại cản/hỗ trợ Tier-2, đúng bản chất lúc thị trường đi ngang) vẫn
+  // được quyền chạy. Đã backtest xác nhận an toàn (0 thay đổi kết quả, Zone
+  // Reaction chưa từng khớp đủ điều kiện đúng lúc chop trong dữ liệu đã test),
+  // giữ lại vì đúng kiến trúc thiết kế ban đầu (review kỹ thuật phát hiện).
+  let chopBlockedSignal = null;
   if (candlesH1 && candlesH1.length >= 30 && config.regime?.enableChopSleepMode !== false) {
     const minADX = config.minH1ADX || (config.regime && config.regime.minH1ADX) || 20;
     const adxSeries = calculateADX(candlesH1, 14);
     const curADX = adxSeries && adxSeries.length > 0 ? adxSeries[adxSeries.length - 1].adx : null;
     if (curADX !== null && curADX <= minADX) {
-      return {
+      chopBlockedSignal = {
         isBlocked: true,
-        blockReason: `CHOP_SLEEP_MODE: H1 ADX (${curADX.toFixed(1)}) <= ${minADX} (Thị trường đi ngang ngột ngạt không có xu hướng)`,
+        blockReason: `CHOP_SLEEP_MODE: H1 ADX (${curADX.toFixed(1)}) <= ${minADX} (Thị trường đi ngang -> Chỉ Zone Reaction còn hoạt động)`,
         symbol
       };
     }
 
     const minAtrRatio = config.minAtrCompressionRatio || (config.regime && config.regime.minAtrCompressionRatio) || 0.70;
     const atrRatio = calculateATRCompression(candlesH1, 14, 50);
-    if (atrRatio !== null && atrRatio < minAtrRatio) {
-      return {
+    if (!chopBlockedSignal && atrRatio !== null && atrRatio < minAtrRatio) {
+      chopBlockedSignal = {
         isBlocked: true,
-        blockReason: `VOLATILITY_COMPRESSED: Tỷ số nén ATR (${atrRatio.toFixed(2)}) < ${minAtrRatio} (Biến động co thắt kiệt quệ)`,
+        blockReason: `VOLATILITY_COMPRESSED: Tỷ số nén ATR (${atrRatio.toFixed(2)}) < ${minAtrRatio} (Biến động co thắt -> Chỉ Zone Reaction còn hoạt động)`,
         symbol
       };
     }
@@ -350,6 +378,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
   // =========================================================================
   function tryKaneLongSetup() {
+  if (chopBlockedSignal) return null;
   if (!isFreshH4) return null;
   for (const sup of supports) {
     if (lastH4.low < sup) {
@@ -396,7 +425,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
         const isM15Green = currentM15.close > currentM15.open;
         const isM15Breakout = currentM15.close > prevM15.high;
 
-        if (isM15Green && isM15Breakout) {
+        if (isM15Green && isM15Breakout && hasBullishPattern) {
           const entry = currentM15.close;
 
           // QUY TẮC CHỐNG LONG ĐUỔI KHI TĂNG KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
@@ -465,6 +494,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
   // =========================================================================
   function tryKaneShortSetup() {
+  if (chopBlockedSignal) return null;
   if (!isFreshH4) return null;
   for (const res of resistances) {
     const testedRes = Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res;
@@ -510,7 +540,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
         const isM15Red = currentM15.close < currentM15.open;
         const isM15Breakdown = currentM15.close < prevM15.low;
 
-        if (isM15Red && isM15Breakdown) {
+        if (isM15Red && isM15Breakdown && hasBearishPattern) {
           const entry = currentM15.close;
 
           // QUY TẮC CHỐNG SHORT ĐUỔI KHI XẢ KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
@@ -725,7 +755,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   const zoneReactionSignal = tryZoneReactionSetup();
   if (zoneReactionSignal) return zoneReactionSignal;
 
-  return blockedSignal;
+  // Không setup nào khớp: ưu tiên lý do Khiên BTC Macro nếu có, rồi tới lý do
+  // Chop Sleep Mode để log minh bạch lý do đứng ngoài.
+  return blockedSignal || chopBlockedSignal;
 }
 
 /**

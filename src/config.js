@@ -204,7 +204,14 @@ export const INDICATOR_CONFIG = {
   // kiểm tra % thay đổi giá trong N nến H4 gần nhất để cấm bắt dao rơi/cản tàu
   // đúng lúc ngay cả khi EMA-phase còn báo RANGING.
   momentumLookbackBars: parseInt(process.env.MOMENTUM_LOOKBACK_BARS || '12', 10),
-  momentumThresholdPct: parseFloat(process.env.MOMENTUM_THRESHOLD_PCT || '4', 10)
+  momentumThresholdPct: parseFloat(process.env.MOMENTUM_THRESHOLD_PCT || '4', 10),
+
+  // XÁC NHẬN MẪU HÌNH NẾN + KHỐI LƯỢNG: yêu cầu nến M15 kích hoạt entry phải
+  // khớp 1 mẫu hình nến cổ điển cùng hướng (Engulfing/Hammer/Morning Star...)
+  // VÀ có khối lượng >= SMA20 mới cho vào lệnh. Mặc định TẮT (giữ hành vi cũ)
+  // - PHẢI backtest trước khi bật mặc định. Xem detectCandlePattern() trong
+  // src/indicators.js và docs/REGIME_ADAPTIVE_PLAN.md.
+  requirePricePattern: process.env.REQUIRE_PRICE_PATTERN === 'true'
 };
 
 // ====================================================================
@@ -278,6 +285,7 @@ export const BOT_CONFIG = {
   freshH4Bars: INDICATOR_CONFIG.freshH4Bars,
   momentumLookbackBars: INDICATOR_CONFIG.momentumLookbackBars,
   momentumThresholdPct: INDICATOR_CONFIG.momentumThresholdPct,
+  requirePricePattern: INDICATOR_CONFIG.requirePricePattern,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
