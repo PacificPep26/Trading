@@ -304,7 +304,10 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     await notifyStopLoss(pos, pos.stopLoss, finalR, netPnl, pos.isProfitLocked);
 
     // BỘ MỔ XẺ SAI LẦM & ÁP DỤNG HÌNH PHẠT HỌC HỎI
-    if (!pos.isProfitLocked) {
+    // TẮT mặc định (ENABLE_PENALTY_SYSTEM !== 'true') theo kết luận backtest
+    // 28/10: hệ thống phạt không cải thiện PF, chỉ bỏ lỡ cơ hội. Tắt cả việc
+    // ghi án phạt + gửi tin nhắn "BẢN KIỂM ĐIỂM" gây hiểu nhầm.
+    if (process.env.ENABLE_PENALTY_SYSTEM === 'true' && !pos.isProfitLocked) {
       try {
         const [h4, h1, m15, bH4, bH1] = await Promise.all([
           fetchOkxCandles(pos.instId, '4H', 25),

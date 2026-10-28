@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { normalizeCandle } from '../src/indicators.js';
 import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize } from '../src/engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
+import { inspectTradeMistake, applyDisciplinaryPenalty, checkAdaptiveTradeAllowed, rewardWinAndClearPenalty } from '../src/learning.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, '../data/cache_1year');
@@ -93,7 +94,19 @@ export async function runPortfolioBacktest(customConfig = null) {
     return ans;
   }
 
+  // learning.js dùng Date.now() (đồng hồ thật) để tính hạn phạt/cooldown -
+  // nếu không giả lập, 1 án phạt đầu tiên trong backtest sẽ KHÔNG BAO GIỜ
+  // hết hạn (vì thời gian thật không trôi đủ trong lúc backtest chạy qua dữ
+  // liệu lịch sử chỉ mất vài giây thực tế). Giả lập Date.now = masterTs khi
+  // mô phỏng penalty, khôi phục lại cuối hàm.
+  const originalDateNow = Date.now;
+  let currentMockTs = 0;
+  if (cfg.simulatePenaltySystem) {
+    Date.now = () => currentMockTs;
+  }
+
   for (const masterTs of masterTimeline) {
+    currentMockTs = masterTs;
     // ---- 1. Quản lý TẤT CẢ lệnh đang mở (mọi coin) ----
     for (const instId of Object.keys(coinData)) {
       const d = coinData[instId];
@@ -122,12 +135,36 @@ export async function runPortfolioBacktest(customConfig = null) {
         const fee = trade.sizing.notional * cfg.feeRate;
         closedTrades.push({ ...trade, exitTime: masterTs + M15_MS, exitPrice, outcome: trade.isProfitLocked ? 'LOCK_+1R' : 'SL', netR: trade.isProfitLocked ? cfg.lockProfitR : -1.0, netUsd: grossPnl - fee });
         d.state = null;
+
+        // MÔ PHỎNG HỆ THỐNG PENALTY THẬT (learning.js) khi SL thua thật sự
+        // (không phải LOCK_+1R, đúng hành vi live server.js). Chỉ chạy khi
+        // cfg.simulatePenaltySystem=true - xem docs/REGIME_ADAPTIVE_PLAN.md.
+        if (cfg.simulatePenaltySystem) {
+          if (!trade.isProfitLocked) {
+            const h4Idx = findPointerAt(d.candlesH4, masterTs + M15_MS - H4_MS);
+            const h1Idx = findPointerAt(d.candlesH1, masterTs + M15_MS - H1_MS);
+            const bH4Idx = findPointerAt(btcH4, masterTs + M15_MS - H4_MS);
+            const bH1Idx = findPointerAt(btcH1, masterTs + M15_MS - H1_MS);
+            const mistake = inspectTradeMistake({
+              pos: { symbol: d.symbol, direction: trade.direction, entry: trade.entry, initialStopLoss: trade.initialStopLoss },
+              candlesH4: d.candlesH4.slice(Math.max(0, h4Idx - 25), h4Idx + 1),
+              candlesH1: d.candlesH1.slice(Math.max(0, h1Idx - 15), h1Idx + 1),
+              candlesM15: d.candlesM15.slice(Math.max(0, m15Idx - 20), m15Idx + 1),
+              btcH4Candles: btcH4.slice(Math.max(0, bH4Idx - 35), bH4Idx + 1),
+              btcH1Candles: btcH1.slice(Math.max(0, bH1Idx - 15), bH1Idx + 1)
+            });
+            applyDisciplinaryPenalty({ symbol: d.symbol, direction: trade.direction, entry: trade.entry, initialStopLoss: trade.initialStopLoss }, mistake);
+          } else {
+            rewardWinAndClearPenalty(d.symbol);
+          }
+        }
       } else if (isTPHit) {
         const exitPrice = trade.takeProfit;
         const grossPnl = isLong ? (exitPrice - trade.entry) * trade.sizing.size : (trade.entry - exitPrice) * trade.sizing.size;
         const fee = trade.sizing.notional * cfg.feeRate;
         closedTrades.push({ ...trade, exitTime: masterTs + M15_MS, exitPrice, outcome: 'TP', netR: trade.riskReward, netUsd: grossPnl - fee });
         d.state = null;
+        if (cfg.simulatePenaltySystem) rewardWinAndClearPenalty(d.symbol);
       }
     }
 
@@ -208,6 +245,14 @@ export async function runPortfolioBacktest(customConfig = null) {
       const quality = calculateSetupQualityScore({ signal, candlesH4: visibleH4, candlesH1: visibleH1, candlesM15: visibleM15, btcH1Candles: visibleBtcH1 });
       if (quality.score < (cfg.minSetupQualityScore || 75)) continue;
 
+      // CỔNG KIỂM TRA ÁN PHẠT (chỉ khi cfg.simulatePenaltySystem=true) - đúng
+      // hành vi live server.js: checkAdaptiveTradeAllowed() trước khi chấp
+      // nhận tín hiệu.
+      if (cfg.simulatePenaltySystem) {
+        const allowCheck = checkAdaptiveTradeAllowed(d.symbol, signal.direction, visibleBtcH1, visibleBtcH4);
+        if (!allowCheck.allowed) continue;
+      }
+
       // QUYẾT ĐỊNH SLOT: slot đầu tiên trống (occupiedSlots===0 tại lúc này)
       // -> vào NGAY (delay=0). Slot thứ 2 trở đi -> phải chờ xác nhận
       // (delay=cfg.entryDelayBars).
@@ -240,6 +285,7 @@ export async function runPortfolioBacktest(customConfig = null) {
     }
   }
 
+  Date.now = originalDateNow;
   return closedTrades;
 }
 

@@ -363,9 +363,11 @@ assert(mistake.forbiddenDirection === 'LONG', 'Cấm hướng vi phạm: Khóa c
 const penalty = applyDisciplinaryPenalty(mockLossPos, mistake);
 assert(penalty.cooldownHours >= 4, 'Áp dụng hình phạt đóng băng tối thiểu 4 tiếng trên cặp SOL-USDT');
 
-// Kiểm tra cổng Adaptive Veto Gate
+// Kiểm tra cổng Adaptive Veto Gate (chỉ hoạt động khi bật ENABLE_PENALTY_SYSTEM,
+// mặc định TẮT theo kết luận backtest 28/10 - xem src/learning.js)
+process.env.ENABLE_PENALTY_SYSTEM = 'true';
 const checkLong = checkAdaptiveTradeAllowed('SOL-USDT', 'LONG');
-assert(checkLong.allowed === false, 'Cổng kỷ luật Veto chặn đứng lệnh Long trên cặp đang bị phạt');
+assert(checkLong.allowed === false, 'Cổng kỷ luật Veto chặn đứng lệnh Long trên cặp đang bị phạt (khi ENABLE_PENALTY_SYSTEM=true)');
 
 // Sau khi thắng lệnh, xóa án phạt phục hồi
 rewardWinAndClearPenalty('SOL-USDT');

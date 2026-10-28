@@ -289,6 +289,16 @@ export function rewardWinAndClearPenalty(symbol) {
  * @returns {{ allowed: boolean, reason: string|null }}
  */
 export function checkAdaptiveTradeAllowed(symbol, direction, btcH1Candles = null, btcH4Candles = null) {
+  // TẮT HỆ THỐNG PENALTY (mặc định TẮT theo kết luận backtest 28/10/2026):
+  // backtest cấp danh mục (scripts/backtest_portfolio.mjs) xác nhận hệ thống
+  // phạt chặn ~6% số lệnh nhưng PF giữ y nguyên (1.64) - tức lệnh bị chặn
+  // KHÔNG thiên về xấu hơn trung bình, chỉ làm bỏ lỡ cơ hội (-6.2% tổng R),
+  // không hề bảo vệ gì. Giống Time-Stop trước đây: ý tưởng hay nhưng số liệu
+  // bác bỏ. Đặt ENABLE_PENALTY_SYSTEM=true để bật lại nếu muốn test.
+  if (process.env.ENABLE_PENALTY_SYSTEM !== 'true') {
+    return { allowed: true, reason: null };
+  }
+
   loadTradeMemory();
   const now = Date.now();
 
