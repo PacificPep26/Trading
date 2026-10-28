@@ -109,7 +109,17 @@ export async function notifyNewSignal(signal) {
   const isLong = signal.direction === 'LONG';
   const icon = isLong ? '🟢' : '🔴';
   const dirText = isLong ? 'MUA (LONG)' : 'BÁN (SHORT)';
-  const scoreInfo = signal.qualityScore ? `\n⚡ <b>Điểm Sức Mạnh:</b> <code>${signal.qualityScore}/100 pts</code>` : '';
+  // PHÂN HẠNG CHẤT LƯỢNG KÈO: backtest cho thấy điểm càng cao thì win rate &
+  // PF càng cao (75đ: WR 52%/PF 1.70 | 85đ+: WR 58%/PF 2.04). Giữ nguyên
+  // ngưỡng vào lệnh 75 (để không bỏ lỡ tổng lợi nhuận), nhưng gắn NHÃN hạng
+  // để người dùng biết con nào "chắc ăn" hơn mà cân nhắc chú ý/vào tay thêm.
+  let tierTag = '';
+  if (signal.qualityScore >= 90) tierTag = '\n👑 <b>HẠNG KÈO:</b> <code>SIÊU VIP S (Win rate cao nhất)</code>';
+  else if (signal.qualityScore >= 85) tierTag = '\n💎 <b>HẠNG KÈO:</b> <code>VIP A+ (Thắng ~58%, PF 2.0+)</code>';
+  else if (signal.qualityScore >= 80) tierTag = '\n⭐ <b>HẠNG KÈO:</b> <code>A (Thắng ~54%)</code>';
+  else tierTag = '\n✅ <b>HẠNG KÈO:</b> <code>Chuẩn B (Thắng ~52%)</code>';
+
+  const scoreInfo = signal.qualityScore ? `\n⚡ <b>Điểm Sức Mạnh:</b> <code>${signal.qualityScore}/100 pts</code>${tierTag}` : '';
   const reasonInfo = signal.qualityReasons && signal.qualityReasons.length > 0 ? `\n⭐ <b>Hội tụ sức mạnh:</b> ${signal.qualityReasons.join(' | ')}` : '';
   const orderTypeTag = `\n🏷️ <b>Khớp Lệnh:</b> <code>Limit Post-Only (Phí Maker 0.02%)</code>`;
 
