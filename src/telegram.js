@@ -11,24 +11,38 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 /**
+ * Loại bỏ triệt để các dấu sao ** thừa do markdown sinh ra, giúp hiển thị sạch đẹp trên mọi nền tảng
+ * @param {string} str 
+ * @returns {string}
+ */
+export function stripMarkdownAsterisks(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/\*{2,3}([^*]+)\*{2,3}/g, '$1') // **từ** -> từ
+    .replace(/\*{1,2}/g, ''); // Dọn sạch các dấu * thừa lẻ loi
+}
+
+/**
  * Gửi tin nhắn thô qua Telegram Bot API
  * @param {string} text - Nội dung tin nhắn (hỗ trợ HTML)
  * @returns {Promise<boolean>}
  */
 export async function sendTelegramMessage(text) {
+  const cleanedText = stripMarkdownAsterisks(text);
+
   if (!BOT_TOKEN || !CHAT_ID) {
     console.log('\n[TELEGRAM CONSOLE LOG] -----------------------------');
-    console.log(text.replace(/<[^>]*>?/gm, '')); // Strip HTML tags
+    console.log(cleanedText.replace(/<[^>]*>?/gm, '')); // Strip HTML tags
     console.log('----------------------------------------------------\n');
     return false;
   }
 
   // Telegram giới hạn 4096 ký tự mỗi tin nhắn -> Tự động cắt nếu vượt quá 3900 ký tự
   const MAX_LEN = 3900;
-  if (text.length > MAX_LEN) {
+  if (cleanedText.length > MAX_LEN) {
     const parts = [];
     let currentPart = '';
-    const lines = text.split('\n');
+    const lines = cleanedText.split('\n');
 
     for (const line of lines) {
       if ((currentPart + '\n' + line).length > MAX_LEN) {
@@ -49,7 +63,7 @@ export async function sendTelegramMessage(text) {
     return allOk;
   }
 
-  return await sendSingleTelegramChunk(text);
+  return await sendSingleTelegramChunk(cleanedText);
 }
 
 async function sendSingleTelegramChunk(text) {

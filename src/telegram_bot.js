@@ -10,7 +10,7 @@
 
 import dotenv from 'dotenv';
 import { generateKeyLevelRadar } from './engine.js';
-import { analyzeChartScreenshot, callGemini } from './ai_agent.js';
+import { analyzeChartScreenshot, callGemini, loadKnowledgeBase } from './ai_agent.js';
 import { sendTelegramMessage } from './telegram.js';
 
 dotenv.config();
@@ -104,56 +104,126 @@ export async function handleRadarCommand(fetchOkxCandlesFn) {
  * @param {Function} fetchOkxCandlesFn 
  * @returns {Promise<string>}
  */
-export async function handleGeneralChatQuery(query, fetchOkxCandlesFn) {
+export async function handleGeneralChatQuery(query, fetchOkxCandlesFn, positions = []) {
   try {
     const symbols = PREMIER_SYMBOLS;
-    const snapshot = [];
-    for (const sym of symbols) {
+
+    // 1. Quét song song H4 cho cả 6 coin để tiết kiệm thời gian (<500ms)
+    const h4Promises = symbols.map(async sym => {
       try {
         const instId = `${sym}-SWAP`;
         const candlesH4 = await fetchOkxCandlesFn(instId, '4H', 60);
-        if (!candlesH4 || candlesH4.length < 20) continue;
+        if (!candlesH4 || candlesH4.length < 20) return null;
         const closedH4 = candlesH4.filter(c => c.confirm === 1);
         const curPrice = closedH4[closedH4.length - 1].close;
         const radar = generateKeyLevelRadar({ symbol: sym, candlesH4: closedH4, curPrice });
-        if (radar) {
-          snapshot.push({
-            symbol: sym,
-            price: curPrice,
-            trendH4: radar.trendH4,
-            nearestResistance: radar.nearestRes,
-            distToRes: radar.distToResPct + '%',
-            nearestSupport: radar.nearestSup,
-            distToSup: radar.distToSupPct + '%',
-            scenario: radar.scenario
-          });
-        }
-      } catch {}
-    }
+        if (!radar) return null;
+        return {
+          symbol: sym,
+          price: curPrice,
+          trendH4: radar.trendH4,
+          nearestResistance: radar.nearestRes,
+          distToRes: radar.distToResPct + '%',
+          nearestSupport: radar.nearestSup,
+          distToSup: radar.distToSupPct + '%',
+          scenario: radar.scenario
+        };
+      } catch {
+        return null;
+      }
+    });
 
-    const marketCtx = JSON.stringify(snapshot, null, 2);
+    // 2. Lấy thêm bối cảnh vĩ mô D1 và nến M15 của BTC
+    const d1Promise = (async () => {
+      try {
+        const candlesD1 = await fetchOkxCandlesFn('BTC-USDT-SWAP', '1D', 15);
+        if (!candlesD1 || candlesD1.length === 0) return null;
+        const lastD1 = candlesD1[candlesD1.length - 1];
+        const recentHigh = Math.max(...candlesD1.map(c => c.high));
+        const recentLow = Math.min(...candlesD1.map(c => c.low));
+        return {
+          currentD1: { open: lastD1.open, high: lastD1.high, low: lastD1.low, close: lastD1.close },
+          swingHigh15D: recentHigh,
+          swingLow15D: recentLow
+        };
+      } catch {
+        return null;
+      }
+    })();
+
+    const m15Promise = (async () => {
+      try {
+        const candlesM15 = await fetchOkxCandlesFn('BTC-USDT-SWAP', '15m', 8);
+        if (!candlesM15 || candlesM15.length === 0) return null;
+        return candlesM15.slice(-5).map(c => ({
+          time: new Date(c.ts).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          isBullish: c.close >= c.open,
+          range: +(c.high - c.low).toFixed(1)
+        }));
+      } catch {
+        return null;
+      }
+    })();
+
+    const [h4Snapshots, d1Context, m15Recent] = await Promise.all([
+      Promise.all(h4Promises),
+      d1Promise,
+      m15Promise
+    ]);
+
+    const validSnapshots = h4Snapshots.filter(Boolean);
+    const marketCtx = JSON.stringify({
+      top6RadarH4: validSnapshots,
+      btcVĩMôD1: d1Context,
+      btcPriceActionM15: m15Recent,
+      viThePaperTradeDangMo: positions && positions.length > 0
+        ? positions.map(p => ({ symbol: p.symbol, direction: p.direction, entry: p.entry, stopLoss: p.stopLoss, takeProfit: p.takeProfit, isProfitLocked: p.isProfitLocked }))
+        : 'Không có vị thế nào đang mở'
+    }, null, 2);
+
+    const kbContext = loadKnowledgeBase();
 
     const prompt = `Người dùng vừa hỏi: "${query}"
 
-Dữ liệu thị trường thời gian thực (Top 6 Premier Coins từ sàn OKX):
-${marketCtx}`;
+Dữ liệu thị trường thời gian thực quét trực tiếp từ sàn OKX:
+${marketCtx}
 
-    const systemInstruction = `Bạn là Antigravity Quant Trader — Chuyên gia định lượng hàng đầu thế giới về Smart Money Concepts (SMC) và Dr. Kane Sonic R (EMAs 34/89). Bạn đang hỗ trợ 1-1 cho Nhà Giao Dịch trên Telegram.
+Tài liệu chiến lược & bài học thực chiến của chính hệ thống (dùng để trả lời đúng theo cách bot THẬT đang vận hành, không phải lý thuyết chung chung):
+${kbContext}`;
 
-Phong cách trả lời:
-1. Trả lời trực tiếp, thông minh, sắc bén, sòng phẳng, đầy đủ lý lẽ bằng tiếng Việt.
-2. Tuyệt đối không trả lời chung chung hoặc né tránh. Phải bóc tách tư duy Cá Mập (Smart Money) vs Nhỏ lẻ (Retail FOMO).
-3. Luôn đưa ra các kịch bản hành động rõ ràng:
-   - Nếu hỏi có nên mua/bán không: Phân tích tỷ lệ Risk:Reward, khoảng cách tới Cản cứng/Hỗ trợ.
-   - Nêu rõ: Vùng mua tối ưu khi Pullback là ở đâu (Entry, SL, TP, R:R).
-   - Nêu rõ: Kịch bản nếu giá không Pullback mà Breakout bay luôn thì xử lý thế nào để không bỏ lỡ sóng và không bị mua đu đỉnh.
-4. Bắt buộc định dạng câu trả lời bằng HTML chuẩn của Telegram (dùng <b>, <i>, <code>). TUYỆT ĐỐI KHÔNG dùng ký tự markdown **.
-5. Ngắn gọn, súc tích (khoảng 2-4 đoạn), cuốn hút và tạo cảm hứng giao dịch kỷ luật.`;
+    const systemInstruction = `Bạn là Antigravity Quant Trader — Bộ Não AI của hệ thống Trading Tự động (Victor Trading Bot) trên sàn OKX.
+Bạn là chuyên gia đỉnh cao về Smart Money Concepts (SMC), Price Action nến Nhật và Dr. Kane Sonic R (EMAs 34/89).
+
+NGUYÊN TẮC VÀ LOGIC HỆ THỐNG CỦA BẠN:
+0. VỊ THẾ PAPER TRADE ĐANG MỞ: dữ liệu bên dưới (key "viThePaperTradeDangMo") là SỰ THẬT về lệnh bot đang mô phỏng - LUÔN kiểm tra trường này trước khi trả lời. Nếu người dùng hỏi về lệnh họ đang giữ, PnL, nên chốt/giữ, hay bất kỳ câu nào liên quan vị thế, PHẢI dựa đúng vào entry/SL/TP/isProfitLocked ở đây, không bịa hoặc nói chung chung.
+1. ĐA KHUNG THỜI GIAN:
+   - D1: Định hướng vĩ mô (chu kỳ đỉnh/đáy, vị trí so với MA/EMA ngày).
+   - H4: Xác định cấu trúc thị trường (Trend EMA 34/89, Key Levels Tier-2, vùng bẫy thanh khoản Inducement).
+   - M15: Xác nhận tín hiệu vào lệnh (Trigger Confirmation).
+2. KỊCH BẢN ĐÓN ĐẦU & KHÔNG ĐẶT LIMIT THỤ ĐỘNG:
+   - Hệ thống có Bản Đồ Cản Canh Trước (Radar) để biết trước cá mập sẽ gom/xả ở đâu.
+   - Nhưng TUYỆT ĐỐI KHÔNG đặt lệnh Limit thụ động đón dao rơi vì nến đỏ/xanh xả hàng mạnh (Displacement) sẽ xuyên thủng cản gây dính Stop Loss.
+   - Chỉ vào lệnh khi NẾN M15 XÁC NHẬN: Rút râu (Pinbar/Sweep >= 40%) từ chối giá hoặc nến đảo chiều đóng nến xác nhận xu hướng.
+3. PHÂN BIỆT NẾN THÂN DÀI VÀ PHÁ NỀN:
+   - Hệ thống phân biệt rõ: Nến Marubozu thân dài (bodySize/range >= 65%), Nến rút râu quét thanh khoản, Nến nén do dự.
+   - Khi giá phá nền (Breakout): Hệ thống nhận diện được ngay nhưng TUYỆT ĐỐI KHÔNG MUA ĐU ĐỈNH. Hệ thống chờ nhịp PULLBACK về mép nền/Breaker Block/EMA34 để có Risk:Reward tối ưu (tối thiểu 1:2.0).
+4. TẠI SAO ĐI NGANG KHÔNG VÀO LỆNH:
+   - Khi thị trường sideway biên hẹp ru ngủ (ADX H1 < 20 hoặc nén ATR), bộ lọc hệ thống KHÓA CHẶT lệnh để bảo vệ vốn, chống bị cào phí và dính bẫy chop 2 đầu. Đứng ngoài là kỷ luật đỉnh cao của Quỹ.
+
+PHONG CÁCH TRẢ LỜI:
+- Trả lời trực tiếp, thông minh, sâu sắc, sòng phẳng, đầy đủ dẫn chứng số liệu thực tế bằng tiếng Việt.
+- Bắt buộc dùng định dạng HTML Telegram chuẩn (<b>in đậm</b>, <code>code</code>, <i>in nghiêng</i>). TUYỆT ĐỐI KHÔNG dùng markdown **.
+- Ngắn gọn, súc tích (khoảng 3-4 đoạn), cuốn hút và tạo cảm hứng giao dịch kỷ luật.`;
 
     const answer = await callGemini(prompt, systemInstruction);
     return answer;
   } catch (err) {
-    return `🤖 <b>Trợ lý Bot:</b> Tôi đã nhận được tin nhắn "${query}". Bạn có thể gõ <code>/radar</code> để xem kịch bản cản cứng Top 6 coin, <code>/status</code> để xem trạng thái bot, hoặc chụp ảnh biểu đồ gửi vào đây để tôi soi chi tiết nhé!`;
+    console.error('[TELEGRAM BOT] Lỗi handleGeneralChatQuery:', err.message);
+    return `🤖 <b>Trợ lý Bot:</b> Tôi đã nhận được tin nhắn "${query}". Hiện tại hệ thống đang kết nối trực tiếp với OKX. Bạn có thể gõ <code>/radar</code> để xem bản đồ cản canh trước, hoặc <code>/status</code> để xem tình trạng bot!`;
   }
 }
 
@@ -326,7 +396,9 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
               }
             } else if (rawText.length > 0) {
               // Bất kỳ câu hỏi / tin nhắn tự do nào khác -> Gemini 3.8 Flash trả lời thông minh
-              const reply = await handleGeneralChatQuery(rawText, fetchOkxCandles);
+              const getPositionsFn2 = context.getActivePositions;
+              const curPositions = typeof getPositionsFn2 === 'function' ? getPositionsFn2() : [];
+              const reply = await handleGeneralChatQuery(rawText, fetchOkxCandles, curPositions);
               await sendTelegramMessage(reply);
             }
           }

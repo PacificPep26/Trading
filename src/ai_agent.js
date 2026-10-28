@@ -22,7 +22,7 @@ const CASES_FILE = path.join(KNOWLEDGE_DIR, 'cases.json');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-flash-latest'];
+const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
 /**
  * Đọc toàn bộ tri thức trading từ Knowledge Base
@@ -73,7 +73,7 @@ export async function callGemini(prompt, systemInstruction = '') {
       ],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 2048
+        maxOutputTokens: 8192
       }
     };
 
@@ -127,7 +127,7 @@ export async function callGeminiVision(prompt, base64Data, mimeType = 'image/png
     throw new Error('GEMINI_API_KEY chưa được thiết lập trong file .env');
   }
 
-  const visionModels = [PRIMARY_MODEL, 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  const visionModels = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-1.5-pro'];
   let lastErr = null;
 
   for (const model of visionModels) {
@@ -149,7 +149,7 @@ export async function callGeminiVision(prompt, base64Data, mimeType = 'image/png
       ],
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 2048
+        maxOutputTokens: 8192
       }
     };
 
