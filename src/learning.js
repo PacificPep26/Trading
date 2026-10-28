@@ -15,7 +15,12 @@ import { detectMarketPhase, analyzeBtcLocomotive } from './engine.js';
 import { LEARNING_CONFIG, BOT_CONFIG } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MEMORY_FILE = path.join(__dirname, '../data/trade_memory.json');
+// SỬA LỖI (28/10/2026): trước đây đường dẫn cố định không đọc env var, nên
+// KHÔNG nằm trên Railway Volume /data như positions.json/trade_history.json/
+// pending_signals.json - mỗi lần deploy code mới, file này bị reset về đúng
+// nội dung commit trong repo, mất sạch án phạt/chuỗi thua/bài học thật đã
+// tích luỹ trên live. Giờ đọc TRADE_MEMORY_FILE giống pattern các file khác.
+const MEMORY_FILE = process.env.TRADE_MEMORY_FILE || path.join(__dirname, '../data/trade_memory.json');
 
 // Cấu hình Hình phạt Kỷ luật (Tham chiếu trực tiếp từ src/config.js)
 export const PENALTY_CONFIG = {
@@ -127,7 +132,16 @@ export function inspectTradeMistake({ pos, candlesH4, candlesH1, candlesM15, btc
   let rootCause = 'Giá kiểm tra cản nhưng Market Maker hấp thụ xuyên qua, quét Stop Loss.';
   let penaltyDurationHours = PENALTY_CONFIG.cooldownHoursAfterSL;
   let forbiddenDirection = null;
-  let requiredBtcConfirmation = isLong ? 'BTC_BULLISH_REVERSAL_CONFIRMED' : 'BTC_BEARISH_REJECTION_CONFIRMED';
+  // SỬA LỖI (28/10/2026, phát hiện qua câu hỏi "sao không canh Short mà cấm
+  // lệnh"): trước đây gán requiredBtcConfirmation VÔ ĐIỀU KIỆN ở đây, khiến
+  // MỌI lỗi (kể cả STRUCTURE_FAILED bình thường, không liên quan BTC) đều bị
+  // checkAdaptiveTradeAllowed() hiểu nhầm là án phạt neo BTC Locomotive, rơi
+  // vào nhánh "ĐÓNG BĂNG TOÀN DIỆN không phân biệt hướng" - khoá luôn cả
+  // hướng ngược lại (Short) đáng lẽ vẫn được phép. Chỉ 2 trường hợp
+  // LOCOMOTIVE_MISALIGNMENT/TREND_FIGHTING bên dưới mới thật sự cần neo theo
+  // cấu trúc BTC; lỗi thường (cản thất bại, fakeout, chop) phải dùng cooldown
+  // có hạn giờ bình thường (penaltyDurationHours), không khoá vô thời hạn.
+  let requiredBtcConfirmation = null;
 
   if (isFoughtLocomotive) {
     mistakeType = 'LOCOMOTIVE_MISALIGNMENT';
