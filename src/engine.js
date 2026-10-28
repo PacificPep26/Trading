@@ -467,7 +467,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
 
             const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : (isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-            const vsaNote = volAbsorptionH4.isAbsorption ? ` | VSA: ${volAbsorptionH4.details}` : (volAbsorptionM15.isAbsorption ? ` | VSA: ${volAbsorptionM15.details}` : '');
+            // CHỈ trích dẫn VSA khi đúng chiều lệnh (BULLISH cho Long) - trước đây chỉ
+            // check isAbsorption bỏ qua type, có thể in nhầm VSA BEARISH (râu trên,
+            // nghĩa là lực mua bị chặn lại - tín hiệu đảo chiều XUỐNG) vào lý do 1
+            // lệnh LONG, gây mâu thuẫn khó hiểu trong tin nhắn Telegram.
+            const vsaNote = (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BULLISH') ? ` | VSA: ${volAbsorptionH4.details}` : ((volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') ? ` | VSA: ${volAbsorptionM15.details}` : '');
             return {
               strategy: stratName,
               direction: 'LONG',
@@ -589,7 +593,9 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
 
             const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : (isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT');
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-            const vsaNote = volAbsorptionH4.isAbsorption ? ` | VSA: ${volAbsorptionH4.details}` : (volAbsorptionM15.isAbsorption ? ` | VSA: ${volAbsorptionM15.details}` : '');
+            // CHỈ trích dẫn VSA khi đúng chiều lệnh (BEARISH cho Short) - xem comment
+            // tương tự ở nhánh Kane Long phía trên.
+            const vsaNote = (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BEARISH') ? ` | VSA: ${volAbsorptionH4.details}` : ((volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') ? ` | VSA: ${volAbsorptionM15.details}` : '');
             return {
               strategy: stratName,
               direction: 'SHORT',
@@ -681,14 +687,18 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
     const testedRes = currentM15.high >= (res * 0.998) || prevM15.high >= (res * 0.998);
     if (testedRes) {
       // Yêu cầu: Với BTC/ETH cần râu trên >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
-      const hasVsaRejection = volAbsorptionM15.isAbsorption || volAbsorptionH4.isAbsorption || (isLeader && m15Anatomy.upperWickRatio >= 0.45);
+      // SỬA LỖI (28/10/2026, phát hiện qua tin nhắn "lý do lạ lạ"): trước đây chỉ
+      // check isAbsorption, chấp nhận CẢ VSA BULLISH (lực bán bị hấp thụ - tín
+      // hiệu đảo chiều LÊN) làm điều kiện vào Short - vô lý về logic. Giờ bắt
+      // buộc đúng type BEARISH (lực mua bị chặn lại - tín hiệu đảo chiều XUỐNG).
+      const hasVsaRejection = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') || (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BEARISH') || (isLeader && m15Anatomy.upperWickRatio >= 0.45);
       const isM15Reversal = currentM15.close < currentM15.open && currentM15.close < prevM15.low;
 
       if (hasVsaRejection && isM15Reversal) {
         // Nếu ngược trend tăng thì bắt buộc giá phải dãn nở xa EMA34 >= 2.0%
         if (isBullTrend) {
           const distAboveEma34 = (curPrice - ema34) / ema34;
-          if (distAboveEma34 < 0.020 && !volAbsorptionM15.isAbsorption) continue;
+          if (distAboveEma34 < 0.020 && !(volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH')) continue;
         }
 
         const entry = currentM15.close;
@@ -708,7 +718,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
           }
 
           const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-          const vsaNote = volAbsorptionM15.isAbsorption ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
+          const vsaNote = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
           return {
             strategy: 'SMC_ZONE_REACTION_SHORT',
             direction: 'SHORT',
@@ -733,7 +743,8 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
     const testedSup = currentM15.low <= (sup * 1.002) || prevM15.low <= (sup * 1.002);
     if (testedSup) {
       // Yêu cầu: Với BTC/ETH cần râu dưới >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
-      const hasVsaRejection = volAbsorptionM15.isAbsorption || volAbsorptionH4.isAbsorption || (isLeader && m15Anatomy.lowerWickRatio >= 0.45);
+      // SỬA LỖI tương tự nhánh Short phía trên: bắt buộc đúng type BULLISH.
+      const hasVsaRejection = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') || (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BULLISH') || (isLeader && m15Anatomy.lowerWickRatio >= 0.45);
       const isM15Reversal = currentM15.close > currentM15.open && currentM15.close > prevM15.high;
 
       if (hasVsaRejection && isM15Reversal) {
@@ -741,7 +752,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
         const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || m15Anatomy.lowerWickRatio >= 0.40;
         if (isBearTrend && !isAtMajorSupport) {
           const distBelowEma34 = (ema34 - curPrice) / curPrice;
-          if (distBelowEma34 < 0.020 && !volAbsorptionM15.isAbsorption) continue;
+          if (distBelowEma34 < 0.020 && !(volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH')) continue;
         }
 
         const entry = currentM15.close;
@@ -761,7 +772,7 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
           }
 
           const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-          const vsaNote = volAbsorptionM15.isAbsorption ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
+          const vsaNote = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
           return {
             strategy: 'SMC_ZONE_REACTION_LONG',
             direction: 'LONG',
