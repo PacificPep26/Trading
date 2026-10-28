@@ -13,6 +13,12 @@ import { generateKeyLevelRadar } from './engine.js';
 import { analyzeChartScreenshot, callGemini, loadKnowledgeBase } from './ai_agent.js';
 import { sendTelegramMessage } from './telegram.js';
 
+// Bộ nhớ hội thoại ngắn hạn (RAM, mất khi restart server - đủ dùng cho chat
+// 1-user, không cần phức tạp hóa thành file/DB). Giữ 6 cặp hỏi-đáp gần nhất
+// để Gemini "nhớ" mạch chat, tránh mỗi câu trả lời như người lạ mới gặp.
+const MAX_CHAT_HISTORY = 6;
+let chatHistory = [];
+
 dotenv.config();
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -187,7 +193,14 @@ export async function handleGeneralChatQuery(query, fetchOkxCandlesFn, positions
 
     const kbContext = loadKnowledgeBase();
 
-    const prompt = `Người dùng vừa hỏi: "${query}"
+    const historyText = chatHistory.length > 0
+      ? chatHistory.map(h => `Người dùng: ${h.query}\nBạn đã trả lời: ${h.reply.replace(/<[^>]*>?/gm, '')}`).join('\n\n')
+      : 'Chưa có lịch sử, đây là câu hỏi đầu tiên trong phiên chat.';
+
+    const prompt = `Lịch sử hội thoại gần đây trong phiên chat này (để nhớ mạch, không lặp lại hay mâu thuẫn với câu trả lời trước):
+${historyText}
+
+Người dùng vừa hỏi tiếp: "${query}"
 
 Dữ liệu thị trường thời gian thực quét trực tiếp từ sàn OKX:
 ${marketCtx}
@@ -220,6 +233,8 @@ PHONG CÁCH TRẢ LỜI:
 - Ngắn gọn, súc tích (khoảng 3-4 đoạn), cuốn hút và tạo cảm hứng giao dịch kỷ luật.`;
 
     const answer = await callGemini(prompt, systemInstruction);
+    chatHistory.push({ query, reply: answer });
+    if (chatHistory.length > MAX_CHAT_HISTORY) chatHistory.shift();
     return answer;
   } catch (err) {
     console.error('[TELEGRAM BOT] Lỗi handleGeneralChatQuery:', err.message);
