@@ -34,5 +34,6 @@
   - Khi PnL chạm mốc **+1.5R**, bot tự động kéo Stop Loss lên mức **DƯƠNG +1.0R**.
   - **GIỮ NGUYÊN 100% VỊ THẾ** để gồng tiếp đến Take Profit (tối thiểu 2.0R).
   - Dù thị trường có bất ngờ đảo chiều mạnh, tài khoản vẫn bỏ túi trọn vẹn +1.0R lợi nhuận, không bao giờ để lệnh thắng lớn hóa thành lệnh hòa hay lỗ.
-- **Time-Stop:** Sau 16 nến M15 (4 tiếng) nếu giá đi ngang không bứt phá, chủ động tất toán bảo toàn vốn.
+- **Time-Stop:** ĐÃ TẮT HẲN (mặc định `timeStopBars=0`). Backtest full-history xác nhận mọi giá trị Time-Stop đã thử (16/48/96/150 nến) đều làm hồi quy nghiêm trọng so với tắt hẳn - cắt cụt setup H4 đang tích lũy lành mạnh trước khi có đủ thời gian phát triển.
+- **Entry Delay (xác nhận trễ trước khi vào lệnh thật):** Khi 1 setup đạt đủ điểm chất lượng (`minSetupQualityScore>=75`), bot KHÔNG vào lệnh ngay - đưa vào hàng đợi "chờ xác nhận" và chờ thêm `entryDelayBars` nến M15 (mặc định 4 nến = ~60 phút). Nếu trong lúc chờ giá chạm SL/TP gốc trước, hoặc giá chạy quá xa làm RR giảm dưới 1.0, bot TỰ HUỶ tín hiệu, không vào lệnh. Backtest xác nhận: cải thiện PF 1-năm 1.55->1.70, multi-year 2021-2026 PF 1.13->1.24 (Tổng R +61.81R->+106.18R, +71%). Tỷ lệ tín hiệu bị huỷ do chờ (giá chạy thẳng không hồi, kiểu fakeout bị lọc): chỉ 5.8% (13/225 tín hiệu) - không phải hiện tượng thường xuyên.
 

@@ -2,6 +2,7 @@ node_modules/
 data/cache/
 data/cache_1year/
 positions.json
+pending_signals.json
 .env
 .railway/
 logs/

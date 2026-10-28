@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from './indicators.js';
-import { evaluateMarket, calculateSetupQualityScore } from './engine.js';
+import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize } from './engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG, getEffectiveConfig } from './config.js';
 import {
   notifyNewSignal,
@@ -32,6 +32,7 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const POSITIONS_FILE = process.env.STATE_FILE || path.join(__dirname, '../positions.json');
+const PENDING_SIGNALS_FILE = process.env.PENDING_SIGNALS_FILE || path.join(__dirname, '../pending_signals.json');
 
 const CONFIG = BOT_CONFIG;
 
@@ -56,6 +57,37 @@ const QUALITY_UNIVERSE = [
  */
 // State quản lý vị thế đang mở
 let activePositions = [];
+
+// ENTRY DELAY: hàng đợi tín hiệu "đạt chuẩn nhưng đang chờ xác nhận" (backtest
+// xác nhận chờ CONFIG.entryDelayBars nến M15 rồi mới khớp lệnh thật cải thiện
+// PF/Tổng R đáng kể, xem src/config.js). Mỗi phần tử: { instId, symbol,
+// signal (gốc, chưa đổi entry), score, reasons, detectedAt (ms thật, dùng để
+// tính đã đủ thời gian chờ hay chưa - vì live quét mỗi pollIntervalSec giây,
+// không đồng bộ hoàn hảo như backtest theo nến) }.
+let pendingSignals = [];
+
+function loadPendingSignals() {
+  if (fs.existsSync(PENDING_SIGNALS_FILE)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(PENDING_SIGNALS_FILE, 'utf8'));
+      pendingSignals = Array.isArray(parsed) ? parsed : [];
+      if (pendingSignals.length > 0) {
+        console.log(`[PENDING] Đã nạp ${pendingSignals.length} tín hiệu đang chờ xác nhận từ ${PENDING_SIGNALS_FILE}`);
+      }
+    } catch (err) {
+      console.error(`[PENDING] Lỗi đọc ${PENDING_SIGNALS_FILE}:`, err.message);
+      pendingSignals = [];
+    }
+  }
+}
+
+function savePendingSignals() {
+  try {
+    fs.writeFileSync(PENDING_SIGNALS_FILE, JSON.stringify(pendingSignals, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[PENDING] Lỗi ghi pending_signals.json:', err.message);
+  }
+}
 
 function loadPositions() {
   if (process.env.RESET_STATE === 'true') {
@@ -388,9 +420,11 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
     const symbol = instId.replace('-SWAP', '');
 
     try {
-      // Nếu đã có vị thế mở cho cặp này thì không phân tích mở thêm
+      // Nếu đã có vị thế mở HOẶC đang chờ xác nhận (ENTRY DELAY) cho cặp này
+      // thì không phân tích mở thêm
       const hasOpenPos = activePositions.some(p => p.instId === instId);
-      if (hasOpenPos) continue;
+      const hasPending = pendingSignals.some(p => p.instId === instId);
+      if (hasOpenPos || hasPending) continue;
 
       // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15, D1
       // (D1 dùng để nhận diện giai đoạn khung Ngày -> cấm bắt đáy/cản tàu ngược
@@ -493,6 +527,33 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
  * slot còn trống và mở lệnh (tách từ runScanCycle, logic giữ nguyên 100%).
  * @param {Array} candidateSignals
  */
+// Mở vị thế thật (tách riêng để dùng chung cho cả 2 đường: vào ngay khi
+// entryDelayBars=0, và finalize từ pendingSignals khi entryDelayBars>0).
+async function openPositionNow(instId, symbol, signal, score, reasons) {
+  const newPos = {
+    id: `${instId}-${Date.now()}`,
+    instId,
+    symbol,
+    direction: signal.direction,
+    strategy: signal.strategy,
+    entry: signal.entry,
+    stopLoss: signal.stopLoss,
+    initialStopLoss: signal.stopLoss,
+    takeProfit: signal.takeProfit,
+    riskReward: signal.riskReward,
+    sizing: signal.sizing,
+    qualityScore: score,
+    qualityReasons: reasons,
+    isBreakevenMoved: false,
+    openedAt: Date.now(),
+    currentBarsM15: 0
+  };
+
+  activePositions.push(newPos);
+  savePositions();
+  await notifyNewSignal(signal);
+}
+
 async function pickAndExecuteWinners(candidateSignals) {
   // 3. ĐÁNH GIÁ VÀ CHỌN "CON KHỎE NHẤT" ĐỂ VÀO LỆNH (RELATIVE STRENGTH WINNER)
   if (candidateSignals.length > 0) {
@@ -503,11 +564,31 @@ async function pickAndExecuteWinners(candidateSignals) {
       console.log(`   ${idx + 1}. ${c.symbol.padEnd(12)}: ${c.score}/100 điểm [${c.reasons.join(' | ')}]`);
     });
 
-    const availableSlots = CONFIG.maxOpenPositions - activePositions.length;
+    // Slot còn trống phải trừ luôn cả tín hiệu đang pending (sắp chiếm slot)
+    // để không duyệt dư quá CONFIG.maxOpenPositions.
+    const availableSlots = CONFIG.maxOpenPositions - activePositions.length - pendingSignals.length;
     const winners = candidateSignals.slice(0, Math.max(0, availableSlots));
 
     for (const winner of winners) {
       const { instId, symbol, signal } = winner;
+
+      if (CONFIG.entryDelayBars > 0) {
+        // ENTRY DELAY: không mở ngay, đưa vào hàng đợi chờ xác nhận thêm
+        // CONFIG.entryDelayBars nến M15 (~CONFIG.entryDelayBars*15 phút) rồi
+        // mới thật sự khớp lệnh - xem processPendingSignals().
+        console.log(`\n⏳ [CHỜ XÁC NHẬN] ${signal.direction} ${symbol} (${winner.score}đ) - đưa vào hàng đợi, chờ ${CONFIG.entryDelayBars * 15} phút xác nhận trước khi vào lệnh thật.`);
+        pendingSignals.push({
+          instId,
+          symbol,
+          signal,
+          score: winner.score,
+          reasons: winner.reasons,
+          detectedAt: Date.now()
+        });
+        savePendingSignals();
+        continue;
+      }
+
       console.log(`\n🚀 [KÍCH HOẠT LỆNH] Tuyển chọn CON KHỎE NHẤT: ${signal.direction} ${symbol} (${winner.score}đ)`);
 
       // Quản trị rủi ro thích ứng
@@ -519,30 +600,108 @@ async function pickAndExecuteWinners(candidateSignals) {
         console.log(`[RISK PENALTY] Giảm size theo kỷ luật cho ${symbol}: size = ${signal.sizing.size.toFixed(4)}`);
       }
 
-      const newPos = {
-        id: `${instId}-${Date.now()}`,
-        instId,
-        symbol,
-        direction: signal.direction,
-        strategy: signal.strategy,
-        entry: signal.entry,
-        stopLoss: signal.stopLoss,
-        initialStopLoss: signal.stopLoss,
-        takeProfit: signal.takeProfit,
-        riskReward: signal.riskReward,
-        sizing: signal.sizing,
-        qualityScore: winner.score,
-        qualityReasons: winner.reasons,
-        isBreakevenMoved: false,
-        openedAt: Date.now(),
-        currentBarsM15: 0
-      };
-
-      activePositions.push(newPos);
-      savePositions();
-      await notifyNewSignal(signal);
+      await openPositionNow(instId, symbol, signal, winner.score, winner.reasons);
     }
   }
+}
+
+// Xử lý hàng đợi tín hiệu đang chờ xác nhận (ENTRY DELAY): kiểm tra mỗi chu
+// kỳ quét (mỗi CONFIG.pollIntervalSec giây) xem đã đủ thời gian chờ chưa, và
+// SL/TP gốc đã bị chạm trước khi kịp vào chưa (coi như setup thất bại trước
+// khi xác nhận xong -> huỷ, không vào lệnh - đúng hành vi đã backtest).
+async function processPendingSignals() {
+  if (pendingSignals.length === 0) return;
+
+  const delayMs = CONFIG.entryDelayBars * 15 * 60 * 1000;
+  const stillPending = [];
+  let changed = false;
+
+  for (const pending of pendingSignals) {
+    const { instId, symbol, signal, score, reasons, detectedAt } = pending;
+    try {
+      // Lấy dư nến hơn mức cần (+4 đệm) để chắc chắn phủ hết khoảng thời gian
+      // chờ, kể cả khi CONFIG.entryDelayBars bị chỉnh cao hơn mặc định sau này.
+      const candlesM15Raw = await fetchOkxCandles(instId, '15m', CONFIG.entryDelayBars + 4);
+      const closedM15 = candlesM15Raw.filter(c => c.confirm === 1);
+      if (closedM15.length === 0) { stillPending.push(pending); continue; }
+
+      const isLong = signal.direction === 'LONG';
+      // Kiểm tra TOÀN BỘ nến M15 đã đóng kể từ lúc phát hiện tín hiệu (không
+      // chỉ nến mới nhất) để không bỏ sót trường hợp SL/TP bị chạm giữa 2 lần
+      // quét (poll mỗi 60s nhưng nến M15 đóng mỗi 15 phút).
+      const barsSinceDetect = closedM15.filter(c => c.ts >= detectedAt - 15 * 60 * 1000);
+      let invalidated = false;
+      for (const bar of barsSinceDetect) {
+        if (isLong) {
+          if (bar.low <= signal.stopLoss || bar.high >= signal.takeProfit) { invalidated = true; break; }
+        } else {
+          if (bar.high >= signal.stopLoss || bar.low <= signal.takeProfit) { invalidated = true; break; }
+        }
+      }
+
+      if (invalidated) {
+        console.log(`[PENDING HỦY] ${symbol} ${signal.direction}: SL/TP gốc đã bị chạm trước khi kịp xác nhận -> huỷ, không vào lệnh.`);
+        changed = true;
+        continue;
+      }
+
+      const elapsedMs = Date.now() - detectedAt;
+      if (elapsedMs < delayMs) {
+        stillPending.push(pending);
+        continue;
+      }
+
+      // Phòng vệ: nếu bằng cách nào đó instId đã có vị thế mở (lý thuyết
+      // không xảy ra vì scanUniverseForCandidates đã chặn trùng, nhưng vẫn
+      // kiểm tra lại cho chắc trước khi mở thêm) -> huỷ pending, không mở đè.
+      if (activePositions.some(p => p.instId === instId)) {
+        console.log(`[PENDING HỦY] ${symbol}: đã có vị thế mở cho ${instId}, huỷ pending để tránh trùng.`);
+        changed = true;
+        continue;
+      }
+
+      // Đủ thời gian chờ, chưa bị huỷ -> khớp lệnh thật tại giá hiện tại
+      const finalEntry = closedM15[closedM15.length - 1].close;
+      const riskDist = Math.abs(finalEntry - signal.stopLoss);
+      if (riskDist <= 0) {
+        console.log(`[PENDING HỦY] ${symbol}: riskDist <= 0 sau khi chờ, dữ liệu bất thường -> huỷ.`);
+        changed = true;
+        continue;
+      }
+      const rr = isLong
+        ? (signal.takeProfit - finalEntry) / riskDist
+        : (finalEntry - signal.takeProfit) / riskDist;
+      if (rr < 1.0) {
+        console.log(`[PENDING HỦY] ${symbol} ${signal.direction}: RR sau khi chờ chỉ còn ${rr.toFixed(2)} (<1.0, giá đã chạy xa) -> huỷ, không vào lệnh.`);
+        changed = true;
+        continue;
+      }
+
+      const finalSignal = {
+        ...signal,
+        entry: finalEntry,
+        sizing: calculatePositionSize(finalEntry, signal.stopLoss, CONFIG.riskUsd, CONFIG.leverage),
+        riskReward: parseFloat(rr.toFixed(2))
+      };
+
+      const riskMult = getAdaptiveRiskMultiplier();
+      if (riskMult < 1.0) {
+        finalSignal.sizing.size *= riskMult;
+        finalSignal.sizing.notional *= riskMult;
+        finalSignal.sizing.margin *= riskMult;
+      }
+
+      console.log(`\n🚀 [KÍCH HOẠT LỆNH SAU XÁC NHẬN] ${signal.direction} ${symbol} (${score}đ) - entry đã cập nhật: ${finalEntry}`);
+      await openPositionNow(instId, symbol, finalSignal, score, reasons);
+      changed = true;
+    } catch (err) {
+      console.error(`[PENDING] Lỗi xử lý ${symbol}:`, err.message);
+      stillPending.push(pending);
+    }
+  }
+
+  pendingSignals = stillPending;
+  if (changed) savePendingSignals();
 }
 
 /**
@@ -564,6 +723,10 @@ export async function runScanCycle() {
 
   // 1.1. Luôn cập nhật giá thời gian thực cho TẤT CẢ các vị thế đang mở
   await updateOpenPositionPrices();
+
+  // 1.2. Xử lý hàng đợi tín hiệu đang chờ xác nhận (ENTRY DELAY) TRƯỚC khi
+  // quét tín hiệu mới - để giải phóng slot kịp thời nếu có tín hiệu bị huỷ.
+  await processPendingSignals();
 
   // 2 & 3. Quét universe tìm ứng viên, rồi chọn Con Khỏe Nhất để vào lệnh
   const candidateSignals = await scanUniverseForCandidates(btcH4, btcH1);
@@ -673,6 +836,7 @@ export async function safeRunScanCycle() {
  */
 async function main() {
   loadPositions();
+  loadPendingSignals();
   const isSingleRun = process.argv.includes('--single-run') || process.argv.includes('--dry-run');
 
   if (isSingleRun) {
@@ -684,7 +848,7 @@ async function main() {
   console.log(`[RUNTIME] Khởi động Bot Live Scanner (Chu kỳ: ${CONFIG.pollIntervalSec}s)...`);
   
   // Khởi động Trợ lý AI Tương tác 2 Chiều trên Telegram (Gemini 3.8 Flash Vision)
-  startTelegramListener({ fetchOkxCandles, getActivePositions: () => activePositions });
+  startTelegramListener({ fetchOkxCandles, getActivePositions: () => activePositions, getPendingSignals: () => pendingSignals });
 
   await safeRunScanCycle();
 

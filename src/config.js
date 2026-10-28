@@ -242,7 +242,19 @@ export const INDICATOR_CONFIG = {
   useBreakerBlocks: process.env.USE_BREAKER_BLOCKS !== 'false',
   breakerBlockMode: process.env.BREAKER_BLOCK_MODE || 'AND_FILTER',
   breakerPivotL: parseInt(process.env.BREAKER_PIVOT_L || '1', 10),
-  breakerPivotR: parseInt(process.env.BREAKER_PIVOT_R || '1', 10)
+  breakerPivotR: parseInt(process.env.BREAKER_PIVOT_R || '1', 10),
+
+  // ENTRY DELAY (xác nhận trễ trước khi vào lệnh thật): backtest xác nhận chờ
+  // 4 nến M15 (~60 phút) sau khi tín hiệu đạt chuẩn rồi mới thật sự khớp lệnh
+  // (bỏ qua nếu SL/TP gốc đã bị chạm trước, hoặc RR suy giảm <1.0 do giá chạy
+  // xa) cải thiện: 1-năm PF 1.55->1.70, multi-year 2021-2026 PF 1.13->1.24,
+  // Tổng R +61.81R->+106.18R (+71%). Tỷ lệ bỏ lỡ tín hiệu thật do giá chạy
+  // thẳng không hồi (kiểu HYPE 27/10): chỉ 5.8% (13/225 tín hiệu) - không phải
+  // hiện tượng thường xuyên. Xem docs/strategies/VOLUME_PROFILE_BREAKER.md
+  // Phần 10. BẬT mặc định (4 nến = 60 phút). Cơ chế thật trên live dùng hàng
+  // đợi pendingSignals trong src/server.js (quét không đủ nhanh để chờ đồng
+  // bộ như backtest, phải theo dõi qua nhiều chu kỳ quét 60s).
+  entryDelayBars: parseInt(process.env.ENTRY_DELAY_BARS || '4', 10)
 };
 
 // ====================================================================
@@ -327,6 +339,7 @@ export const BOT_CONFIG = {
   breakerBlockMode: INDICATOR_CONFIG.breakerBlockMode,
   breakerPivotL: INDICATOR_CONFIG.breakerPivotL,
   breakerPivotR: INDICATOR_CONFIG.breakerPivotR,
+  entryDelayBars: INDICATOR_CONFIG.entryDelayBars,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,

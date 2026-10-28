@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle, calculateATR } from '../src/indicators.js';
-import { evaluateMarket, calculateSetupQualityScore } from '../src/engine.js';
+import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize } from '../src/engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -272,14 +272,51 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           });
           const minScore = cfg.minSetupQualityScore || 75;
           if (quality.score >= minScore) {
-            activeTrade = {
-              ...signal,
-              qualityScore: quality.score,
-              entryTime: currentM15.ts,
-              initialStopLoss: signal.stopLoss,
-              isProfitLocked: false,
-              barsHeld: 0
-            };
+            // ENTRY DELAY (mặc định BẬT, entryDelayBars=4 ~60 phút, xem
+            // src/config.js): KHÔNG vào lệnh ngay, mô phỏng chờ N nến M15 rồi
+            // mới thật sự khớp lệnh (dùng close nến đó làm entry thật). Nếu
+            // SL/TP gốc đã bị chạm TRƯỚC khi kịp chờ đủ N nến -> bỏ qua lệnh
+            // (coi như setup thất bại/fakeout trước khi kịp vào, đúng cơ chế
+            // pendingSignals thật trong src/server.js). Đặt entryDelayBars=0
+            // để tắt, quay lại hành vi khớp ngay như trước.
+            const delayBars = cfg.entryDelayBars || 0;
+            const isLong = signal.direction === 'LONG';
+            let finalEntry = signal.entry;
+            let finalEntryTime = currentM15.ts;
+            let skipTrade = false;
+
+            for (let d = 1; d <= delayBars; d++) {
+              const idx = i + d;
+              if (idx >= candlesM15.length) { skipTrade = true; break; }
+              const futureBar = candlesM15[idx];
+              if (isLong) {
+                if (futureBar.low <= signal.stopLoss || futureBar.high >= signal.takeProfit) { skipTrade = true; break; }
+              } else {
+                if (futureBar.high >= signal.stopLoss || futureBar.low <= signal.takeProfit) { skipTrade = true; break; }
+              }
+              finalEntry = futureBar.close;
+              finalEntryTime = futureBar.ts;
+            }
+
+            if (!skipTrade) {
+              const riskDist = Math.abs(finalEntry - signal.stopLoss);
+              const rr = isLong
+                ? (signal.takeProfit - finalEntry) / riskDist
+                : (finalEntry - signal.takeProfit) / riskDist;
+              if (riskDist > 0 && rr >= 1.0) {
+                activeTrade = {
+                  ...signal,
+                  entry: finalEntry,
+                  sizing: delayBars > 0 ? calculatePositionSize(finalEntry, signal.stopLoss, cfg.riskUsd, cfg.leverage) : signal.sizing,
+                  riskReward: delayBars > 0 ? parseFloat(rr.toFixed(2)) : signal.riskReward,
+                  qualityScore: quality.score,
+                  entryTime: finalEntryTime,
+                  initialStopLoss: signal.stopLoss,
+                  isProfitLocked: false,
+                  barsHeld: 0
+                };
+              }
+            }
           }
         }
       }

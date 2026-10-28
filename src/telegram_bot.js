@@ -110,7 +110,7 @@ export async function handleRadarCommand(fetchOkxCandlesFn) {
  * @param {Function} fetchOkxCandlesFn 
  * @returns {Promise<string>}
  */
-export async function handleGeneralChatQuery(query, fetchOkxCandlesFn, positions = []) {
+export async function handleGeneralChatQuery(query, fetchOkxCandlesFn, positions = [], pendingSignals = []) {
   try {
     const symbols = PREMIER_SYMBOLS;
 
@@ -188,7 +188,10 @@ export async function handleGeneralChatQuery(query, fetchOkxCandlesFn, positions
       btcPriceActionM15: m15Recent,
       viThePaperTradeDangMo: positions && positions.length > 0
         ? positions.map(p => ({ symbol: p.symbol, direction: p.direction, entry: p.entry, stopLoss: p.stopLoss, takeProfit: p.takeProfit, isProfitLocked: p.isProfitLocked }))
-        : 'Không có vị thế nào đang mở'
+        : 'Không có vị thế nào đang mở',
+      tinHieuDangChoXacNhan: pendingSignals && pendingSignals.length > 0
+        ? pendingSignals.map(p => ({ symbol: p.symbol, direction: p.signal.direction, entryDuKien: p.signal.entry, phatHienLucNao: new Date(p.detectedAt).toISOString(), ghiChu: 'Bot ENTRY DELAY: đã đạt chuẩn setup nhưng đang chờ thêm thời gian xác nhận trước khi vào lệnh thật, tránh fakeout' }))
+        : 'Không có tín hiệu nào đang chờ xác nhận'
     }, null, 2);
 
     const kbContext = loadKnowledgeBase();
@@ -213,6 +216,7 @@ Bạn là chuyên gia đỉnh cao về Smart Money Concepts (SMC), Price Action 
 
 NGUYÊN TẮC VÀ LOGIC HỆ THỐNG CỦA BẠN:
 0. VỊ THẾ PAPER TRADE ĐANG MỞ: dữ liệu bên dưới (key "viThePaperTradeDangMo") là SỰ THẬT về lệnh bot đang mô phỏng - LUÔN kiểm tra trường này trước khi trả lời. Nếu người dùng hỏi về lệnh họ đang giữ, PnL, nên chốt/giữ, hay bất kỳ câu nào liên quan vị thế, PHẢI dựa đúng vào entry/SL/TP/isProfitLocked ở đây, không bịa hoặc nói chung chung.
+0.1. CƠ CHẾ ENTRY DELAY (QUAN TRỌNG, hệ thống mới thêm): hệ thống KHÔNG vào lệnh ngay khi 1 setup vừa đạt đủ điểm chất lượng - nó đưa vào hàng đợi "chờ xác nhận" (key "tinHieuDangChoXacNhan" bên dưới) và chờ thêm CONFIG.entryDelayBars nến M15 (mặc định 4 nến = ~60 phút) trước khi thật sự khớp lệnh. Lý do: backtest xác nhận chờ thêm giúp lọc bỏ phần lớn tín hiệu "fakeout" (giá đảo chiều ngay sau khi vừa đạt điều kiện), cải thiện Profit Factor và tổng lợi nhuận đáng kể (xem docs/strategies/VOLUME_PROFILE_BREAKER.md Phần 10). Trong thời gian chờ, nếu giá chạm SL/TP gốc trước hoặc chạy quá xa làm RR giảm dưới 1.0, hệ thống sẽ TỰ HUỶ tín hiệu đó, không vào lệnh (khoảng 5.8% tín hiệu bị huỷ kiểu này trong backtest - không phải lỗi, mà là hành vi thiết kế bảo vệ vốn). Nếu người dùng hỏi "sao chưa vào lệnh dù thấy setup đẹp", PHẢI kiểm tra trường "tinHieuDangChoXacNhan" trước - rất có thể đang trong giai đoạn chờ xác nhận này, không phải bot bỏ sót.
 1. ĐA KHUNG THỜI GIAN:
    - D1: Định hướng vĩ mô (chu kỳ đỉnh/đáy, vị trí so với MA/EMA ngày).
    - H4: Xác định cấu trúc thị trường (Trend EMA 34/89, Key Levels Tier-2, vùng bẫy thanh khoản Inducement).
@@ -372,6 +376,17 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
               } else {
                 reply += `📊 <b>Vị thế đang mở:</b> <code>0/2 (Đang rình setup A+)</code>\n`;
               }
+
+              const getPendingFn = context.getPendingSignals;
+              const pending = typeof getPendingFn === 'function' ? getPendingFn() : [];
+              if (pending && pending.length > 0) {
+                reply += `\n⏳ <b>ĐANG CHỜ XÁC NHẬN (Entry Delay, ${pending.length}):</b>\n`;
+                for (const p of pending) {
+                  const waitedMin = Math.round((Date.now() - p.detectedAt) / 60000);
+                  reply += `  • <b>${p.symbol}</b> ${p.signal.direction} (phát hiện ${waitedMin} phút trước, entry dự kiến ~${p.signal.entry})\n`;
+                }
+              }
+
               reply += `\n💡 <i>Gõ /radar để xem khoảng cách tới các cản gần nhất.</i>`;
               await sendTelegramMessage(reply);
             } else if (
@@ -413,7 +428,9 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
               // Bất kỳ câu hỏi / tin nhắn tự do nào khác -> Gemini 3.8 Flash trả lời thông minh
               const getPositionsFn2 = context.getActivePositions;
               const curPositions = typeof getPositionsFn2 === 'function' ? getPositionsFn2() : [];
-              const reply = await handleGeneralChatQuery(rawText, fetchOkxCandles, curPositions);
+              const getPendingFn2 = context.getPendingSignals;
+              const curPending = typeof getPendingFn2 === 'function' ? getPendingFn2() : [];
+              const reply = await handleGeneralChatQuery(rawText, fetchOkxCandles, curPositions, curPending);
               await sendTelegramMessage(reply);
             }
           }
