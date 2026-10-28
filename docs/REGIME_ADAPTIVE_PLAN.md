@@ -234,6 +234,32 @@ lên Railway (live path vẫn chạy baseline `7c8423a`, verify qua
 `node src/server.js --single-run` xác nhận scanner hoạt động bình thường với
 cờ mặc định tắt).
 
+## Phần 11 — Entry Delay (28/10/2026): bật live + test Hybrid slot-ranking
+**Entry Delay (chờ N nến M15 trước khi khớp lệnh thật) đã BẬT LIVE**, mặc định
+`entryDelayBars=4` (~60 phút). Backtest full: 1-năm PF 1.55->1.70 (+74.68R),
+multi-year 2021-2026 PF 1.13->1.24 (+61.81R->+106.18R, +71%). Tỷ lệ tín hiệu bị
+huỷ do chờ (giá chạy thẳng không hồi): chỉ 5.8% (13/225 tín hiệu). Đã quét thêm
+delay 1/2/3/5/6/7/8/10/12 nến - delay=4 vẫn tối ưu Tổng R trên multi-year dù
+delay=10 trông đẹp hơn trên riêng 1-năm (bằng chứng overfit 1-mẫu khác).
+Implementation live: hàng đợi `pendingSignals` trong `src/server.js`, persist
+qua `pending_signals.json` (giống `positions.json`).
+
+**Ý tưởng Hybrid "slot 1 vào ngay, slot 2-3 chờ xác nhận" — ĐÃ TEST, BÁC BỎ:**
+Dựng mới `scripts/backtest_portfolio.mjs` (backtest CẤP DANH MỤC thật, gộp cả
+watchlist theo đúng trình tự thời gian, theo dõi số slot OPEN+PENDING trên
+toàn danh mục tại mọi thời điểm - khác `backtest_1year.mjs` chạy từng coin độc
+lập không biết coin khác đang chiếm slot hay không). Kết quả (`maxOpenPositions=3`):
+
+| | Lệnh | PF | Tổng R | Max DD |
+|---|---|---|---|---|
+| Baseline (mọi slot đều chờ delay=4) | 202 | **1.64** | **+67.72R** | -15.04R |
+| Hybrid (slot 1 delay=0, slot 2-3 delay=4) | 209 | 1.46 | +51.78R | -16.04R |
+
+Hybrid tệ hơn cả 3 chỉ số chính (PF -11%, Tổng R **-24%**). Phân tích theo slot
+trong bản Hybrid: Slot 1 (vào ngay) PF thấp nhất (1.44), Slot 3 (chờ) PF cao
+nhất (1.81) - chính xác ngược với trực giác "lệnh đầu nên nhanh tay". **Giữ
+nguyên live: mọi slot đều chờ Entry Delay đồng đều, không phân biệt thứ hạng.**
+
 ## Quy tắc bắt buộc cho các bước tiếp theo
 1. Mọi thay đổi logic thoát lệnh/entry phải test qua backtest full-history (không
    chỉ 1 tháng) TRƯỚC khi áp vào `src/engine.js`/`src/server.js`.
