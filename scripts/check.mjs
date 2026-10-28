@@ -682,6 +682,22 @@ console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Pric
   assert(findBreakerBlocks([]).length === 0, 'Breaker Block trả về mảng rỗng an toàn khi không có dữ liệu nến');
 }
 
+// ==========================================================================
+// 20. KIỂM TRA LỊCH TIN TỨC (NEWS BLACKOUT FILTER)
+// ==========================================================================
+{
+  console.log('\n20. Kiểm tra Lịch Tin Tức (News Blackout Filter):');
+  const { isNewsBlackout, getNextNewsEvent } = await import('../src/news_calendar.js');
+  const fomc = new Date('2026-10-28T18:00:00Z').getTime();
+  assert(isNewsBlackout(fomc, 2).blocked === true, 'Chặn vào lệnh ĐÚNG lúc tin FOMC ra');
+  assert(isNewsBlackout(fomc - 3600000, 2).blocked === true, 'Chặn 1 tiếng TRƯỚC tin (trong vùng ±2h)');
+  assert(isNewsBlackout(fomc + 3600000, 2).blocked === true, 'Chặn 1 tiếng SAU tin (trong vùng ±2h)');
+  assert(isNewsBlackout(fomc - 3 * 3600000, 2).blocked === false, 'KHÔNG chặn khi cách tin 3 tiếng (ngoài vùng)');
+  assert(isNewsBlackout(new Date('2026-11-01T00:00:00Z').getTime(), 2).blocked === false, 'KHÔNG chặn vào ngày thường không có tin');
+  const next = getNextNewsEvent(new Date('2026-10-29T00:00:00Z').getTime());
+  assert(next && next.name.includes('NFP'), 'Tìm đúng tin lớn kế tiếp sau FOMC 28/10 là NFP');
+}
+
 // Tổng kết
 console.log('\n======================================================');
 console.log(`🎉 TỔNG KẾT KIỂM THỬ: ${passed} PASS, ${failed} FAIL`);

@@ -387,6 +387,20 @@ Hệ thống giao dịch Smart Money Concepts (SMC) & Kane Sonic R (EMAs 34/89) 
                 }
               }
 
+              try {
+                const { getNextNewsEvent, isNewsBlackout } = await import('./news_calendar.js');
+                const nowMs = Date.now();
+                const curNews = isNewsBlackout(nowMs, parseFloat(process.env.NEWS_BLACKOUT_HOURS || '2'));
+                if (curNews.blocked) {
+                  reply += `\n⏸️ <b>ĐANG TẠM DỪNG VÀO LỆNH:</b> <code>Gần tin ${curNews.event}</code>\n`;
+                }
+                const nextNews = getNextNewsEvent(nowMs);
+                if (nextNews) {
+                  const t = new Date(nextNews.tsMs).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+                  reply += `\n📰 <b>Tin lớn kế tiếp:</b> <code>${nextNews.name}</code> (còn ${nextNews.hoursAway.toFixed(1)}h, lúc ${t})\n`;
+                }
+              } catch {}
+
               reply += `\n💡 <i>Gõ /radar để xem khoảng cách tới các cản gần nhất.</i>`;
               await sendTelegramMessage(reply);
             } else if (

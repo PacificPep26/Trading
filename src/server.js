@@ -27,6 +27,7 @@ import {
   getAdaptiveRiskMultiplier
 } from './learning.js';
 import { startTelegramListener } from './telegram_bot.js';
+import { isNewsBlackout, getNextNewsEvent } from './news_calendar.js';
 
 dotenv.config();
 
@@ -730,6 +731,23 @@ export async function runScanCycle() {
   // 1.2. Xử lý hàng đợi tín hiệu đang chờ xác nhận (ENTRY DELAY) TRƯỚC khi
   // quét tín hiệu mới - để giải phóng slot kịp thời nếu có tín hiệu bị huỷ.
   await processPendingSignals();
+
+  // 1.3. LỊCH TIN TỨC: tạm dừng VÀO LỆNH MỚI quanh tin lớn Mỹ (FOMC/CPI/NFP)
+  // để tránh bị quét 2 đầu lúc giá giật mạnh. VẪN quản lý lệnh đang mở bình
+  // thường (SL/TP/trailing ở updateOpenPositionPrices phía trên). Bật/tắt qua
+  // ENABLE_NEWS_FILTER (mặc định BẬT), bán kính vùng cấm NEWS_BLACKOUT_HOURS.
+  if (process.env.ENABLE_NEWS_FILTER !== 'false') {
+    const blackoutHours = parseFloat(process.env.NEWS_BLACKOUT_HOURS || '2');
+    const news = isNewsBlackout(Date.now(), blackoutHours);
+    if (news.blocked) {
+      const when = news.minutesToEvent >= 0
+        ? `còn ${news.minutesToEvent} phút nữa ra tin`
+        : `vừa ra tin ${Math.abs(news.minutesToEvent)} phút trước`;
+      console.log(`[NEWS FILTER] ⏸️ Tạm dừng vào lệnh mới quanh tin lớn: ${news.event} (${when}). Chỉ quản lý lệnh đang mở.`);
+      console.log(`[SCAN CYCLE] Hoàn tất chu kỳ (news blackout). Chờ ${CONFIG.pollIntervalSec}s...`);
+      return;
+    }
+  }
 
   // 2 & 3. Quét universe tìm ứng viên, rồi chọn Con Khỏe Nhất để vào lệnh
   const candidateSignals = await scanUniverseForCandidates(btcH4, btcH1);
