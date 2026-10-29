@@ -70,6 +70,8 @@ let pendingSignals = [];
 // Trạng thái radar "canh trước" đã bắn Telegram gần nhất theo từng coin
 // (chống spam: chỉ bắn lại khi đổi trạng thái/level hoặc quá cooldown 4h).
 const radarAlertState = new Map();
+// Chống spam cảnh báo BÙNG NỔ (volume đột biến) theo từng coin.
+const breakoutAlertState = new Map();
 
 function loadPendingSignals() {
   if (fs.existsSync(PENDING_SIGNALS_FILE)) {
@@ -587,6 +589,32 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
           }
         } catch (e) {
           console.error(`[RADAR ALERT] Lỗi ${symbol}:`, e.message);
+        }
+      }
+
+      // CẢNH BÁO BÙNG NỔ: nến H1 vừa đóng có volume đột biến (>=2.5x TB20) + thân
+      // mạnh (>=1%) -> báo Telegram để NGƯỜI tự nhìn. KHÔNG tự vào lệnh (backtest
+      // chứng minh đu momentum/volume breakout lỗ nặng). Cooldown 2h/coin.
+      if (process.env.ENABLE_BREAKOUT_ALERTS !== 'false') {
+        try {
+          const n = closedH1.length;
+          if (n >= 21) {
+            const last = closedH1[n - 1];
+            const volSMA = closedH1.slice(n - 21, n - 1).reduce((s, c) => s + c.vol, 0) / 20;
+            const volMult = volSMA > 0 ? last.vol / volSMA : 0;
+            const movePct = ((last.close - last.open) / last.open) * 100;
+            if (volMult >= 2.5 && Math.abs(movePct) >= 1.0) {
+              const prev = breakoutAlertState.get(symbol);
+              if (!prev || (Date.now() - prev) > 2 * 60 * 60 * 1000) {
+                breakoutAlertState.set(symbol, Date.now());
+                const dir = movePct >= 0 ? '🟢 bơm' : '🔴 xả';
+                const { sendTelegramMessage } = await import('./telegram.js');
+                await sendTelegramMessage(`⚡ <b>BÙNG NỔ ${symbol}</b>\nNến H1 ${dir} ${movePct.toFixed(1)}% với volume ${volMult.toFixed(1)}× trung bình. Giá ~${currentPrice}.\n<i>Chỉ cảnh báo quan sát — bot KHÔNG tự đu momentum (đã test: lỗ nặng).</i>`);
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`[BREAKOUT ALERT] Lỗi ${symbol}:`, e.message);
         }
       }
     } catch (err) {
