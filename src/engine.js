@@ -34,12 +34,28 @@ const H4_MS = 4 * 60 * 60 * 1000;
 const M15_MS = 15 * 60 * 1000;
 
 /**
- * Tính toán Position Sizing chuẩn 1R
+ * Tính toán Position Sizing chuẩn 1R kèm Cổng Bảo Vệ Thanh Lý (Liquidation Guard)
  */
 export function calculatePositionSize(entry, stopLoss, riskUsd = 10, leverage = 10) {
   const riskPerUnit = Math.abs(entry - stopLoss);
   if (riskPerUnit <= 0) {
-    return { size: 0, notional: 0, margin: 0, riskPerUnit: 0 };
+    return { size: 0, notional: 0, margin: 0, riskPerUnit: 0, isBlocked: true, blockReason: 'INVALID_RISK_PER_UNIT' };
+  }
+
+  // LIQUIDATION GUARD (Kiểm tra khoảng cách an toàn trước mức thanh lý Isolated Margin)
+  // Mức thanh lý lý thuyết 10x là ~10.0%. Giới hạn khoảng cách SL không được vượt quá 70% mức thanh lý (7.0%).
+  const slDistanceRate = riskPerUnit / entry;
+  const maxSafeSlRate = (1 / leverage) * 0.70;
+  if (slDistanceRate >= maxSafeSlRate) {
+    return {
+      size: 0,
+      notional: 0,
+      margin: 0,
+      riskPerUnit,
+      slDistanceRate,
+      isBlocked: true,
+      blockReason: `LIQUIDATION_RISK: Khoảng cách SL (${(slDistanceRate * 100).toFixed(2)}%) quá gần mức thanh lý ${(100 / leverage).toFixed(1)}% (ngưỡng an toàn tối đa: ${(maxSafeSlRate * 100).toFixed(1)}%)`
+    };
   }
 
   const size = riskUsd / riskPerUnit;
@@ -50,7 +66,10 @@ export function calculatePositionSize(entry, stopLoss, riskUsd = 10, leverage = 
     size,
     notional,
     margin,
-    riskPerUnit
+    riskPerUnit,
+    slDistanceRate,
+    isBlocked: false,
+    blockReason: null
   };
 }
 
@@ -227,12 +246,27 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   // backtest 1 năm). Tùy chọn (candlesD1 có thể null nếu caller chưa truyền vào,
   // giữ tương thích ngược hoàn toàn).
   let d1Phase = 'RANGING';
+  let natrD1 = 0.05;
   if (candlesD1 && candlesD1.length >= 90) {
     const closesD1 = candlesD1.map(c => c.close);
     const ema34D1Arr = calculateEMA(closesD1, 34);
     const ema89D1Arr = calculateEMA(closesD1, 89);
     d1Phase = detectMarketPhase(candlesD1, ema34D1Arr, ema89D1Arr);
+
+    if (candlesD1.length >= 14) {
+      const atrD1Arr = calculateATR(candlesD1, 14);
+      const lastAtr = atrD1Arr[atrD1Arr.length - 1];
+      const lastClose = closesD1[closesD1.length - 1];
+      if (lastAtr && lastClose > 0) {
+        natrD1 = lastAtr / lastClose;
+      }
+    }
   }
+
+  // CHẾ ĐỘ BIẾN ĐỘNG NÉN D1 (DYNAMIC NATR REGIME - ĐỀ XUẤT 4.2):
+  // Trong mùa đông thanh khoản 2023, NATR D1 giảm sâu (< 3.0%), breakout H4 hầu hết là bẫy.
+  const minD1NATR = config.minD1NATR !== undefined ? config.minD1NATR : 0.030;
+  const isLowVolD1 = Boolean(config.enableDynamicNatr && natrD1 < minD1NATR);
 
   // CHỈ BÁO BIẾN ĐỘNG NHANH (RECENT MOMENTUM): detectMarketPhase dùng EMA34/89
   // nên phản ứng CHẬM với các cú trượt giá nhanh (ví dụ giảm 6% chỉ trong ~4 ngày)
@@ -412,7 +446,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
       let isNgocTrend = false;
 
       if (isBullTrend) {
-        canLong = isNormalSweep || isEngulfing || isSmcSweepLong;
+        if (isLowVolD1) {
+          canLong = false;
+        } else {
+          canLong = isNormalSweep || isEngulfing || isSmcSweepLong;
+        }
       } else {
         const distBelowEma34 = (ema34 - curPrice) / curPrice;
         const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || isStrongSweep || isSmcSweepLong;
@@ -465,7 +503,13 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
               continue;
             }
 
-            const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : (isNgocTrend ? 'KANE_NGUOC_TREND_LONG' : 'KANE_THUAN_TREND_LONG');
+            if (isNgocTrend) {
+              // Method Playbook: Cấm Kane Ngược Trend (PF 0.00, bắt dao rơi không cản).
+              // Mean-reversion chỉ được phép khi có cấu trúc SMC Sweep Reversal hoặc Zone Reaction tại Cản Tier 2.
+              continue;
+            }
+
+            const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : 'KANE_THUAN_TREND_LONG';
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             // CHỈ trích dẫn VSA khi đúng chiều lệnh (BULLISH cho Long) - trước đây chỉ
             // check isAbsorption bỏ qua type, có thể in nhầm VSA BEARISH (râu trên,
@@ -532,7 +576,11 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
       let isNgocTrend = false;
 
       if (isBearTrend) {
-        canShort = isNormalRejection || isSmcSweepShort;
+        if (isLowVolD1) {
+          canShort = false;
+        } else {
+          canShort = isNormalRejection || isSmcSweepShort;
+        }
       } else {
         const distAboveEma34 = (curPrice - ema34) / ema34;
         if ((distAboveEma34 >= 0.030 && isStrongRejection) || isSmcSweepShort) {
@@ -591,7 +639,12 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
               continue;
             }
 
-            const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : (isNgocTrend ? 'KANE_NGUOC_TREND_SHORT' : 'KANE_THUAN_TREND_SHORT');
+            if (isNgocTrend) {
+              // Method Playbook: Cấm Kane Ngược Trend (PF 0.00, cản tàu không cản lớn).
+              continue;
+            }
+
+            const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : 'KANE_THUAN_TREND_SHORT';
             const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
             // CHỈ trích dẫn VSA khi đúng chiều lệnh (BEARISH cho Short) - xem comment
             // tương tự ở nhánh Kane Long phía trên.
@@ -798,14 +851,39 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   // Kane Long -> Kane Short -> SMC Zone Reaction. blockedSignal được các
   // closure trên mutate trực tiếp qua scope chung, trả về cuối cùng nếu
   // không có setup nào khớp.
-  const kaneLongSignal = tryKaneLongSetup();
-  if (kaneLongSignal) return kaneLongSignal;
+  const formatFinalSignal = (sig) => {
+    if (!sig || sig.isBlocked) return sig;
+    return {
+      ...sig,
+      marketPhase,
+      d1Phase,
+      natrD1: parseFloat((natrD1 * 100).toFixed(2)),
+      isLowVolD1,
+      customBeTriggerR: isLowVolD1 ? 1.0 : (config.beTriggerR || 1.4)
+    };
+  };
 
-  const kaneShortSignal = tryKaneShortSetup();
-  if (kaneShortSignal) return kaneShortSignal;
+  // METHOD PLAYBOOK ROUTING:
+  // Nếu thị trường đang Đi Ngang (RANGING cả H4 & D1): Ưu tiên Zone Reaction tại 2 biên Tier 2
+  if (marketPhase === 'RANGING' && d1Phase === 'RANGING') {
+    const zoneReactionSignal = tryZoneReactionSetup();
+    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
 
-  const zoneReactionSignal = tryZoneReactionSetup();
-  if (zoneReactionSignal) return zoneReactionSignal;
+    const kaneLongSignal = tryKaneLongSetup();
+    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
+
+    const kaneShortSignal = tryKaneShortSetup();
+    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
+  } else {
+    const kaneLongSignal = tryKaneLongSetup();
+    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
+
+    const kaneShortSignal = tryKaneShortSetup();
+    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
+
+    const zoneReactionSignal = tryZoneReactionSetup();
+    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
+  }
 
   // Không setup nào khớp: ưu tiên lý do Khiên BTC Macro nếu có, rồi tới lý do
   // Chop Sleep Mode để log minh bạch lý do đứng ngoài.
@@ -958,29 +1036,35 @@ export function calculateSetupQualityScore({ signal, candlesH4, candlesH1, candl
   }
 
   // 4. SỨC MẠNH TƯƠNG ĐỐI SO VỚI ĐẦU TÀU BTC (RELATIVE STRENGTH) - Tối đa 25đ
-  if (btcH1Candles && btcH1Candles.length >= 2 && candlesH1 && candlesH1.length >= 2) {
-    const lastBtc = btcH1Candles[btcH1Candles.length - 1];
-    const prevBtc = btcH1Candles[btcH1Candles.length - 2];
-    const btcPct = (lastBtc.close - prevBtc.close) / prevBtc.close;
-
-    const lastCoin = candlesH1[candlesH1.length - 1];
-    const prevCoin = candlesH1[candlesH1.length - 2];
-    const coinPct = (lastCoin.close - prevCoin.close) / prevCoin.close;
-
+  // Phase C "12H Structural RS" (đo 12 nến H1) GATED sau BOT_CONFIG.enable12hRS
+  // (mặc định TẮT, chưa test OOS). Mặc định dùng RS baseline (1 nến H1) đã validate.
+  if (BOT_CONFIG.enable12hRS && btcH1Candles && btcH1Candles.length >= 3 && candlesH1 && candlesH1.length >= 3) {
+    const lookback = Math.min(12, Math.min(btcH1Candles.length - 1, candlesH1.length - 1));
+    const curBtc = btcH1Candles[btcH1Candles.length - 1].close;
+    const refBtc = btcH1Candles[btcH1Candles.length - 1 - lookback].close;
+    const btcPct = refBtc > 0 ? (curBtc - refBtc) / refBtc : 0;
+    const curCoin = candlesH1[candlesH1.length - 1].close;
+    const refCoin = candlesH1[candlesH1.length - 1 - lookback].close;
+    const coinPct = refCoin > 0 ? (curCoin - refCoin) / refCoin : 0;
+    const rsSpread = coinPct - btcPct;
     if (isLong) {
-      if (coinPct > btcPct + 0.003) {
-        score += 25;
-        reasons.push('Khỏe hơn BTC (RS Outperforming)');
-      } else if (coinPct > 0) {
-        score += 15;
-      }
+      if (rsSpread >= 0.005) { score += 25; reasons.push(`Khỏe hơn BTC 12H (+${(rsSpread * 100).toFixed(1)}%)`); }
+      else if (coinPct > -0.01 || rsSpread >= -0.02) { score += 15; reasons.push('Đồng pha/thoái lui lành mạnh'); }
+      else { score += 10; }
     } else {
-      if (coinPct < btcPct - 0.003) {
-        score += 25;
-        reasons.push('Yếu hơn BTC (RS Underperforming)');
-      } else if (coinPct < 0) {
-        score += 15;
-      }
+      if (rsSpread <= -0.005) { score += 25; reasons.push(`Yếu hơn BTC 12H (${(rsSpread * 100).toFixed(1)}%)`); }
+      else if (coinPct < 0.01 || rsSpread <= 0.02) { score += 15; reasons.push('Đồng pha/hồi phục lành mạnh'); }
+      else { score += 10; }
+    }
+  } else if (btcH1Candles && btcH1Candles.length >= 2 && candlesH1 && candlesH1.length >= 2) {
+    const btcPct = (btcH1Candles[btcH1Candles.length - 1].close - btcH1Candles[btcH1Candles.length - 2].close) / btcH1Candles[btcH1Candles.length - 2].close;
+    const coinPct = (candlesH1[candlesH1.length - 1].close - candlesH1[candlesH1.length - 2].close) / candlesH1[candlesH1.length - 2].close;
+    if (isLong) {
+      if (coinPct > btcPct + 0.003) { score += 25; reasons.push('Khỏe hơn BTC (RS Outperforming)'); }
+      else if (coinPct > 0) { score += 15; }
+    } else {
+      if (coinPct < btcPct - 0.003) { score += 25; reasons.push('Yếu hơn BTC (RS Underperforming)'); }
+      else if (coinPct < 0) { score += 15; }
     }
   } else {
     score += 15;

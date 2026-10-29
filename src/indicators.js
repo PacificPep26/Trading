@@ -1062,7 +1062,10 @@ export function findBreakerBlocks(candles, pivotL = 2, pivotR = 2) {
     const formedCandle = candles[sh.index];
     const top = formedCandle.high;
     const bottom = Math.min(formedCandle.open, formedCandle.close);
-    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.high >= bottom && c.high <= top);
+    // A3: giao cắt khoảng chuẩn [c.low,c.high] ∩ [bottom,top] - trước đây dùng
+    // c.high<=top nên nến đâm XUYÊN hoàn toàn vùng (c.high>top & c.low<bottom)
+    // lại bị coi là chưa chạm (isMitigated=false), giữ vùng đã vỡ làm bộ lọc.
+    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.high >= bottom && c.low <= top);
     breakers.push({ type: 'BEARISH', top, bottom, formedAtIndex: sh.index, isMitigated });
   }
 
@@ -1078,7 +1081,8 @@ export function findBreakerBlocks(candles, pivotL = 2, pivotR = 2) {
     const formedCandle = candles[sl.index];
     const bottom = formedCandle.low;
     const top = Math.max(formedCandle.open, formedCandle.close);
-    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.low <= top && c.low >= bottom);
+    // A3: giao cắt khoảng chuẩn (xem comment nhánh BEARISH phía trên).
+    const isMitigated = candles.slice(structureBreakIdx + 1).some(c => c.high >= bottom && c.low <= top);
     breakers.push({ type: 'BULLISH', top, bottom, formedAtIndex: sl.index, isMitigated });
   }
 

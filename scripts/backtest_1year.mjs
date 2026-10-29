@@ -43,7 +43,7 @@ function loadCachedCandles(filePath) {
 }
 
 export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, customConfig = null, startTs = null, endTs = null) {
-  const cfg = customConfig || CONFIG;
+  const cfg = customConfig ? { ...CONFIG, ...customConfig } : CONFIG;
   const symbol = instId.replace('-SWAP', '');
   const fH4 = path.join(CACHE_DIR, `${instId}_4H.json`);
   const fH1 = path.join(CACHE_DIR, `${instId}_1H.json`);
@@ -63,6 +63,26 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
 
   const closedTrades = [];
   let activeTrade = null;
+
+  // MÔ HÌNH PHÍ THỰC TẾ (A2 — sửa lỗi phí 1 chiều/Maker): tính phí 2 CHIỀU
+  // (vào + ra). Vào lệnh breakout M15 = Taker (market); SL/LOCK (stop market)
+  // = Taker + slippage; TP (limit chờ tại target) = Maker. Quy ra R để netR &
+  // netUsd cùng cơ sở chi phí. shortcut: slippage cố định 0.03%, nâng lên dùng
+  // slippage theo biến động nếu sau này cần mô phỏng chính xác hơn lúc tin ra.
+  const takerRate = cfg.capital?.takerFeeRate ?? 0.0008;
+  const makerRate = cfg.capital?.makerFeeRate ?? 0.0002;
+  const slippage = cfg.slippageRate ?? 0.0003;
+  // exitKind: 'SL' | 'TP' | 'MARKET' (TIME_STOP). Trả feeUsd 2 chiều + feeR.
+  function roundtripFee(notional, exitKind) {
+    // Vào lệnh: mặc định Taker (breakout = market thực tế). Đặt entryAsMaker=true
+    // để test kịch bản lạc quan (limit post-only khớp được = Maker 0.02%).
+    const entryRate = cfg.entryAsMaker ? makerRate : takerRate;
+    const exitRate = exitKind === 'TP' ? makerRate
+      : exitKind === 'SL' ? (takerRate + slippage)
+      : takerRate;
+    const feeUsd = notional * (entryRate + exitRate);
+    return { feeUsd, feeR: feeUsd / cfg.riskUsd };
+  }
 
   // Tìm index M15 bắt đầu (mặc định 01/10/2025, có thể override để walk-forward
   // test qua các giai đoạn lịch sử khác nhau - xem scripts/backtest_multi_year.mjs)
@@ -120,7 +140,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         ? (favorablePrice - activeTrade.entry) / riskDist
         : (activeTrade.entry - favorablePrice) / riskDist;
 
-      if (!activeTrade.isProfitLocked && curMaxR >= cfg.beTriggerR) {
+      if (!activeTrade.isProfitLocked && curMaxR >= (activeTrade.customBeTriggerR || cfg.beTriggerR)) {
         activeTrade.isProfitLocked = true;
         activeTrade.stopLoss = isLong
           ? activeTrade.entry + (cfg.lockProfitR * riskDist)
@@ -158,15 +178,14 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
-        const fee = activeTrade.sizing.notional * cfg.feeRate;
-        const netPnl = grossPnl - fee;
+        const { feeUsd, feeR } = roundtripFee(activeTrade.sizing.notional, 'MARKET');
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
           outcome: 'TIME_STOP',
-          netR: currentR,
-          netUsd: netPnl
+          netR: currentR - feeR,
+          netUsd: grossPnl - feeUsd
         });
         activeTrade = null;
         continue;
@@ -182,17 +201,16 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
-        const fee = activeTrade.sizing.notional * cfg.feeRate;
-        const netPnl = grossPnl - fee;
-        const netR = activeTrade.isProfitLocked ? cfg.lockProfitR : -1.0;
+        const { feeUsd, feeR } = roundtripFee(activeTrade.sizing.notional, 'SL');
+        const grossR = activeTrade.isProfitLocked ? cfg.lockProfitR : -1.0;
 
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
           outcome: activeTrade.isProfitLocked ? 'LOCK_+1R' : 'SL',
-          netR,
-          netUsd: netPnl
+          netR: grossR - feeR,
+          netUsd: grossPnl - feeUsd
         });
         activeTrade = null;
       } else if (isTPHit) {
@@ -200,17 +218,14 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         const grossPnl = isLong
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
-        const fee = activeTrade.sizing.notional * cfg.feeRate;
-        const netPnl = grossPnl - fee;
-        const netR = activeTrade.riskReward;
-
+        const { feeUsd, feeR } = roundtripFee(activeTrade.sizing.notional, 'TP');
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
           outcome: 'TP',
-          netR,
-          netUsd: netPnl
+          netR: activeTrade.riskReward - feeR,
+          netUsd: grossPnl - feeUsd
         });
         activeTrade = null;
       }
@@ -315,6 +330,12 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
                   isProfitLocked: false,
                   barsHeld: 0
                 };
+                // SỬA LỖI LOOK-AHEAD (A1): lệnh thật vào tại nến i+delayBars.
+                // Phải nhảy i qua các nến chờ, nếu không khối quản lý vị thế sẽ
+                // chạy trên nến i+1..i+delayBars (TRƯỚC khi vào lệnh) và lock
+                // lãi/thoát "miễn phí" từ biến động trước entry -> thổi phồng.
+                // Quản lý bắt đầu đúng từ nến SAU entry (i+delayBars+1).
+                if (delayBars > 0) i += delayBars;
               }
             }
           }
@@ -418,6 +439,31 @@ export function groupTradesByMonth(trades) {
   return result;
 }
 
+export function groupTradesByStrategy(trades) {
+  const groups = new Map();
+  for (const t of trades) {
+    let key = 'OTHER';
+    if (t.strategy) {
+      if (t.strategy.includes('KANE_THUAN_TREND')) key = 'KANE_THUAN_TREND';
+      else if (t.strategy.includes('KANE_NGUOC_TREND')) key = 'KANE_NGUOC_TREND';
+      else if (t.strategy.includes('SMC_SWEEP_REVERSAL')) key = 'SMC_SWEEP_REVERSAL';
+      else if (t.strategy.includes('SMC_ZONE_REACTION')) key = 'SMC_ZONE_REACTION';
+      else key = t.strategy;
+    }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+
+  const result = [];
+  for (const [strategy, sTrades] of groups.entries()) {
+    result.push({
+      strategy,
+      ...calculateMetrics(sTrades)
+    });
+  }
+  return result;
+}
+
 async function run1YearBacktest() {
   console.log('================================================================');
   console.log('🏆 KẾT QUẢ KIỂM THỬ THỰC CHIẾN 1 NĂM (10/2025 -> 10/2026)');
@@ -477,6 +523,35 @@ async function run1YearBacktest() {
       s.winRate.padEnd(12) +
       s.totalR.padEnd(12) +
       s.netPnlUsd
+    );
+  });
+  console.log('-'.repeat(80));
+
+  // 1.1. Thống kê theo từng Phương pháp (Method Playbook Breakdown)
+  const strategyStats = groupTradesByStrategy(allTrades);
+  console.log('\n🎯 HIỆU SUẤT THEO TỪNG PHƯƠNG PHÁP (METHOD PLAYBOOK):');
+  console.log('-'.repeat(80));
+  console.log(
+    'Phương Pháp'.padEnd(25) +
+    'Số Lệnh'.padEnd(10) +
+    'Thắng (TP)'.padEnd(12) +
+    'Khóa Lãi'.padEnd(12) +
+    'Thua (SL)'.padEnd(12) +
+    'Win Rate'.padEnd(12) +
+    'PF'.padEnd(8) +
+    'Total R'
+  );
+  console.log('-'.repeat(80));
+  strategyStats.forEach(st => {
+    console.log(
+      st.strategy.padEnd(25) +
+      st.totalTrades.toString().padEnd(10) +
+      st.wins.toString().padEnd(12) +
+      st.locks.toString().padEnd(12) +
+      st.losses.toString().padEnd(12) +
+      st.winRate.padEnd(12) +
+      st.profitFactor.padEnd(8) +
+      st.totalR
     );
   });
   console.log('-'.repeat(80));

@@ -153,6 +153,13 @@ const sizing = calculatePositionSize(entry, stopLoss, riskUsd, 10);
 assert(sizing.size === 2, 'Số lượng coin phải bằng 10 / 5 = 2.0 coin');
 assert(sizing.notional === 200, 'Giá trị vị thế = 2 * 100 = 200 USDT');
 assert(sizing.margin === 20, 'Ký quỹ Isolated 10X = 200 / 10 = 20 USDT');
+assert(sizing.isBlocked === false, 'Ký quỹ hợp lệ không bị chặn');
+
+// Test Liquidation Distance Guard
+const safeSizing = calculatePositionSize(100, 95, 10, 10);
+assert(safeSizing.isBlocked === false, 'Liquidation Guard: Khoảng cách SL 5% ở 10x an toàn tuyệt đối (< 7%)');
+const unsafeSizing = calculatePositionSize(100, 92, 10, 10);
+assert(unsafeSizing.isBlocked === true && unsafeSizing.blockReason.includes('LIQUIDATION_RISK'), 'Liquidation Guard: Chặn lệnh khi khoảng cách SL >= 7% ở 10x');
 
 // 7. Test Khiên BTC Macro 1H
 console.log('\n7. Kiểm tra Khiên BTC Macro 1H:');
@@ -680,6 +687,13 @@ console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Pric
   assert(breakers.some(b => b.type === 'BULLISH'), `Nhận diện ICT Bullish Breaker Block khi order block giảm thất bại rồi giá đảo chiều mạnh (tìm thấy: ${breakers.map(b => b.type).join(',') || 'none'})`);
 
   assert(findBreakerBlocks([]).length === 0, 'Breaker Block trả về mảng rỗng an toàn khi không có dữ liệu nến');
+
+  // A3: nến đâm XUYÊN HOÀN TOÀN vùng breaker (low<bottom & high>top) PHẢI tính
+  // là mitigated. Vùng bullish ở trên: bottom=95, top=101. Thêm 1 nến nhấn chìm
+  // (low=90, high=110) sau khi cấu trúc xác nhận -> isMitigated phải = true.
+  const piercing = [...breakerCandles, { ts: 13, open: 100, high: 110, low: 90, close: 105 }];
+  const bk2 = findBreakerBlocks(piercing, 2, 2).find(b => b.type === 'BULLISH');
+  assert(bk2 && bk2.isMitigated === true, `A3: nến đâm xuyên hoàn toàn vùng breaker phải tính mitigated (isMitigated=${bk2 ? bk2.isMitigated : 'no breaker'})`);
 }
 
 // ==========================================================================
@@ -696,6 +710,28 @@ console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Pric
   assert(isNewsBlackout(new Date('2026-11-01T00:00:00Z').getTime(), 2).blocked === false, 'KHÔNG chặn vào ngày thường không có tin');
   const next = getNextNewsEvent(new Date('2026-10-29T00:00:00Z').getTime());
   assert(next && next.name.includes('NFP'), 'Tìm đúng tin lớn kế tiếp sau FOMC 28/10 là NFP');
+}
+
+// ==========================================================================
+// 21. KIỂM TRA CẦU DAO TUẦN (WEEKLY CIRCUIT BREAKER) & DIRECTIONAL CAP
+// ==========================================================================
+{
+  console.log('\n21. Kiểm tra Cầu Dao Tuần (Weekly Circuit Breaker) & Directional Cap:');
+  const { getWeeklyNetR, isWeeklyCircuitBreakerActive } = await import('../src/server.js');
+  
+  // Test hàm getWeeklyNetR
+  const curNetR = getWeeklyNetR();
+  assert(typeof curNetR === 'number', 'getWeeklyNetR trả về số thực hợp lệ');
+
+  // Test isWeeklyCircuitBreakerActive
+  const breakerState = isWeeklyCircuitBreakerActive(Date.now(), 3.5);
+  assert(typeof breakerState.isActive === 'boolean', 'isWeeklyCircuitBreakerActive trả về cờ boolean isActive');
+
+  // Test cấu hình Directional Cap
+  assert(DEFAULT_CONFIG.maxDirectionalPositions === 2, 'DEFAULT_CONFIG.maxDirectionalPositions mặc định = 2 vị thế cùng chiều');
+  assert(DEFAULT_CONFIG.weeklyCircuitBreakerMaxLossR === 3.5, 'DEFAULT_CONFIG.weeklyCircuitBreakerMaxLossR mặc định = 3.5R');
+  assert(DEFAULT_CONFIG.enableFreeRollPyramiding === false, 'DEFAULT_CONFIG.enableFreeRollPyramiding mặc định TẮT (Phase C chưa test OOS)');
+  assert(DEFAULT_CONFIG.minD1NATR === 0.030, 'DEFAULT_CONFIG.minD1NATR mặc định = 0.030 (3.0%)');
 }
 
 // Tổng kết

@@ -30,7 +30,22 @@ export const CAPITAL_CONFIG = {
   feeRate: process.env.ORDER_TYPE === 'MARKET' ? 0.0008 : 0.0002,
 
   // Số lượng vị thế mở tối đa cùng một thời điểm (Tránh phân tán Margin)
-  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10)
+  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
+
+  // Giới hạn số lượng vị thế cùng chiều tối đa (Tránh dồn rủi ro một hướng)
+  maxDirectionalPositions: parseInt(process.env.MAX_DIRECTIONAL_POSITIONS || '2', 10),
+
+  // Cầu dao ngắt lỗ tuần (Weekly Circuit Breaker): Ngừng mở lệnh mới nếu tuần âm >= 3.5R
+  weeklyCircuitBreakerMaxLossR: parseFloat(process.env.WEEKLY_CIRCUIT_BREAKER_MAX_LOSS_R || '3.5'),
+  // PHASE C (mặc định TẮT - chưa test out-of-sample, xem docs/AUDIT_FIX_TRACKING.md).
+  // Bật bằng env=true khi đã kiểm chứng OOS. Giữ nguyên code để test sau.
+  enableWeeklyCircuitBreaker: process.env.ENABLE_WEEKLY_CIRCUIT_BREAKER === 'true',
+
+  // Quy tắc Free-Roll Pyramiding (Phase C, mặc định TẮT)
+  enableFreeRollPyramiding: process.env.ENABLE_FREE_ROLL_PYRAMIDING === 'true',
+
+  // 3-Bucket Allocation + Directional Cap (Phase C, mặc định TẮT)
+  enableBucketAllocation: process.env.ENABLE_BUCKET_ALLOCATION === 'true'
 };
 
 // ====================================================================
@@ -45,7 +60,14 @@ export const REGIME_CONFIG = {
   minAtrCompressionRatio: parseFloat(process.env.MIN_ATR_COMPRESSION_RATIO || '0.70'),
 
   // Kích hoạt trạng thái ngủ đông khi thị trường Sideway / Chop
-  enableChopSleepMode: process.env.ENABLE_CHOP_SLEEP_MODE !== 'false'
+  enableChopSleepMode: process.env.ENABLE_CHOP_SLEEP_MODE !== 'false',
+
+  // Ngưỡng tỷ lệ biên độ nén D1 NATR(14) = ATR(D1) / Close. < 3.0% là mùa đông thanh khoản
+  minD1NATR: parseFloat(process.env.MIN_D1_NATR || '0.030'),
+  // Phase C (mặc định TẮT - chưa test OOS). Bật env=true khi đã kiểm chứng.
+  enableDynamicNatr: process.env.ENABLE_DYNAMIC_NATR === 'true',
+  // 12H Structural RS trong quality score (Phase C, mặc định TẮT -> dùng RS baseline)
+  enable12hRS: process.env.ENABLE_12H_RS === 'true'
 };
 
 // ====================================================================
@@ -343,6 +365,14 @@ export const BOT_CONFIG = {
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
+  minD1NATR: REGIME_CONFIG.minD1NATR,
+  enableDynamicNatr: REGIME_CONFIG.enableDynamicNatr,
+  maxDirectionalPositions: CAPITAL_CONFIG.maxDirectionalPositions,
+  weeklyCircuitBreakerMaxLossR: CAPITAL_CONFIG.weeklyCircuitBreakerMaxLossR,
+  enableWeeklyCircuitBreaker: CAPITAL_CONFIG.enableWeeklyCircuitBreaker,
+  enableFreeRollPyramiding: CAPITAL_CONFIG.enableFreeRollPyramiding,
+  enableBucketAllocation: CAPITAL_CONFIG.enableBucketAllocation,
+  enable12hRS: INDICATOR_CONFIG.enable12hRS,
   orderType: CAPITAL_CONFIG.orderType,
   pollIntervalSec: RUNTIME_CONFIG.pollIntervalSeconds,
   okxBaseUrl: RUNTIME_CONFIG.okxBaseUrl,

@@ -186,6 +186,49 @@ function logClosedTrade(pos, outcome, exitPrice, finalR, netPnl) {
 }
 
 /**
+ * Tính tổng lợi nhuận R tích luỹ trong tuần hiện tại (tính từ 00:00 UTC thứ Hai)
+ * @param {number} nowMs
+ * @returns {number}
+ */
+export function getWeeklyNetR(nowMs = Date.now()) {
+  try {
+    if (!fs.existsSync(TRADE_HISTORY_FILE)) return 0;
+    const history = JSON.parse(fs.readFileSync(TRADE_HISTORY_FILE, 'utf8'));
+    if (!Array.isArray(history)) return 0;
+
+    const d = new Date(nowMs);
+    const day = d.getUTCDay();
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(d);
+    monday.setUTCDate(d.getUTCDate() + diffToMonday);
+    monday.setUTCHours(0, 0, 0, 0);
+    const mondayTs = monday.getTime();
+
+    const tradesThisWeek = history.filter(t => (t.closedAt || t.openedAt) >= mondayTs);
+    return tradesThisWeek.reduce((sum, t) => sum + (t.finalR || 0), 0);
+  } catch (err) {
+    return 0;
+  }
+}
+
+/**
+ * Kiểm tra xem Cầu dao ngắt lỗ tuần (Weekly Circuit Breaker) có đang kích hoạt không
+ * @param {number} nowMs
+ * @param {number} maxLossR
+ * @returns {{ isActive: boolean, weeklyNetR: number }}
+ */
+export function isWeeklyCircuitBreakerActive(nowMs = Date.now(), maxLossR = CONFIG.weeklyCircuitBreakerMaxLossR || 3.5) {
+  if (CONFIG.enableWeeklyCircuitBreaker === false) {
+    return { isActive: false, weeklyNetR: 0 };
+  }
+  const weeklyNetR = getWeeklyNetR(nowMs);
+  return {
+    isActive: weeklyNetR <= -maxLossR,
+    weeklyNetR
+  };
+}
+
+/**
  * Lấy dữ liệu nến từ OKX Public API
  * @param {string} instId - Ví dụ: BTC-USDT-SWAP
  * @param {string} bar - '4H', '1H', '15m'
@@ -274,7 +317,8 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     ? (isLong ? (favorablePrice - pos.entry) : (pos.entry - favorablePrice)) / riskDist
     : 0;
 
-  if (!pos.isProfitLocked && curMaxR >= CONFIG.beTriggerR) {
+  const beTriggerR = pos.customBeTriggerR || CONFIG.beTriggerR;
+  if (!pos.isProfitLocked && curMaxR >= beTriggerR) {
     pos.isProfitLocked = true;
     pos.isBreakevenMoved = true;
     const lockR = CONFIG.lockProfitR !== undefined ? CONFIG.lockProfitR : 1.0;
@@ -549,6 +593,7 @@ async function openPositionNow(instId, symbol, signal, score, reasons) {
     qualityScore: score,
     qualityReasons: reasons,
     isBreakevenMoved: false,
+    customBeTriggerR: signal.customBeTriggerR || CONFIG.beTriggerR,
     openedAt: Date.now(),
     currentBarsM15: 0
   };
@@ -573,8 +618,57 @@ async function pickAndExecuteWinners(candidateSignals) {
     const availableSlots = CONFIG.maxOpenPositions - activePositions.length - pendingSignals.length;
     const winners = candidateSignals.slice(0, Math.max(0, availableSlots));
 
+    const maxDirectional = CONFIG.maxDirectionalPositions || 2;
+
     for (const winner of winners) {
       const { instId, symbol, signal } = winner;
+      const openSameDirCount = activePositions.filter(p => p.direction === signal.direction).length +
+        pendingSignals.filter(p => p.signal && p.signal.direction === signal.direction).length;
+
+      // 1. DIRECTIONAL EXPOSURE CAP (Phase C, gated: CONFIG.enableBucketAllocation)
+      if (CONFIG.enableBucketAllocation && openSameDirCount >= maxDirectional) {
+        console.log(`[DIRECTIONAL CAP] ⏸️ Bỏ qua ${signal.direction} ${symbol}: Đã có ${openSameDirCount} vị thế cùng chiều (Tối đa: ${maxDirectional}).`);
+        continue;
+      }
+
+      // 1.1. 3-BUCKET ALLOCATION (Ngăn 1: Leader BTC/ETH max 1 | Ngăn 2: Altcoin Beta max 1 | Ngăn 3: Free-Roll/Hedge)
+      const isLeader = symbol === 'BTC-USDT' || symbol === 'ETH-USDT';
+      const openLeaders = activePositions.filter(p => p.symbol === 'BTC-USDT' || p.symbol === 'ETH-USDT').length +
+        pendingSignals.filter(p => p.symbol === 'BTC-USDT' || p.symbol === 'ETH-USDT').length;
+      const openAlts = activePositions.filter(p => p.symbol !== 'BTC-USDT' && p.symbol !== 'ETH-USDT').length +
+        pendingSignals.filter(p => p.symbol !== 'BTC-USDT' && p.symbol !== 'ETH-USDT').length;
+
+      if (CONFIG.enableBucketAllocation && isLeader && openLeaders >= 1) {
+        const existingLeader = activePositions.find(p => p.symbol === 'BTC-USDT' || p.symbol === 'ETH-USDT');
+        if (!existingLeader || (!existingLeader.isProfitLocked && existingLeader.direction === signal.direction)) {
+          console.log(`[BUCKET ALLOCATION] ⏸️ Bỏ qua Leader ${symbol}: Đã có Leader (${existingLeader ? existingLeader.symbol : 'pending'}) chưa Lock Profit.`);
+          continue;
+        }
+      }
+
+      if (CONFIG.enableBucketAllocation && !isLeader && openAlts >= 1) {
+        const existingAlt = activePositions.find(p => p.symbol !== 'BTC-USDT' && p.symbol !== 'ETH-USDT');
+        if (!existingAlt || (!existingAlt.isProfitLocked && existingAlt.direction === signal.direction)) {
+          console.log(`[BUCKET ALLOCATION] ⏸️ Bỏ qua Altcoin ${symbol}: Đã có Altcoin (${existingAlt ? existingAlt.symbol : 'pending'}) chưa Lock Profit.`);
+          continue;
+        }
+      }
+
+      // 2. FREE-ROLL PYRAMIDING (Nếu đã có 1 lệnh cùng chiều chưa Lock Profit -> Giảm size 50%)
+      let sizeMultiplier = 1.0;
+      if (CONFIG.enableFreeRollPyramiding && openSameDirCount === 1) {
+        const existingSameDir = activePositions.find(p => p.direction === signal.direction);
+        if (existingSameDir && !existingSameDir.isProfitLocked) {
+          sizeMultiplier = 0.5;
+          console.log(`[FREE-ROLL PYRAMIDING] Lệnh ${signal.direction} ${existingSameDir.symbol} trước đó chưa Lock Profit -> Giảm 50% size rủi ro (${(CONFIG.riskUsd * 0.5).toFixed(1)}$) cho ${symbol} để bảo toàn vốn ròng <= 1.5R.`);
+        }
+      }
+
+      if (sizeMultiplier < 1.0 && signal.sizing) {
+        signal.sizing.size = signal.sizing.size * sizeMultiplier;
+        signal.sizing.notional = signal.sizing.notional * sizeMultiplier;
+        signal.sizing.margin = signal.sizing.margin * sizeMultiplier;
+      }
 
       if (CONFIG.entryDelayBars > 0) {
         // ENTRY DELAY: không mở ngay, đưa vào hàng đợi chờ xác nhận thêm
@@ -664,6 +758,18 @@ async function processPendingSignals() {
         continue;
       }
 
+      // A4: CHẶN news bypass - nếu đang trong vùng cấm tin (FOMC/CPI/NFP) thì
+      // KHÔNG mở lệnh chờ, giữ nguyên pending để khớp SAU khi hết blackout.
+      // (processPendingSignals chạy trước cổng news ở runScanCycle nên phải tự
+      // kiểm tra ở đây, nếu không lệnh chờ sẽ vào giữa lúc tin.)
+      if (process.env.ENABLE_NEWS_FILTER !== 'false') {
+        const bh = parseFloat(process.env.NEWS_BLACKOUT_HOURS || '2');
+        if (isNewsBlackout(Date.now(), bh).blocked) {
+          stillPending.push(pending);
+          continue;
+        }
+      }
+
       // Đủ thời gian chờ, chưa bị huỷ -> khớp lệnh thật tại giá hiện tại
       const finalEntry = closedM15[closedM15.length - 1].close;
       const riskDist = Math.abs(finalEntry - signal.stopLoss);
@@ -747,6 +853,15 @@ export async function runScanCycle() {
       console.log(`[SCAN CYCLE] Hoàn tất chu kỳ (news blackout). Chờ ${CONFIG.pollIntervalSec}s...`);
       return;
     }
+  }
+
+  // 1.4. CẦU DAO TỔNG THEO TUẦN (WEEKLY CIRCUIT BREAKER)
+  // Ngừng mở vị thế mới nếu tuần hiện tại đã lỗ >= CONFIG.weeklyCircuitBreakerMaxLossR (-3.5R)
+  const weeklyBreaker = isWeeklyCircuitBreakerActive();
+  if (weeklyBreaker.isActive) {
+    console.log(`[WEEKLY CIRCUIT BREAKER] ⏸️ Tuần này đã lỗ ${weeklyBreaker.weeklyNetR.toFixed(2)}R <= -${CONFIG.weeklyCircuitBreakerMaxLossR}R. Kích hoạt cầu dao đóng băng mở lệnh mới tới thứ Hai tuần sau!`);
+    console.log(`[SCAN CYCLE] Hoàn tất chu kỳ (weekly circuit breaker). Chờ ${CONFIG.pollIntervalSec}s...`);
+    return;
   }
 
   // 2 & 3. Quét universe tìm ứng viên, rồi chọn Con Khỏe Nhất để vào lệnh
