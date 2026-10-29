@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from './indicators.js';
-import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize } from './engine.js';
+import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize, generateKeyLevelRadar } from './engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG, getEffectiveConfig } from './config.js';
 import {
   notifyNewSignal,
@@ -66,6 +66,10 @@ let activePositions = [];
 // tính đã đủ thời gian chờ hay chưa - vì live quét mỗi pollIntervalSec giây,
 // không đồng bộ hoàn hảo như backtest theo nến) }.
 let pendingSignals = [];
+
+// Trạng thái radar "canh trước" đã bắn Telegram gần nhất theo từng coin
+// (chống spam: chỉ bắn lại khi đổi trạng thái/level hoặc quá cooldown 4h).
+const radarAlertState = new Map();
 
 function loadPendingSignals() {
   if (fs.existsSync(PENDING_SIGNALS_FILE)) {
@@ -561,6 +565,29 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         }
       } else if (signal && signal.isBlocked) {
         console.log(`[SIGNAL BLOCKED] ${signal.symbol}: ${signal.blockReason}`);
+      }
+
+      // AUTO-RADAR "CANH TRƯỚC": bắn Telegram khi giá áp sát cản/hỗ trợ (giống
+      // Kane lên kịch bản), KHÔNG mở lệnh - chỉ cảnh báo đón đầu. Chống spam:
+      // chỉ bắn khi trạng thái/level đổi, hoặc đã quá 4h kể từ lần bắn trước.
+      if (process.env.ENABLE_RADAR_ALERTS !== 'false') {
+        try {
+          const radar = generateKeyLevelRadar({ symbol, candlesH4: closedH4, curPrice: currentPrice, candlesH1: closedH1 });
+          if (radar && radar.radarStatus !== 'NEUTRAL' && radar.scenario) {
+            const level = radar.radarStatus === 'APPROACHING_RESISTANCE' ? radar.nearestRes : radar.nearestSup;
+            const key = symbol;
+            const prev = radarAlertState.get(key);
+            const changed = !prev || prev.status !== radar.radarStatus || prev.level !== level;
+            const cooledDown = !prev || (Date.now() - prev.ts) > 4 * 60 * 60 * 1000;
+            if (changed || cooledDown) {
+              radarAlertState.set(key, { status: radar.radarStatus, level, ts: Date.now() });
+              const { sendTelegramMessage } = await import('./telegram.js');
+              await sendTelegramMessage(`🧭 <b>CANH TRƯỚC ${symbol}</b>\n${radar.scenario}`);
+            }
+          }
+        } catch (e) {
+          console.error(`[RADAR ALERT] Lỗi ${symbol}:`, e.message);
+        }
       }
     } catch (err) {
       console.error(`[SCANNER] Lỗi phân tích ${symbol}:`, err.message);

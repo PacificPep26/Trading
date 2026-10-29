@@ -296,6 +296,45 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
             // để tắt, quay lại hành vi khớp ngay như trước.
             const delayBars = cfg.entryDelayBars || 0;
             const isLong = signal.direction === 'LONG';
+
+            // LIMIT ENTRY MODE (opt-in, Kane-style "canh trước"): đặt limit
+            // post-only tại signal.entry. Chỉ khớp (Maker) nếu giá HỒI VỀ chạm
+            // mức trong cửa sổ chờ; nếu chạy luôn không hồi -> MISS (bỏ lệnh).
+            // Nếu chạm SL trước khi fill -> cũng bỏ. Đo tỷ lệ miss + lợi phí Maker.
+            if (cfg.limitEntry && (!cfg.limitEntrySide || cfg.limitEntrySide === signal.direction)) {
+              const fillWin = cfg.limitFillBars || delayBars || 4;
+              let filled = false;
+              let consumed = 0;
+              for (let d = 1; d <= fillWin; d++) {
+                const idx = i + d;
+                if (idx >= candlesM15.length) break;
+                const fb = candlesM15[idx];
+                consumed = d;
+                if (isLong) {
+                  if (fb.low <= signal.stopLoss) break;      // bị quét SL trước khi fill
+                  if (fb.low <= signal.entry) { filled = true; break; }
+                } else {
+                  if (fb.high >= signal.stopLoss) break;
+                  if (fb.high >= signal.entry) { filled = true; break; }
+                }
+              }
+              if (filled) {
+                activeTrade = {
+                  ...signal,
+                  entry: signal.entry,
+                  sizing: calculatePositionSize(signal.entry, signal.stopLoss, cfg.riskUsd, cfg.leverage),
+                  riskReward: signal.riskReward,
+                  qualityScore: quality.score,
+                  entryTime: candlesM15[i + consumed].ts,
+                  initialStopLoss: signal.stopLoss,
+                  isProfitLocked: false,
+                  barsHeld: 0
+                };
+                i += consumed;
+              }
+              continue; // xong nhánh limit, sang nến kế
+            }
+
             let finalEntry = signal.entry;
             let finalEntryTime = currentM15.ts;
             let skipTrade = false;
