@@ -21,8 +21,43 @@ const KNOWLEDGE_DIR = path.join(__dirname, '../data/knowledge_base');
 const CASES_FILE = path.join(KNOWLEDGE_DIR, 'cases.json');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-const FALLBACK_MODELS = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-1.5-pro'];
+// Model dự phòng tĩnh (đời cũ, luôn tồn tại) nếu không liệt kê được từ API.
+const STATIC_FALLBACKS = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+
+// Tự ĐỘNG phát hiện model tốt nhất thực sự khả dụng trên key này, thay vì
+// hardcode một tên có thể sai (ví dụ 'gemini-3.8-flash' không tồn tại -> rớt về
+// 1.5-flash đời cũ = trả lời "ngu"). Ưu tiên phiên bản cao nhất, rồi 'flash'
+// (nhanh, đủ thông minh cho chat). Cho phép ép bằng env GEMINI_MODEL.
+let CACHED_MODEL = null;
+export async function discoverBestModel() {
+  if (CACHED_MODEL) return CACHED_MODEL;
+  if (process.env.GEMINI_MODEL) { CACHED_MODEL = process.env.GEMINI_MODEL; return CACHED_MODEL; }
+  if (!GEMINI_API_KEY) { CACHED_MODEL = STATIC_FALLBACKS[0]; return CACHED_MODEL; }
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+    const j = await res.json();
+    const cands = (j.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map(m => m.name.replace('models/', ''))
+      .filter(n => /gemini-\d/.test(n) && /(flash|pro)/.test(n) && !/(embedding|aqa|lite|8b|vision|thinking|exp)/.test(n));
+    const score = n => {
+      const m = n.match(/gemini-(\d+)\.(\d+)/);
+      const v = m ? (parseInt(m[1]) * 100 + parseInt(m[2])) : 0;
+      return v * 10 + (/flash/.test(n) ? 1 : 0); // phiên bản cao nhất, rồi ưu tiên flash
+    };
+    cands.sort((a, b) => score(b) - score(a));
+    if (cands.length) { CACHED_MODEL = cands[0]; console.log(`[AI AGENT] Dùng model Gemini tốt nhất: ${CACHED_MODEL}`); return CACHED_MODEL; }
+  } catch (e) {
+    console.warn('[AI AGENT] Không liệt kê được model Gemini:', e.message);
+  }
+  CACHED_MODEL = STATIC_FALLBACKS[0];
+  return CACHED_MODEL;
+}
+
+async function modelChain() {
+  const best = await discoverBestModel();
+  return [best, ...STATIC_FALLBACKS].filter((v, i, a) => a.indexOf(v) === i);
+}
 
 /**
  * Đọc toàn bộ tri thức trading từ Knowledge Base
@@ -62,7 +97,8 @@ export async function callGemini(prompt, systemInstruction = '') {
 
   let lastError = null;
 
-  for (const model of FALLBACK_MODELS) {
+  const models = await modelChain();
+  for (const model of models) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
     const payload = {
       contents: [
@@ -85,7 +121,7 @@ export async function callGemini(prompt, systemInstruction = '') {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
       const res = await fetch(url, {
         method: 'POST',
@@ -127,7 +163,7 @@ export async function callGeminiVision(prompt, base64Data, mimeType = 'image/png
     throw new Error('GEMINI_API_KEY chưa được thiết lập trong file .env');
   }
 
-  const visionModels = [PRIMARY_MODEL, 'gemini-1.5-flash', 'gemini-1.5-pro'];
+  const visionModels = await modelChain();
   let lastErr = null;
 
   for (const model of visionModels) {
