@@ -280,7 +280,14 @@ const DATA = {"meta":{"from":"2021-01-01","to":"2026-10-31","generatedAt":"2026-
   const coins = Object.keys(DATA.coins), nT = (s) => DATA.coins[s].trades ? DATA.coins[s].trades.length : DATA.coins[s].nTrades;
   $('coins').innerHTML = coins.map(s => `<button class="coin" data-sym="${s}" aria-pressed="false">${s}<small>${nT(s)} lệnh</small></button>`).join('');
   $('coins').onclick = (e) => { const b = e.target.closest('.coin'); if (b) setCoin(b.dataset.sym); };
-  setCoin(coins.slice().sort((a, b) => nT(b) - nT(a))[0]);
+  // đường dẫn sâu: /replay/?coin=BTC&t=<giờ vào lệnh, ms> mở thẳng đoạn của lệnh đó (từ trang xem chính bấm "Tua lại")
+  const qs = new URLSearchParams(location.search), want = qs.get('coin'), wantT = Number(qs.get('t'));
+  setCoin(DATA.coins[want] ? want : coins.slice().sort((a, b) => nT(b) - nT(a))[0]).then(() => {
+    if (!wantT) return;
+    const k = S.trades.findIndex(x => Math.abs(x.entryTs - wantT) <= 1800000);
+    if (k < 0 || S.trades[k].sIdx === undefined) return;
+    selTrade = k; p = Math.max(5, S.trades[k].sIdx - 14); sub = 0; playing = false; draw(); renderLog();
+  });
 })();
 </script>
 </body></html>

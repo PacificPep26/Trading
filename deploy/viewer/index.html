@@ -54,6 +54,7 @@
     <section class="card"><h2>Radar H4 của bot</h2><div id="headline"></div><ol id="steps"></ol></section>
     <section class="card"><h2>Bối cảnh lớn (toàn lịch sử)</h2><div id="macro"></div></section>
     <section class="card"><h2>Lệnh của bot</h2><div id="botbox"></div></section>
+    <section class="card"><h2>Lệnh backtest của coin này</h2><div id="btlist"></div></section>
     <section class="card"><h2>Chú giải</h2>
       <div class="lg"><span><i style="background:#ef535066"></i>Kháng cự</span><span><i style="background:#26a69a66"></i>Hỗ trợ</span><span><i style="background:#26a69a99"></i>Lãi (TP)</span><span><i style="background:#ef5350aa"></i>Lỗ (SL)</span></div>
       <p class="muted">Vùng cản/hỗ trợ và kế hoạch tính từ cấu trúc (pivot) của khung đang xem. Đường vàng/trắng chỉ là MINH HỌA theo kế hoạch, không phải dự báo. Mũi tên BUY/SELL là các lệnh backtest 2021-26 của bot (cùng cấu hình hiện tại, đã trừ phí). Lệnh đang mở là lệnh paper thật. Giờ hiển thị: Việt Nam.</p>
@@ -166,10 +167,16 @@
       .map(({ time, t }) => ({ time, position: t.dir === 'LONG' ? 'belowBar' : 'aboveBar', color: t.dir === 'LONG' ? '#26a69a' : '#ef5350', shape: t.dir === 'LONG' ? 'arrowUp' : 'arrowDown', text: markerText ? `${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${t.r > 0 ? '+' : ''}${t.r}R` : '' }));
     markerPlugin.setMarkers(ms);
   }
+  function renderBtList() { // danh sách lệnh backtest gần nhất kèm nút tua lại đúng đoạn đó
+    const list = (tradesByCoin[coin] || []).slice(-8).reverse();
+    $('btlist').innerHTML = list.length
+      ? `<p class="muted" style="margin:0 0 6px">${tradesByCoin[coin].length} lệnh (2021-26, đã trừ phí). Bấm "Tua lại" để xem từng nến chạy tới TP hay dính SL.</p>` + list.map(t => `<div class="mono" style="margin:4px 0">${fmtT(t.t)} ${t.dir === 'LONG' ? 'BUY' : 'SELL'} <span class="${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R</span> <a href="/replay/?coin=${coin}&t=${t.t}" target="_blank" rel="noopener" style="color:#7aa2ff">Tua lại ▶</a></div>`).join('')
+      : '<p class="muted">Chưa có lệnh backtest cho coin này.</p>';
+  }
   async function loadTrades() {
-    if (tradesByCoin[coin]) return updateMarkers();
+    if (tradesByCoin[coin]) { renderBtList(); return updateMarkers(); }
     try { tradesByCoin[coin] = (await (await fetch(`/api/trades?coin=${coin}`)).json()).trades || []; } catch { tradesByCoin[coin] = []; }
-    updateMarkers();
+    renderBtList(); updateMarkers();
   }
   const zoneColors = { res: ['#ef535033', '#ef5350', '#ff8a80'], sup: ['#26a69a33', '#26a69a', '#80cbc4'] };
   const addPrim = (o) => { const p = new Box(o); candles.attachPrimitive(p); prims.push(p); };
