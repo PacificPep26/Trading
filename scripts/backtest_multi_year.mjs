@@ -22,7 +22,8 @@ export const SYMBOLS = [
   'ETH-USDT-SWAP',
   'SOL-USDT-SWAP',
   'LINK-USDT-SWAP',
-  'NEAR-USDT-SWAP'
+  'NEAR-USDT-SWAP',
+  'HYPE-USDT-SWAP' // niêm yết 02/2025: chỉ có dữ liệu giai đoạn cuối
 ];
 
 export const PERIODS = [

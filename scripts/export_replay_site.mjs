@@ -1,7 +1,7 @@
 /**
  * EXPORT_REPLAY_SITE.MJS
  * Xuất TOÀN BỘ lịch sử (mặc định 2021-01-01 -> hôm nay) cho trang tua lại chạy trên Railway:
- * deploy/replay-site/data/<COIN>.json (nến M15 + lệnh + tín hiệu, cùng backtestSymbol & cấu hình với backtest chính)
+ * deploy/viewer/replay/data/<COIN>.json (nến M15 + lệnh + tín hiệu, cùng backtestSymbol & cấu hình với backtest chính)
  * và index.html (template tải từng coin khi bấm). Chạy: node scripts/export_replay_site.mjs [từ=2021-01-01] [đến=2026-10-31]
  */
 import fs from 'fs';
@@ -13,7 +13,7 @@ import { BOT_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE = path.join(__dirname, '../data/cache_1year');
-const OUT = path.join(__dirname, '../deploy/replay-site');
+const OUT = path.join(__dirname, '../deploy/viewer/replay'); // phục vụ ở /replay/ của trang xem
 const SYMS = ['BTC', 'ETH', 'SOL', 'HYPE', 'NEAR', 'LINK'];
 const [fromStr, toStr] = [process.argv[2] || '2021-01-01', process.argv[3] || '2026-10-31'];
 const startTs = Date.parse(fromStr + 'T00:00:00Z'), endTs = Date.parse(toStr + 'T23:59:59Z');

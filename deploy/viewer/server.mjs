@@ -4,6 +4,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import zlib from 'zlib';
 import { normalizeCandle } from './src/indicators.js';
 import { generateKeyLevelRadar } from './src/strategies/radar.js';
 import { evaluateMarket } from './src/engine.js';
@@ -96,12 +97,24 @@ async function analysis(coin, bar) {
   return v;
 }
 
+const gz = new Map(); // trang tua lại + dữ liệu nặng: nén gzip một lần rồi giữ trong RAM
+function sendGz(res, rel, type) {
+  const f = path.join(ROOT, rel);
+  if (!fs.existsSync(f)) return send(res, 404, { error: 'not found' });
+  if (!gz.has(rel)) gz.set(rel, zlib.gzipSync(fs.readFileSync(f)));
+  res.writeHead(200, { 'Content-Type': type, 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=3600' });
+  res.end(gz.get(rel));
+}
 const send = (res, code, body, type = 'application/json') => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' }); res.end(typeof body === 'string' ? body : JSON.stringify(body)); };
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   try {
     if (u.pathname === '/') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+    if (u.pathname === '/replay') { res.writeHead(301, { Location: '/replay/' }); return res.end(); }
+    if (u.pathname === '/replay/') return sendGz(res, 'replay/index.html', 'text/html; charset=utf-8');
+    const rd = u.pathname.match(/^\/replay\/data\/([A-Z0-9]+)\.json$/); // chỉ đúng mẫu này, không đọc đường dẫn tự do
+    if (rd) return sendGz(res, `replay/data/${rd[1]}.json`, 'application/json');
     if (u.pathname === '/api/analysis') {
       const coin = u.searchParams.get('coin') || 'BTC', bar = u.searchParams.get('bar') || '15m';
       if (!COINS.includes(coin) || !(bar in BARS)) return send(res, 400, { error: 'coin/bar không hợp lệ' });
