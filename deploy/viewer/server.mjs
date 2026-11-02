@@ -12,6 +12,7 @@ import { BOT_CONFIG } from './src/config.js';
 import { loadDailyHistory } from './src/market_history.js';
 import { atr as atrOf, buildLevels, mergeZones, pickKeyLevels, planScenarios, planPattern, planBranches } from './src/strategies/scenario_planner.js';
 import { analyzeVolume, buildVerdict } from './src/strategies/verdict.js';
+import { loadCalendar, nearestNews } from './src/calendar_feed.js';
 import { buildMacroContext, resample } from './src/strategies/macro_context.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -152,10 +153,11 @@ async function analysis(coin, bar) {
   for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].statNote = SCEN_STAT + ' Thêm điều kiện khối lượng cũng không cứu được.';
   const volTf = analyzeVolume(rows), volM15 = analyzeVolume(series(coin, '15m')); // bot quyết định trên M15 nên phán quyết dùng khối lượng M15
   const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
+  const cal = await loadCalendar().catch(() => []); // lịch kinh tế: tin sắp ra được nhắc trong phán quyết
   const v = {
     coin, bar, price, build: BUILD, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
     candles: initial, firstSec: rows.length ? rows[0][0] : null, total: rows.length,
-    volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus, zoneEngine: (radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null)?.zone.engine ?? null, pattern: scenarios.pattern, branch: ((radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null) || {}).branches || null }),
+    volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus, news: nearestNews(cal, Date.now(), 3), zoneEngine: (radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null)?.zone.engine ?? null, pattern: scenarios.pattern, branch: ((radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null) || {}).branches || null }),
     zones: pickKeyLevels(levels, 2, 0.6 * a0, 3 * a0).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, engine: isEngine(z), label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` })), scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
     signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
     blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
@@ -183,6 +185,10 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/replay/') return sendGz(res, 'replay/index.html', 'text/html; charset=utf-8');
     const rd = u.pathname.match(/^\/replay\/data\/([A-Z0-9]+)\.json$/); // chỉ đúng mẫu này, không đọc đường dẫn tự do
     if (rd) return sendGz(res, `replay/data/${rd[1]}.json`, 'application/json');
+    if (u.pathname === '/api/calendar') { // tin kinh tế Mỹ (từ 6 giờ trước tới 14 ngày tới)
+      const now = Date.now(), ev = (await loadCalendar()).filter(e => e.tsMs >= now - 6 * 3600000 && e.tsMs <= now + 14 * 86400000);
+      return send(res, 200, { now, events: ev });
+    }
     if (u.pathname === '/api/trades') { // các lệnh backtest 2021-26 của bot (cùng cấu hình hiện tại) để đánh dấu BUY/SELL lên biểu đồ
       const coin = u.searchParams.get('coin');
       if (!COINS.includes(coin)) return send(res, 400, { error: 'coin không hợp lệ' });

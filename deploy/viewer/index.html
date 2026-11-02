@@ -41,6 +41,7 @@
   .pane { display:none; flex:1; min-height:0; overflow-y:auto; padding:12px 14px; scrollbar-width:thin; scrollbar-color:#2a3550 transparent; } .pane.on { display:block; }
   .pane h2 { margin:14px 0 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); } .pane h2:first-child { margin-top:0; }
   .pane ol { margin:6px 0 0; padding-left:18px; } .pane li { margin:3px 0; }
+  .ev { display:grid; grid-template-columns:48px 14px 1fr auto; gap:0 8px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); } .ev.past { opacity:.45; } .ev.next { background:#f59e0b14; border-radius:6px; padding-left:6px; padding-right:6px; } .ev .im { width:9px; height:9px; border-radius:50%; align-self:center; } .ev .im.High { background:var(--down); } .ev .im.Medium { background:var(--warn); } .ev .im.Low { background:var(--muted); } .day { margin:12px 0 2px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
   .pos { border-left:3px solid var(--accent); padding:6px 10px; margin:8px 0; background:var(--panel2); border-radius:0 6px 6px 0; }
   .pos.long { border-color:var(--up); } .pos.short { border-color:var(--down); }
   .mono { font-family:ui-monospace,Consolas,monospace; } .pos-r { float:right; font-weight:600; }
@@ -75,7 +76,7 @@
     <button id="all" title="Nạp toàn bộ lịch sử từ nến đầu tiên và thu vừa khung">Từ đầu</button>
   </div>
   <div class="grow">
-    <span class="chip" id="trend"></span><span class="chip" id="radar"></span>
+    <span class="chip" id="newschip" style="display:none"></span><span class="chip" id="trend"></span><span class="chip" id="radar"></span>
     <a class="chip" href="/replay/">Tua lại backtest</a>
     <span class="price" id="price"></span>
   </div>
@@ -87,6 +88,7 @@
       <button role="tab" data-tab="verdict" aria-selected="true">Phán quyết<span class="dot" id="dot-verdict"></span></button>
       <button role="tab" data-tab="scen" aria-selected="false">Kịch bản</button>
       <button role="tab" data-tab="macro" aria-selected="false">Bối cảnh</button>
+      <button role="tab" data-tab="cal" aria-selected="false" id="tab-cal">Lịch</button>
       <button role="tab" data-tab="orders" aria-selected="false" id="tab-orders">Lệnh</button>
       <button role="tab" data-tab="help" aria-selected="false" title="Chú giải">?</button>
     </nav>
@@ -98,6 +100,7 @@
       <h2>Kịch bản khung <span id="tfname"></span></h2>
       <div class="seg" id="scbtn" role="group" aria-label="Chọn kịch bản"></div><div id="scinfo"></div>
     </div>
+    <div class="pane" id="pane-cal" role="tabpanel"><h2>Lịch kinh tế Mỹ (giờ Việt Nam)</h2><div id="calbox"><p class="muted">Đang tải lịch...</p></div></div>
     <div class="pane" id="pane-macro" role="tabpanel"><h2>Bối cảnh lớn (toàn lịch sử)</h2><div id="macro"></div></div>
     <div class="pane" id="pane-orders" role="tabpanel">
       <div id="focusinfo"></div>
@@ -478,6 +481,23 @@
     $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; if (id === 'coins') { focusTrade = null; $('histbar').classList.remove('on'); $('focusinfo').innerHTML = ''; } rp.on = false; rp.playing = false; $('rpbar').classList.remove('on'); histMode = false; set(v); first = true; scenSel = 'AUTO'; setLog(!intraday()); setLines(!intraday()); pick(id, list, v, set); load(); };
   }
   pick('coins', COINS, coin, v => coin = v); pick('bars', BARS, bar, v => bar = v);
+  // ---- lịch kinh tế: danh sách theo ngày (giờ VN), tin kế tiếp được tô sáng + chip đếm ngược trên thanh trên cùng ----
+  let calEvents = [];
+  const vnDay = (ms) => new Date(ms).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'long', day: '2-digit', month: '2-digit' });
+  const vnHour = (ms) => new Date(ms).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hour12: false });
+  const eta = (ms) => { const m = Math.round((ms - Date.now()) / 60000), a = Math.abs(m), t = a >= 1440 ? `${Math.floor(a / 1440)} ngày ${Math.floor(a % 1440 / 60)} giờ` : a >= 60 ? `${Math.floor(a / 60)} giờ ${a % 60} phút` : `${a} phút`; return m >= 0 ? `sau ${t}` : `đã ra ${t} trước`; };
+  function renderCal() {
+    const next = calEvents.find(e => e.tsMs > Date.now()), chip = $('newschip');
+    if (next && next.tsMs - Date.now() <= 24 * 3600000) { chip.style.display = ''; chip.textContent = `Tin kế: ${next.label} ${eta(next.tsMs)}`; chip.className = 'chip ' + (next.tsMs - Date.now() <= 3 * 3600000 ? 'warn' : ''); } else chip.style.display = 'none';
+    if (!calEvents.length) { $('calbox').innerHTML = '<p class="muted">Không có tin trung bình/cao trong 14 ngày tới (hoặc chưa tải được nguồn).</p>'; return; }
+    let day = '', h = '<p class="muted" style="margin:0 0 4px">🔴 tin mạnh · 🟠 tin vừa · ⚪ tin nhỏ (ADP, PMI chốt, tồn kho dầu). Tin FOMC/CPI/NFP: bot tạm dừng vào lệnh mới ±2 giờ; tin khác bot vẫn giao dịch bình thường. Nguồn tuần: ForexFactory (không chính thức), cộng lịch FOMC/CPI/NFP nhập tay.</p>';
+    for (const e of calEvents) {
+      const d = vnDay(e.tsMs); if (d !== day) { day = d; h += `<div class="day">${esc(d)}</div>`; }
+      h += `<div class="ev ${e.tsMs < Date.now() ? 'past' : ''} ${next && e === next ? 'next' : ''}"><span class="mono">${vnHour(e.tsMs)}</span><span class="im ${e.impact}" title="${e.impact === 'High' ? 'Tin mạnh' : e.impact === 'Medium' ? 'Tin vừa' : 'Tin nhỏ'}"></span><span>${esc(e.label)}${e.forecast || e.previous ? `<br><span class="muted">Dự báo ${esc(e.forecast || '-')} · Kỳ trước ${esc(e.previous || '-')}</span>` : ''}</span><span class="muted">${eta(e.tsMs)}</span></div>`;
+    }
+    $('calbox').innerHTML = h;
+  }
+  async function loadCal() { try { calEvents = (await (await fetch('/api/calendar')).json()).events || []; } catch { /* giữ danh sách cũ */ } renderCal(); }
   function showTab(id) { // chỉ một tab hiện, phần còn lại ẩn: không bắt người xem kéo cả trang
     document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
     document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + id));
@@ -486,6 +506,7 @@
   document.querySelector('.tabs').onclick = (e) => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); };
   let savedTab = qs.get('tab') || 'verdict'; if (!qs.get('tab')) { try { savedTab = localStorage.getItem('tab') || 'verdict'; } catch { /* bỏ qua */ } }
   if (document.getElementById('pane-' + savedTab)) showTab(savedTab);
+  loadCal(); setInterval(loadCal, 300000); setInterval(renderCal, 60000);
   setLog(!intraday()); setLines(!intraday()); load(); timer = setInterval(load, 30000);
 })();
 </script>

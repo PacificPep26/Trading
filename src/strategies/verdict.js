@@ -24,8 +24,9 @@ export function analyzeVolume(rows, n = 20) {
 const SUPPORTS = { SHORT: 'CLIMAX_UP_REJECT', LONG: 'CLIMAX_DOWN_REJECT' };
 const VETO = { SHORT: 'BREAKOUT_UP', LONG: 'BREAKOUT_DOWN' };
 
-export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = null, branch = null, zoneEngine = null }) {
+export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = null, branch = null, zoneEngine = null, news = null }) {
   const notes = [];
+  if (news) notes.push(`Sắp có tin ${news.label} ${news.minutes >= 0 ? `sau ${news.minutes} phút` : `vừa ra ${-news.minutes} phút trước`}: biến động mạnh, dễ quét SL. ${news.botPauses ? 'Bot tạm dừng vào lệnh mới quanh tin này (±2 giờ).' : 'Bot không tạm dừng với tin này, bạn tự cân nhắc.'}`);
   if (blocked) notes.push(`Engine đang chặn setup: ${String(blocked).split(':')[0]}.`);
   if (signal) {
     return { decision: signal.direction, source: 'BOT', favored: signal.direction, avoid: null, notes,

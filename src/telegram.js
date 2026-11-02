@@ -148,7 +148,8 @@ async function sendSingleTelegramChunk(text) {
  * @param {object} signal
  */
 /** Bối cảnh lớn + link biểu đồ (chỉ in khi có dữ liệu). */
-const contextLines = (s) => `${s.volumeNote ? `
+const contextLines = (s) => `${s.newsNote ? `
+⚠️ Tin sắp ra: ${s.newsNote}` : ''}${s.volumeNote ? `
 📊 Khối lượng M15: ${s.volumeNote}` : ''}${s.macroSummary ? `
 🌍 ${s.macroSummary}` : ''}${s.viewerUrl ? `
 📈 <a href="${s.viewerUrl}">Xem biểu đồ & kịch bản</a>` : ''}`;

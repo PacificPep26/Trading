@@ -1407,6 +1407,35 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(!on.notes.some(n => /không phải vùng thanh khoản/.test(n)) && buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL' }).notes.length === 0, '38.2: vùng là vùng engine, hoặc không có thông tin vùng -> không thêm ghi chú thừa');
 }
 
+// 39. Lịch kinh tế: chuẩn hóa nguồn tin tuần, gộp với lịch gõ cứng, tin sắp ra trong phán quyết và tin Telegram
+{
+  const { normalizeCalendar, mergeStatic, nearestNews } = await import('../src/calendar_feed.js');
+  const { buildVerdict } = await import('../src/strategies/verdict.js');
+  const { buildEarlySignalMessage } = await import('../src/telegram.js');
+  const feed = [
+    { title: 'Non-Farm Employment Change', country: 'USD', date: '2026-11-06T08:30:00-05:00', impact: 'High', forecast: '63K', previous: '29K' },
+    { title: 'ISM Manufacturing PMI', country: 'USD', date: '2026-11-02T10:00:00-05:00', impact: 'Medium', forecast: '49.5', previous: '49.1' },
+    { title: 'Some Minor Index', country: 'USD', date: '2026-11-03T10:00:00-05:00', impact: 'Low', forecast: '', previous: '' },
+    { title: 'German Factory Orders', country: 'EUR', date: '2026-11-03T02:00:00-05:00', impact: 'High', forecast: '', previous: '' }
+  ];
+  const ev = normalizeCalendar(feed);
+  assert(ev.length === 2 && ev[0].title.includes('ISM') && ev[0].tsMs < ev[1].tsMs && ev[1].impact === 'High' && ev[1].tsMs === Date.UTC(2026, 10, 6, 13, 30), '39.1: chỉ giữ tin USD mức Trung bình/Cao, đổi giờ về UTC đúng, sắp theo thời gian');
+  assert(/NFP/.test(ev[1].label) && ev[1].forecast === '63K' && ev[1].previous === '29K', '39.2: có nhãn tiếng Việt (NFP) kèm dự báo và kỳ trước');
+  const low = normalizeCalendar([...feed, { title: 'ADP Non-Farm Employment Change', country: 'USD', date: '2026-11-04T08:15:00-05:00', impact: 'Low', forecast: '', previous: '' }, { title: 'Crude Oil Inventories', country: 'USD', date: '2026-11-04T10:30:00-05:00', impact: 'Low', forecast: '', previous: '' }]);
+  assert(low.length === 4 && low.some(e => /ADP/.test(e.label) && e.impact === 'Low') && low.some(e => /dầu thô/.test(e.label)) && !low.some(e => /Minor/.test(e.title)) && !low.find(e => /ADP/.test(e.title)).label.includes('NFP') && nearestNews(low, Date.UTC(2026, 10, 4, 13, 0), 3).botPauses === false, '39.9: giữ thêm ADP / PMI chốt / tồn kho dầu dù nguồn xếp mức Thấp (đánh dấu Low), vẫn loại các tin nhỏ khác');
+  const merged = mergeStatic(ev, [{ name: 'NFP - Bảng lương phi nông nghiệp', tsMs: Date.UTC(2026, 10, 6, 13, 30) }, { name: 'CPI - Lạm phát Mỹ (tháng 10)', tsMs: Date.UTC(2026, 10, 10, 13, 30) }]);
+  assert(merged.length === 3 && merged.filter(e => /NFP/.test(e.label)).length === 1 && merged.some(e => /CPI/.test(e.label)), '39.3: lịch gõ cứng chỉ bổ sung tin chưa có trong nguồn tuần (NFP trùng giờ không bị đếm hai lần, CPI tuần sau được thêm)');
+  const now = Date.UTC(2026, 10, 2, 14, 0), n1 = nearestNews(merged, now, 3);
+  assert(n1 && n1.label.includes('PMI') && n1.minutes === 60 && n1.botPauses === false, '39.4: tin gần nhất trong 3 giờ tới được báo kèm số phút; PMI không nằm trong danh sách bot tạm dừng');
+  assert(nearestNews(merged, Date.UTC(2026, 10, 6, 12, 0), 3).botPauses === true && nearestNews(merged, Date.UTC(2026, 10, 4, 0, 0), 3) === null, '39.5: NFP thuộc nhóm bot tạm dừng; không có tin trong 3 giờ -> null');
+  const v = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL', news: nearestNews(merged, Date.UTC(2026, 10, 6, 12, 0), 3) });
+  assert(v.notes.some(x => /NFP/.test(x) && /tạm dừng/.test(x)), '39.6: phán quyết nhắc tin sắp ra và nói bot tạm dừng vào lệnh mới khi là FOMC/CPI/NFP');
+  const v2 = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL', news: n1 });
+  assert(v2.notes.some(x => /PMI/.test(x) && /không tạm dừng/.test(x)) && buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL', news: null }).notes.length === 0, '39.7: tin khác thì nói rõ bot KHÔNG tạm dừng, tự cân nhắc; không có tin thì không thêm ghi chú');
+  const m = buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x', newsNote: 'NFP sau 45 phút' }, 60);
+  assert(m.includes('Tin sắp ra: NFP sau 45 phút') && !buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x' }, 60).includes('Tin sắp ra'), '39.8: tin Telegram có dòng "Tin sắp ra" khi có tin, không in gì khi không có');
+}
+
 // Tổng kết
 console.log('\n======================================================');
 console.log(`🎉 TỔNG KẾT KIỂM THỬ: ${passed} PASS, ${failed} FAIL`);
