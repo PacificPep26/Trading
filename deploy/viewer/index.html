@@ -98,6 +98,8 @@
     </div>
     <div class="pane" id="pane-scen" role="tabpanel">
       <h2>Kịch bản khung <span id="tfname"></span></h2>
+      <button id="zoomsc" style="margin:0 0 8px;border-color:var(--line)" title="Phóng vào vùng giá hiện tại và toàn bộ đường đi của kịch bản">🔍 Phóng vào kịch bản</button>
+      <label class="muted" style="display:block;margin:0 0 8px"><input type="checkbox" id="altchk" checked> Vẽ các nhánh khác trên biểu đồ (nếu giá không đi theo kế hoạch)</label>
       <div class="seg" id="scbtn" role="group" aria-label="Chọn kịch bản"></div><div id="scinfo"></div>
     </div>
     <div class="pane" id="pane-cal" role="tabpanel"><h2>Lịch kinh tế Mỹ (giờ Việt Nam)</h2><div id="calbox"><p class="muted">Đang tải lịch...</p></div></div>
@@ -119,7 +121,7 @@
 (() => {
   const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
   const qs = new URLSearchParams(location.search);
-  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
+  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, showAlt = true, curChosen = null, zoomNext = false, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
   const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
   const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
     if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
@@ -174,7 +176,7 @@
     paneViews() {
       const sc = this.sc, self = this;
       return [{ zOrder: () => 'top', renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context: c, mediaSize }) => {
-        const ts = self.chart.timeScale(), last = all.length - 1, X = (b) => ts.logicalToCoordinate(last + b), Y = (v) => self.series.priceToCoordinate(v);
+        const ts = self.chart.timeScale(), last = all.length - 1, X = (b) => ts.logicalToCoordinate(last + Math.round(b)), Y = (v) => self.series.priceToCoordinate(v); // làm tròn: thư viện trả 0 nếu vị trí là số lẻ
         const total = sc.path[sc.path.length - 1].bars, x0 = X(0), x1 = X(total + 3); if (x0 == null || x1 == null) return;
         const yE = Y(sc.entry), yS = Y(sc.sl), y1 = Y(sc.tp1), y2 = Y(sc.tp2); if ([yE, yS, y1, y2].some(v => v == null)) return;
         const short = sc.dir === 'SHORT', up = '#26a69a', dn = '#ef5350', W = x1 - x0;
@@ -206,6 +208,20 @@
         for (const [x, y, q] of pts) {
           c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 3.5, 0, 6.3); c.fill();
           if (['Quét thanh khoản', 'Vào lệnh', 'TP1', 'TP2'].includes(q.label)) { c.fillStyle = '#e5e7eb'; c.textBaseline = 'bottom'; c.fillText(q.label, x + 6, y - 5 + (short ? 0 : 14)); }
+        }
+        if (sc.branches && showAlt) { // nhánh thay thế: nếu giá KHÔNG đi theo kế hoạch chính thì có thể đi theo đường nào
+          const T = sc.path[sc.path.length - 1].bars, s = short ? 1 : -1, edge = short ? sc.zone.top : sc.zone.bottom, far = short ? sc.zone.bottom : sc.zone.top, u = Math.abs(sc.sl - edge) || 1;
+          const brk = sc.branches.branches.find(b => b.id === 'BREAKOUT').plan, p0 = sc.path[0].price;
+          const alts = [
+            { name: 'B: phá thật có khối lượng → đảo vai', col: '#38bdf8', on: sc.branches.active === 'BREAKOUT', pts: [[0, p0], [0.2 * T, edge + s * 0.8 * u], [0.4 * T, edge + s * 0.1 * u], [T, brk.tp1]] },
+            { name: 'C: phá giả → quay đầu', col: '#c084fc', on: sc.branches.active === 'FAKE', pts: [[0, p0], [0.15 * T, edge + s * 0.9 * u], [0.3 * T, far], [T, sc.tp1]] }
+          ];
+          c.font = '11px ui-monospace,Consolas,monospace';
+          for (const a of alts) {
+            const q = a.pts.map(([b, v]) => [X(b), Y(v)]); if (q.some(z => z[0] == null || z[1] == null)) continue;
+            c.strokeStyle = a.col; c.lineWidth = a.on ? 2.5 : 1.5; c.setLineDash([6, 4]); c.beginPath(); q.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke(); c.setLineDash([]);
+            const [xe, ye] = q[q.length - 1]; c.fillStyle = a.col; c.textBaseline = 'bottom'; c.textAlign = 'right'; c.fillText(a.name + (a.on ? '  ← ĐANG XẢY RA' : ''), Math.min(xe, mediaSize.width - 6), Math.min(Math.max(ye - 4, 14), mediaSize.height - 30)); // kẹp nhãn trong khung khi đường đi vượt mép c.textAlign = 'left';
+          }
         }
         const ep = pts.find(q => q[2].label === 'Vào lệnh'), tag = short ? 'SELL' : 'BUY';
         c.fillStyle = short ? dn : up; c.beginPath(); c.roundRect(ep[0] - 40, ep[1] - 9, 36, 18, 3); c.fill(); c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(tag, ep[0] - 35, ep[1] + 0.5);
@@ -361,6 +377,7 @@
     renderVerdict(d, fav);
     $('dot-verdict').className = 'dot ' + (d.verdict.source === 'BOT' ? 'bot' : 'wait'); // chấm xanh: bot đang có tín hiệu; chấm vàng: chờ
     const chosen = pick0 === 'SHORT' ? scen.short : pick0 === 'LONG' ? scen.long : pick0 === 'PATTERN' ? scen.pattern : null;
+    curChosen = chosen; if (zoomNext) { zoomNext = false; setTimeout(zoomScenario, 50); } // bấm Short/Long/Mô hình thì tự phóng vào kịch bản
     if (histMode) { /* không đổi rightOffset: giữ nguyên khung nhìn đang xem */ } else if (chosen) { const p = new ScenarioPrim(chosen); candles.attachPrimitive(p); prims.push(p); extra.push(chosen.entry, chosen.sl, chosen.tp1, chosen.tp2); chart.timeScale().applyOptions({ rightOffset: Math.min(66, chosen.path[chosen.path.length - 1].bars + 8) }); }
     if (!histMode && !chosen) chart.timeScale().applyOptions({ rightOffset: 14 });
     renderScenario(pick0, chosen);
@@ -413,7 +430,7 @@
   function renderScenario(sel, chosen) {
     $('tfname').textContent = bar;
     $('scbtn').innerHTML = [['SHORT', 'Short', scen.short], ['LONG', 'Long', scen.long], ['PATTERN', 'Mô hình', scen.pattern], ['OFF', 'Ẩn', true]].map(([v, t, ok]) => `<button data-v="${v}" aria-pressed="${sel === v}" ${ok ? '' : 'disabled'}>${t}${v !== 'OFF' && lastVerdictDir === v ? ' (hệ thống chọn)' : ''}</button>`).join('');
-    $('scbtn').onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v || e.target.disabled) return; scenSel = v; load(); };
+    $('scbtn').onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v || e.target.disabled) return; scenSel = v; zoomNext = true; load(); };
     if (!chosen) { $('scinfo').innerHTML = `<p class="muted">${sel === 'OFF' && !lastVerdictDir ? 'Hệ thống chưa chọn kịch bản nào (giá ở giữa vùng hoặc đang phá có khối lượng). Bạn vẫn có thể bấm Short/Long để xem kế hoạch tham khảo.' : 'Chưa có vùng cản/hỗ trợ đủ rõ ở khung này để lập kịch bản.'}</p>`; return; }
     const c = chosen, pc = (v) => `${v >= c.entry ? '+' : ''}${((v - c.entry) / c.entry * 100).toFixed(2)}%`;
     $('scinfo').innerHTML = `<div class="sc ${c.dir === 'SHORT' ? 'short' : 'long'}"><b>${c.dir === 'SHORT' ? 'SELL' : 'BUY'}</b> ${c.zone.engine === false ? '<span class="chip warn">vùng cấu trúc, bot không giao dịch</span> ' : c.zone.engine ? '<span class="chip good">vùng engine của bot</span> ' : ''}${c.name ? esc(c.name) + ' (' + (c.state === 'BROKEN' ? 'đã thủng cổ' : 'chưa thủng cổ') + ') · cổ ' + fmt(c.pattern.neckline) : 'tại vùng ' + fmt(c.zone.bottom) + '-' + fmt(c.zone.top) + ' <span class="muted">(' + c.zone.touches + ' lần chạm)</span>'}
@@ -451,6 +468,13 @@
   $('log').onclick = () => setLog(!logScale);
   function setLines(v) { showLines = v; $('mk').setAttribute('aria-pressed', String(v)); }
   $('mk').onclick = () => { setLines(!showLines); load(); };
+  function zoomScenario() { // phóng vào vùng giá hiện tại + toàn bộ đường đi của kịch bản (đang xem rộng thì kịch bản chỉ còn vài pixel)
+    if (!curChosen || histMode) return;
+    const n = all.length - 1, T = curChosen.path[curChosen.path.length - 1].bars;
+    chart.timeScale().setVisibleLogicalRange({ from: n - 110, to: n + T + 12 });
+  }
+  $('zoomsc').onclick = zoomScenario;
+  $('altchk').onchange = (e) => { showAlt = e.target.checked; load(); };
   $('sig').onclick = () => { showSig = !showSig; $('sig').setAttribute('aria-pressed', String(showSig)); updateMarkers(); };
   const TN = (t) => (t > 0 ? '<b class="up">tăng</b>' : t < 0 ? '<b class="down">giảm</b>' : '<b>trung tính</b>');
   const PH = { BULL: 'TĂNG', LEAN_BULL: 'thiên tăng', RANGE: 'đi ngang/chuyển pha', LEAN_BEAR: 'thiên giảm', BEAR: 'GIẢM' };
