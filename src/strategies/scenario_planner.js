@@ -74,7 +74,7 @@ function build(dir, { price, levels, atr: a }) {
   const near = levels.filter(z => (short ? z.kind === 'res' : z.kind === 'sup')).sort((x, y) => (short ? x.mid - y.mid : y.mid - x.mid));
   const far = levels.filter(z => (short ? z.kind === 'sup' : z.kind === 'res')).sort((x, y) => (short ? y.mid - x.mid : x.mid - y.mid));
   if (!near.length || !(a > 0)) return null;
-  const zone = near[0], entry = zone.mid, sgn = short ? 1 : -1;
+  const zone = near[0], entry = short ? zone.bottom : zone.top, sgn = short ? 1 : -1; // vào khi nến đóng cửa quay lại qua mép vùng (khớp điều kiện kích hoạt và backtest), không phải giữa vùng hay ngọn nến
   const sl = short ? zone.top + 0.6 * a : zone.bottom - 0.6 * a, risk = Math.abs(sl - entry);
   if (!(risk > 0)) return null;
   const edge = (z) => (short ? z.top : z.bottom); // mép gần entry của vùng mục tiêu
@@ -206,4 +206,26 @@ export function planBranches({ sc, rows, levels, atr: a }) {
     APPROACH: `Giá chưa vượt vùng: kế hoạch chính (từ chối) đang hiệu lực.`
   }[state];
   return { state, relVol: r2(relVol), active: state === 'FAKE' ? 'FAKE' : state === 'APPROACH' ? 'REJECT' : 'BREAKOUT', stateText, branches };
+}
+
+/**
+ * Vùng thanh khoản CỦA ENGINE (tier 1: cụm đỉnh/đáy nhiều lần chạm; tier 2: đỉnh/đáy lớn) lấy thẳng từ radar của bot, gộp vùng chồng nhau,
+ * loại vùng xa quá maxDistPct. Đây là các vùng mà bot thực sự giao dịch, dùng làm nguồn duy nhất cho kế hoạch.
+ */
+export function engineZonesFromRadar(radar, price, maxDistPct = 0.15) {
+  if (!radar || !(price > 0)) return [];
+  const zs = [];
+  for (const t of [...(radar.tier1InducementHighs || []), ...(radar.tier1InducementLows || [])]) zs.push({ bottom: t.minPrice, top: t.maxPrice, touches: t.touchCount || 1 });
+  for (const p of [radar.tier2MajorHigh, radar.tier2MajorLow]) if (p > 0) zs.push({ bottom: p * 0.999, top: p * 1.001, touches: 1 });
+  return mergeZones(zs.map(z => ({ ...z, mid: (z.top + z.bottom) / 2, lastIdx: 0, kind: 'res' })), 0)
+    .map(z => ({ ...z, kind: z.mid > price ? 'res' : 'sup' }))
+    .filter(z => Math.abs(z.mid - price) / price <= maxDistPct);
+}
+
+/** Đổi đường đi minh họa sang đơn vị nến của khung đang xem: nhân hệ số, giữ tăng dần và nguyên, tổng không quá cap. */
+export function rescalePath(sc, factor, cap = 70) {
+  const raw = sc.path.map(p => p.bars), total = raw[raw.length - 1] * factor, k = total > cap ? cap / total : 1;
+  let prev = 0;
+  const path = sc.path.map((p, i) => { const b = i === 0 ? 0 : Math.max(prev + 1, Math.round(p.bars * factor * k)); prev = b; return { ...p, bars: b }; });
+  return { ...sc, path };
 }

@@ -99,6 +99,7 @@
     <div class="pane" id="pane-scen" role="tabpanel">
       <h2>Kịch bản khung <span id="tfname"></span></h2>
       <button id="zoomsc" style="margin:0 0 8px;border-color:var(--line)" title="Phóng vào vùng giá hiện tại và toàn bộ đường đi của kịch bản">🔍 Phóng vào kịch bản</button>
+      <label class="muted" style="display:block;margin:0 0 6px"><input type="checkbox" id="structchk"> Lập kế hoạch trên vùng cấu trúc tự dựng (bot KHÔNG giao dịch, đo lịch sử lỗ)</label>
       <label class="muted" style="display:block;margin:0 0 8px"><input type="checkbox" id="altchk" checked> Vẽ các nhánh khác trên biểu đồ (nếu giá không đi theo kế hoạch)</label>
       <div class="seg" id="scbtn" role="group" aria-label="Chọn kịch bản"></div><div id="scinfo"></div>
     </div>
@@ -121,7 +122,7 @@
 (() => {
   const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
   const qs = new URLSearchParams(location.search);
-  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, showAlt = true, curChosen = null, zoomNext = false, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
+  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, structMode = false, showAlt = true, curChosen = null, zoomNext = false, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
   const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
   const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
     if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
@@ -431,7 +432,7 @@
     $('tfname').textContent = bar;
     $('scbtn').innerHTML = [['SHORT', 'Short', scen.short], ['LONG', 'Long', scen.long], ['PATTERN', 'Mô hình', scen.pattern], ['OFF', 'Ẩn', true]].map(([v, t, ok]) => `<button data-v="${v}" aria-pressed="${sel === v}" ${ok ? '' : 'disabled'}>${t}${v !== 'OFF' && lastVerdictDir === v ? ' (hệ thống chọn)' : ''}</button>`).join('');
     $('scbtn').onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v || e.target.disabled) return; scenSel = v; zoomNext = true; load(); };
-    if (!chosen) { $('scinfo').innerHTML = `<p class="muted">${sel === 'OFF' && !lastVerdictDir ? 'Hệ thống chưa chọn kịch bản nào (giá ở giữa vùng hoặc đang phá có khối lượng). Bạn vẫn có thể bấm Short/Long để xem kế hoạch tham khảo.' : 'Chưa có vùng cản/hỗ trợ đủ rõ ở khung này để lập kịch bản.'}</p>`; return; }
+    if (!chosen) { $('scinfo').innerHTML = `<p class="muted">${sel === 'OFF' && !lastVerdictDir ? 'Hệ thống chưa chọn kịch bản nào (giá ở giữa vùng hoặc đang phá có khối lượng). Bạn vẫn có thể bấm Short/Long để xem kế hoạch tham khảo.' : 'Bot chưa có vùng thanh khoản nào đủ gần để lập kế hoạch ở phía này (kế hoạch chỉ lập trên vùng engine giao dịch).'}</p>`; return; }
     const c = chosen, pc = (v) => `${v >= c.entry ? '+' : ''}${((v - c.entry) / c.entry * 100).toFixed(2)}%`;
     $('scinfo').innerHTML = `<div class="sc ${c.dir === 'SHORT' ? 'short' : 'long'}"><b>${c.dir === 'SHORT' ? 'SELL' : 'BUY'}</b> ${c.zone.engine === false ? '<span class="chip warn">vùng cấu trúc, bot không giao dịch</span> ' : c.zone.engine ? '<span class="chip good">vùng engine của bot</span> ' : ''}${c.name ? esc(c.name) + ' (' + (c.state === 'BROKEN' ? 'đã thủng cổ' : 'chưa thủng cổ') + ') · cổ ' + fmt(c.pattern.neckline) : 'tại vùng ' + fmt(c.zone.bottom) + '-' + fmt(c.zone.top) + ' <span class="muted">(' + c.zone.touches + ' lần chạm)</span>'}
       <table class="mono"><tr><td>Vào</td><td>${fmt(c.entry)}</td></tr><tr><td>SL</td><td class="down">${fmt(c.sl)} (${pc(c.sl)})</td></tr><tr><td>TP1</td><td class="up">${fmt(c.tp1)} (${pc(c.tp1)}) · R ${c.rr1}</td></tr><tr><td>TP2</td><td class="up">${fmt(c.tp2)} (${pc(c.tp2)}) · R ${c.rr2}</td></tr></table>
@@ -474,6 +475,7 @@
     chart.timeScale().setVisibleLogicalRange({ from: n - 110, to: n + T + 12 });
   }
   $('zoomsc').onclick = zoomScenario;
+  $('structchk').onchange = (e) => { structMode = e.target.checked; zoomNext = true; load(); };
   $('altchk').onchange = (e) => { showAlt = e.target.checked; load(); };
   $('sig').onclick = () => { showSig = !showSig; $('sig').setAttribute('aria-pressed', String(showSig)); updateMarkers(); };
   const TN = (t) => (t > 0 ? '<b class="up">tăng</b>' : t < 0 ? '<b class="down">giảm</b>' : '<b>trung tính</b>');
@@ -490,7 +492,7 @@
 
   async function load() {
     try {
-      const r = await fetch(`/api/analysis?coin=${coin}&bar=${bar}`), d = await r.json();
+      const r = await fetch(`/api/analysis?coin=${coin}&bar=${bar}${structMode ? '&struct=1' : ''}`), d = await r.json();
       if (d.error) throw new Error(d.error);
       if (window.__build && d.build && window.__build !== d.build) return location.reload(); // có bản mới trên server: tải lại để không chạy mã cũ
       window.__build = d.build;

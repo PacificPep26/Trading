@@ -1286,9 +1286,9 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   const res = levels.find(z => z.kind === 'res' && z.bottom <= 120.5 && z.top >= 120.5), sup = levels.find(z => z.kind === 'sup' && z.bottom <= 99.5 && z.top >= 99.5);
   assert(a > 0 && res && sup && res.touches >= 5 && sup.touches >= 5, '34.1: tìm ra vùng kháng cự ~120 và hỗ trợ ~100, mỗi vùng chạm nhiều lần');
   const { short, long } = planScenarios({ rows: wave, price, levels, atr: a });
-  assert(short && short.entry >= res.bottom && short.entry <= res.top && short.sl > res.top && short.tp1 < short.entry, '34.2: Short: vào trong vùng kháng cự, SL ngoài đỉnh vùng, TP1 thấp hơn entry');
+  assert(short && short.entry >= res.bottom - 0.006 && short.entry <= res.top && short.sl > res.top && short.tp1 < short.entry, '34.2: Short: vào trong vùng kháng cự, SL ngoài đỉnh vùng, TP1 thấp hơn entry');
   assert(Math.abs(short.rr1 - (short.entry - short.tp1) / (short.sl - short.entry)) / short.rr1 < 0.01 && short.rr1 > 0, '34.3: R:R của Short đúng công thức (entry-TP1)/(SL-entry)');
-  assert(long && long.entry >= sup.bottom && long.entry <= sup.top && long.sl < sup.bottom && long.tp1 > long.entry, '34.4: Long: vào trong vùng hỗ trợ, SL dưới đáy vùng, TP1 cao hơn entry');
+  assert(long && long.entry >= sup.bottom && long.entry <= sup.top + 0.006 && long.sl < sup.bottom && long.tp1 > long.entry, '34.4: Long: vào trong vùng hỗ trợ, SL dưới đáy vùng, TP1 cao hơn entry');
   assert(Math.abs(long.rr1 - (long.tp1 - long.entry) / (long.entry - long.sl)) / long.rr1 < 0.01, '34.5: R:R của Long đúng công thức');
   const names = short.path.map(p => p.label);
   assert(short.path[0].bars === 0 && short.path[0].price === price && names.includes('Quét thanh khoản') && names.includes('Vào lệnh') && names.includes('TP1') && short.path.every((p, k, arr) => !k || p.bars > arr[k - 1].bars), '34.6: đường đi bắt đầu từ giá hiện tại, có quét thanh khoản/vào lệnh/TP1, thời gian tăng dần');
@@ -1434,6 +1434,25 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(v2.notes.some(x => /PMI/.test(x) && /không tạm dừng/.test(x)) && buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL', news: null }).notes.length === 0, '39.7: tin khác thì nói rõ bot KHÔNG tạm dừng, tự cân nhắc; không có tin thì không thêm ghi chú');
   const m = buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x', newsNote: 'NFP sau 45 phút' }, 60);
   assert(m.includes('Tin sắp ra: NFP sau 45 phút') && !buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x' }, 60).includes('Tin sắp ra'), '39.8: tin Telegram có dòng "Tin sắp ra" khi có tin, không in gì khi không có');
+}
+
+// 40. Thống nhất kế hoạch: điểm vào = mép vùng (xác nhận), vùng lấy từ chính engine bot, con số giống nhau ở mọi khung giờ
+{
+  const { atr, buildLevels, planScenarios, engineZonesFromRadar, rescalePath } = await import('../src/strategies/scenario_planner.js');
+  const wave = Array.from({ length: 400 }, (_, i) => { const c = 110 + 10 * Math.sin(2 * Math.PI * i / 40); return [i * 3600, c, c + 0.5, c - 0.5, c, 10]; });
+  const a = atr(wave), sc = planScenarios({ rows: wave, price: 112, levels: buildLevels(wave, 112), atr: a });
+  assert(Math.abs(sc.short.entry - sc.short.zone.bottom) < 0.011 && Math.abs(sc.long.entry - sc.long.zone.top) < 0.011, '40.1: điểm vào của Short là mép DƯỚI vùng kháng cự, của Long là mép TRÊN vùng hỗ trợ (đóng cửa quay lại), không phải giữa vùng/ngọn nến');
+  assert(sc.short.path.find(p => p.label === 'Vào lệnh').price === sc.short.entry && sc.long.path.find(p => p.label === 'Vào lệnh').price === sc.long.entry, '40.2: điểm "Vào lệnh" trên đường đi trùng đúng điểm vào của kế hoạch');
+  const radar = { tier1InducementHighs: [{ minPrice: 100, maxPrice: 101, touchCount: 4, avgPrice: 100.5 }, { minPrice: 100.8, maxPrice: 102, touchCount: 5, avgPrice: 101.4 }], tier1InducementLows: [{ minPrice: 90, maxPrice: 91, touchCount: 3, avgPrice: 90.5 }], tier2MajorHigh: 110, tier2MajorLow: 80 };
+  const z = engineZonesFromRadar(radar, 95, 0.2);
+  assert(z.length === 4 && z.filter(q => q.kind === 'res').length === 2 && z.filter(q => q.kind === 'sup').length === 2 && z.some(q => q.bottom === 100 && q.top === 102 && q.touches === 9), '40.3: vùng engine lấy từ tier 1 và tier 2 của radar, gộp vùng chồng nhau (100-102 chạm 9 lần), kind theo giá hiện tại');
+  assert(engineZonesFromRadar(radar, 95, 0.05).length === 1 && engineZonesFromRadar({}, 95, 0.2).length === 0 && engineZonesFromRadar(null, 95, 0.2).length === 0, '40.4: lọc theo khoảng cách tối đa; radar rỗng hoặc null -> không có vùng, không lỗi');
+  const plan = planScenarios({ rows: wave, price: 95, levels: z, atr: 2 });
+  assert(plan.short && plan.short.zone.bottom === 100 && plan.short.entry === 100 && plan.long && plan.long.entry === 91, '40.5: kế hoạch lập trên vùng engine: Short vào 100 (mép dưới vùng 100-102), Long vào 91 (mép trên vùng 90-91)');
+  const rp = rescalePath(plan.short, 16, 70);
+  assert(rp.path.every((p, k, arr) => !k || p.bars > arr[k - 1].bars) && rp.path[rp.path.length - 1].bars <= 70 && rp.path[0].bars === 0 && Number.isInteger(rp.path[3].bars), '40.6: đổi đường đi sang đơn vị nến của khung đang xem: tăng dần, nguyên, tổng không quá giới hạn');
+  const same = rescalePath(plan.short, 1, 70);
+  assert(same.path[same.path.length - 1].bars === plan.short.path[plan.short.path.length - 1].bars || plan.short.path[plan.short.path.length - 1].bars > 70, '40.7: hệ số 1 giữ nguyên đường đi (không làm sai lệch giá)');
 }
 
 // Tổng kết

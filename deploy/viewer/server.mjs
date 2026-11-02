@@ -10,7 +10,7 @@ import { generateKeyLevelRadar } from './src/strategies/radar.js';
 import { evaluateMarket } from './src/engine.js';
 import { BOT_CONFIG } from './src/config.js';
 import { loadDailyHistory } from './src/market_history.js';
-import { atr as atrOf, buildLevels, mergeZones, pickKeyLevels, planScenarios, planPattern, planBranches } from './src/strategies/scenario_planner.js';
+import { atr as atrOf, buildLevels, mergeZones, pickKeyLevels, planScenarios, planPattern, planBranches, engineZonesFromRadar, rescalePath } from './src/strategies/scenario_planner.js';
 import { analyzeVolume, buildVerdict } from './src/strategies/verdict.js';
 import { loadCalendar, nearestNews } from './src/calendar_feed.js';
 import { buildMacroContext, resample } from './src/strategies/macro_context.js';
@@ -118,8 +118,8 @@ function series(coin, bar) { // nến tăng dần theo thời gian: [giây, mở
   return m;
 }
 
-async function analysis(coin, bar) {
-  const key = `${coin}:${bar}`, hit = cache.get(key);
+async function analysis(coin, bar, struct = false) {
+  const key = `${coin}:${bar}:${struct ? 1 : 0}`, hit = cache.get(key);
   if (hit && Date.now() - hit.t < 20000) return hit.v;
   const longTf = ['1D', '1W', '1M'].includes(bar);
   const [m15, h1, h4, d1, bh1, bh4, hist] = await Promise.all([okx(coin, '15m'), okx(coin, '1H'), okx(coin, '4H'), okx(coin, '1Dutc'), okx('BTC', '1H'), okx('BTC', '4H'), loadDailyHistory(coin).catch(() => null)]);
@@ -137,20 +137,25 @@ async function analysis(coin, bar) {
   // vùng + kịch bản tính từ CHÍNH cấu trúc của khung đang xem (không dùng chung vùng H4 cho mọi khung)
   const TFCFG = { '15m': [800, 0.04], '1H': [800, 0.08], '4H': [700, 0.12], '1D': [700, 0.3], '1W': [400, 0.6], '1M': [200, 0.9] }[bar];
   const win = rows.slice(-TFCFG[0]), a0 = atrOf(win), levels = mergeZones(buildLevels(win, price, { lookback: TFCFG[0], maxDistPct: TFCFG[1] }), 0.6 * a0, 3 * a0); // gộp vùng chồng nhau (dày tối đa 3 ATR): vùng vẽ = vùng dùng lập kế hoạch
-  const scenarios = planScenarios({ rows: win, price, levels, atr: atrOf(win) });
+  // MẶC ĐỊNH: kế hoạch lập trên vùng thanh khoản CỦA ENGINE (tier 1/2 từ H4), ATR H4, điểm vào = mép vùng: con số giống nhau ở mọi khung giờ.
+  // struct=1: lập trên vùng cấu trúc tự dựng của khung đang xem (bot không giao dịch, đo lịch sử lỗ) - chỉ để tham khảo.
+  const engZ = engineZonesFromRadar(radar, price, 0.2), h4Rows = closed(h4).slice(-150).map(c => [c.ts / 1000, c.open, c.high, c.low, c.close, c.vol]), aH4 = atrOf(h4Rows);
+  const scenarios = struct ? planScenarios({ rows: win, price, levels, atr: a0 }) : planScenarios({ rows: win, price, levels: engZ, atr: aH4 });
+  if (!struct && STEP[bar]) for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k] = rescalePath(scenarios[k], 14400 / STEP[bar], 70); // đường đi tính theo nến H4, đổi sang nến của khung đang xem
   // vùng engine = vùng thanh khoản mà engine thật sự giao dịch (tier 1 cụm đỉnh/đáy nhiều lần chạm, tier 2 đỉnh/đáy lớn)
   const eng = [...(radar.tier1InducementHighs || []), ...(radar.tier1InducementLows || [])].map(t => [t.minPrice, t.maxPrice]);
   [radar.tier2MajorHigh, radar.tier2MajorLow].filter(Boolean).forEach(p => eng.push([p * 0.999, p * 1.001]));
   const isEngine = (z) => eng.some(([lo, hi]) => z.bottom <= hi + 0.25 * a0 && z.top >= lo - 0.25 * a0);
-  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].zone.engine = isEngine(scenarios[k].zone);
+  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].zone.engine = struct ? isEngine(scenarios[k].zone) : true;
   scenarios.pattern = planPattern({ rows: win, price, atr: atrOf(win) });
-  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].branches = planBranches({ sc: scenarios[k], rows: win, levels, atr: a0 }); // nhánh: từ chối / phá thật / phá giả
+  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].branches = planBranches({ sc: scenarios[k], rows: win, levels: struct ? levels : engZ, atr: struct ? a0 : aH4 }); // nhánh: từ chối / phá thật / phá giả
   // số đo lịch sử của mô hình (vào tại cổ khi đóng cửa thủng, SL ngoài đỉnh/đáy 2, TP1 = chiều cao, phí 2 chiều): xem RESEARCH_LOG mục 13
   const PATTERN_STAT = { '1H': 'Đo lịch sử 5 coin khung 1H: PF 0,88 (LỖ), không nên vào theo mô hình này ở 1H.', '4H': 'Đo lịch sử 5 coin khung 4H: 744 lệnh, thắng 68%, PF 1,17 (BTC 1,51; ETH 1,24; SOL 0,91; LINK/NEAR ~1,0). Lợi thế nhỏ, R:R gần 1:1.' }[bar] || 'Khung này chưa được đo lịch sử.';
   if (scenarios.pattern) scenarios.pattern.statNote = PATTERN_STAT;
   // số đo lịch sử quy tắc kịch bản (vào mọi lần nến chạm vùng rồi đóng cửa quay lại, SL/TP1 theo kế hoạch, phí 2 chiều): RESEARCH_LOG mục 14
   const SCEN_STAT = { '15m': 'Đo lịch sử 6 coin, vào mọi lần chạm vùng: 16.189 lệnh, chỉ 41% đi đúng kịch bản (chạm TP1 trước SL), 59% không đúng và dính SL, PF 0,67 (LỖ).', '1H': 'Đo lịch sử 6 coin, vào mọi lần chạm vùng: 5.729 lệnh, 43% đi đúng kịch bản, 57% dính SL, PF 0,85 (LỖ).', '4H': 'Đo lịch sử 6 coin, vào mọi lần chạm vùng: 1.784 lệnh, 40% đi đúng kịch bản, 60% dính SL, PF 0,82 (LỖ).' }[bar] || 'Khung này chưa được đo lịch sử.';
-  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].statNote = SCEN_STAT + ' Thêm điều kiện khối lượng cũng không cứu được.';
+  const ENG_STAT = 'Kế hoạch lập trên vùng thanh khoản của chính engine bot (tier 1/2 từ H4), điểm vào = mép vùng khi nến đóng cửa quay lại. Bot chỉ vào lệnh khi đạt điểm chất lượng ≥ 75 (backtest 2021-26: 189 lệnh, PF 1,21).';
+  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].statNote = struct ? SCEN_STAT + ' Thêm điều kiện khối lượng cũng không cứu được.' : ENG_STAT;
   const volTf = analyzeVolume(rows), volM15 = analyzeVolume(series(coin, '15m')); // bot quyết định trên M15 nên phán quyết dùng khối lượng M15
   const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
   const cal = await loadCalendar().catch(() => []); // lịch kinh tế: tin sắp ra được nhắc trong phán quyết
@@ -158,7 +163,7 @@ async function analysis(coin, bar) {
     coin, bar, price, build: BUILD, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
     candles: initial, firstSec: rows.length ? rows[0][0] : null, total: rows.length,
     volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus, news: nearestNews(cal, Date.now(), 3), zoneEngine: (radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null)?.zone.engine ?? null, pattern: scenarios.pattern, branch: ((radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null) || {}).branches || null }),
-    zones: pickKeyLevels(levels, 2, 0.6 * a0, 3 * a0).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, engine: isEngine(z), label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` })), scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
+    zones: [...engZ.map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, engine: true, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} thanh khoản H4 (${z.touches} lần chạm)` })), ...pickKeyLevels(levels, 2, 0.6 * a0, 3 * a0).filter(z => !isEngine(z)).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, engine: false, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` }))], scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
     signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
     blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
   };
@@ -207,7 +212,7 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/api/analysis') {
       const coin = u.searchParams.get('coin') || 'BTC', bar = u.searchParams.get('bar') || '15m';
       if (!COINS.includes(coin) || !(bar in BARS)) return send(res, 400, { error: 'coin/bar không hợp lệ' });
-      const [a, bot] = await Promise.all([analysis(coin, bar), botState()]);
+      const [a, bot] = await Promise.all([analysis(coin, bar, u.searchParams.get('struct') === '1'), botState()]);
       const sym = `${coin}-USDT`;
       return send(res, 200, { ...a, bot: { connected: bot.connected, reason: bot.reason, positions: (bot.positions || []).filter(p => p.symbol === sym), pending: (bot.pending || []).filter(p => p.symbol === sym), history: (bot.history || []).filter(h => h.symbol === sym).slice(-5) } });
     }

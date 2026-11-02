@@ -198,3 +198,8 @@ Khai báo trước (4 biến thể, báo cáo cả 4; tiêu chí: >= 200 lệnh,
 - 15m: A 16189 lệnh PF 0.67; B 7480 lệnh PF 0.69; C 699 lệnh PF 0.54; D 285 lệnh PF 0.50. Không coin nào dương (0/6) ở bất kỳ biến thể nào.
 - 1H: A 5729 PF 0.85; B 2708 PF 0.83; C 242 PF 0.69; D 108 PF 0.68. Chỉ 1/6 coin dương ở D.
 Kết luận: BÁC BỎ cả 4. Lọc xu hướng khung lớn gần như không đổi; lọc chất lượng nến (râu dài + khối lượng) làm TỆ HƠN (PF 0.67 -> 0.50), tức nến rút râu mạnh tại vùng cấu trúc thường là cú quét tiếp diễn chứ không phải đảo chiều. Những lần thắng nhìn thấy bằng mắt (ví dụ BTC 02/11 chạm 78.8k rồi rơi) là có thật nhưng không đủ bù các lần thua khi vào máy móc.
+
+## 15. Thống nhất kế hoạch của viewer với engine (02/11/2026)
+Vấn đề: kế hoạch hiển thị dùng vùng cấu trúc tự dựng theo từng khung và điểm vào ở GIỮA vùng (đúng ngọn nến 4H cũ, cao hơn giá hiện tại), trong khi backtest vào tại giá đóng của nến xác nhận (mép vùng) và bot chỉ giao dịch vùng thanh khoản tier 1/2 của engine. Kết quả: số liệu khác nhau giữa các khung và khác với backtest.
+Sửa: (1) điểm vào = mép vùng (Short: mép dưới, Long: mép trên) khớp điều kiện kích hoạt; (2) kế hoạch mặc định lập trên VÙNG ENGINE lấy thẳng từ radar (engineZonesFromRadar), ATR của H4, nên giống nhau ở mọi khung giờ (đường đi đổi sang đơn vị nến của khung đang xem); (3) vùng cấu trúc tự dựng chỉ còn là tùy chọn "tham khảo" (struct=1) kèm số đo lịch sử lỗ (mục 14).
+Chưa backtest riêng "kế hoạch trên vùng engine" như một quy tắc vào lệnh độc lập; quyết định vào lệnh thật vẫn chỉ do engine (điểm >= 75).
