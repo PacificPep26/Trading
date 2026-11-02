@@ -76,19 +76,75 @@ async function botState() {
   } catch (e) { return { connected: false, reason: e.message }; }
 }
 
+// ---- Kho nến M15 từ lúc bắt đầu (gói tĩnh trong history/) + phần mới nhất lấy trực tiếp từ OKX; gộp ra 1H/4H theo yêu cầu ----
+const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, INIT = 3000;
+const stores = new Map();
+function store(coin) {
+  if (!stores.has(coin)) {
+    const f = path.join(ROOT, 'history', `${coin}_15m.json`);
+    stores.set(coin, { base: fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : [], tail: new Map(), tailAt: 0, gapDone: false, cache: new Map() });
+  }
+  return stores.get(coin);
+}
+const row = (c) => [Math.floor(c.ts / 1000), c.open, c.high, c.low, c.close, c.vol];
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function refreshTail(coin) { // bù phần từ cuối gói tới hiện tại + nến đang chạy (làm tươi tối đa 20 giây một lần)
+  const s = store(coin);
+  if (!s.base.length || Date.now() - s.tailAt < 20000) return;
+  s.tailAt = Date.now();
+  const lastBase = s.base[s.base.length - 1][0];
+  const rows = await okx(coin, '15m', 300);
+  rows.forEach(c => s.tail.set(Math.floor(c.ts / 1000), row(c)));
+  if (!s.gapDone) { // gói đã cũ hơn 300 nến: lấy thêm các trang cũ hơn cho tới khi nối liền với gói
+    let oldest = Math.min(...s.tail.keys()), guard = 0;
+    while (oldest > lastBase + 900 && guard++ < 80) {
+      const j = await (await fetch(`https://www.okx.com/api/v5/market/history-candles?instId=${coin}-USDT-SWAP&bar=15m&limit=100&after=${oldest * 1000}`)).json();
+      if (!Array.isArray(j.data) || !j.data.length) break;
+      j.data.map(normalizeCandle).forEach(c => s.tail.set(Math.floor(c.ts / 1000), row(c)));
+      oldest = Math.min(...s.tail.keys()); await sleep(120);
+    }
+    s.gapDone = true;
+  }
+  s.cache.clear();
+}
+function series(coin, bar) { // nến tăng dần theo thời gian: [giây, mở, cao, thấp, đóng, khối lượng]
+  const s = store(coin);
+  if (s.cache.has(bar)) return s.cache.get(bar);
+  let m = s.base;
+  if (s.tail.size) { const tail = [...s.tail.values()].sort((a, b) => a[0] - b[0]), t0 = tail[0][0]; let i = m.length; while (i > 0 && m[i - 1][0] >= t0) i--; m = m.slice(0, i).concat(tail); }
+  if (bar !== '15m') {
+    const out = []; let cur = null;
+    for (const r of m) {
+      const k = Math.floor(r[0] / STEP[bar]) * STEP[bar];
+      if (cur && cur[0] === k) { cur[2] = Math.max(cur[2], r[2]); cur[3] = Math.min(cur[3], r[3]); cur[4] = r[4]; cur[5] += r[5]; }
+      else { cur = [k, r[1], r[2], r[3], r[4], r[5]]; out.push(cur); }
+    }
+    m = out;
+  }
+  s.cache.set(bar, m);
+  return m;
+}
+
 async function analysis(coin, bar) {
   const key = `${coin}:${bar}`, hit = cache.get(key);
   if (hit && Date.now() - hit.t < 20000) return hit.v;
   const longTf = ['1D', '1W', '1M'].includes(bar);
   const [m15, h1, h4, d1, bh1, bh4, hist] = await Promise.all([okx(coin, '15m'), okx(coin, '1H'), okx(coin, '4H'), okx(coin, '1Dutc'), okx('BTC', '1H'), okx('BTC', '4H'), loadDailyHistory(coin).catch(() => null)]);
   const macro = hist && hist.length >= 200 ? buildMacroContext(hist) : null;
-  const shown = longTf && hist ? (bar === '1D' ? hist : resample(hist, bar === '1W' ? 'W' : 'M')) : bar === '15m' || bar === '1H' || bar === '4H' ? await okx(coin, BARS[bar]) : d1;
+  let rows;
+  if (longTf && hist) rows = (bar === '1D' ? hist : resample(hist, bar === '1W' ? 'W' : 'M')).map(row);
+  else {
+    await refreshTail(coin).catch(() => {});
+    rows = STEP[bar] ? series(coin, bar) : [];
+    if (!rows.length) rows = (await okx(coin, BARS[bar] || '15m')).map(row); // chưa có gói lịch sử: dùng 300 nến gần nhất
+  }
+  const initial = longTf ? rows : rows.slice(-INIT);
   const price = m15[m15.length - 1].close;
   const radar = generateKeyLevelRadar({ symbol: `${coin}-USDT`, candlesH4: closed(h4), curPrice: price, candlesH1: closed(h1) });
   const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
   const v = {
     coin, bar, price, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
-    candles: shown.map(c => [Math.floor(c.ts / 1000), c.open, c.high, c.low, c.close, c.vol]),
+    candles: initial, firstSec: rows.length ? rows[0][0] : null, total: rows.length,
     zones: buildZones(radar, price), lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
     signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
     blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
@@ -115,6 +171,12 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/replay/') return sendGz(res, 'replay/index.html', 'text/html; charset=utf-8');
     const rd = u.pathname.match(/^\/replay\/data\/([A-Z0-9]+)\.json$/); // chỉ đúng mẫu này, không đọc đường dẫn tự do
     if (rd) return sendGz(res, `replay/data/${rd[1]}.json`, 'application/json');
+    if (u.pathname === '/api/candles') { // trang nến cũ hơn mốc `before` (giây), để cuộn sang trái là tự nạp thêm như TradingView
+      const coin = u.searchParams.get('coin'), bar = u.searchParams.get('bar'), before = Number(u.searchParams.get('before')), limit = Math.min(Number(u.searchParams.get('limit')) || 20000, 50000);
+      if (!COINS.includes(coin) || !STEP[bar] || !before) return send(res, 400, { error: 'tham số không hợp lệ' });
+      const full = series(coin, bar); let lo = 0, hi = full.length; while (lo < hi) { const m = (lo + hi) >> 1; if (full[m][0] < before) lo = m + 1; else hi = m; }
+      return send(res, 200, { candles: full.slice(Math.max(0, lo - limit), lo), hasMore: lo - limit > 0 });
+    }
     if (u.pathname === '/api/analysis') {
       const coin = u.searchParams.get('coin') || 'BTC', bar = u.searchParams.get('bar') || '15m';
       if (!COINS.includes(coin) || !(bar in BARS)) return send(res, 400, { error: 'coin/bar không hợp lệ' });
@@ -125,3 +187,4 @@ http.createServer(async (req, res) => {
     send(res, 404, { error: 'not found' });
   } catch (e) { send(res, 500, { error: e.message }); }
 }).listen(process.env.PORT || 3000, () => console.log('Viewer on', process.env.PORT || 3000));
+COINS.forEach(c => { try { store(c); } catch (e) { console.error('[history]', c, e.message); } }); // nạp gói lịch sử ngay khi khởi động

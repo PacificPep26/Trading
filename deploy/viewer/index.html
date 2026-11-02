@@ -38,6 +38,7 @@
   <div class="seg" id="coins" role="group" aria-label="Chọn coin"></div>
   <div class="seg" id="bars" role="group" aria-label="Khung thời gian"></div>
   <span class="chip" id="trend"></span><span class="chip" id="radar"></span>
+  <button id="log" aria-pressed="false" title="Bật/tắt thang giá logarit (nên bật khi xem nhiều năm)">Log</button><button id="all" title="Nạp toàn bộ lịch sử từ nến đầu tiên và thu vừa khung">Từ đầu</button><span class="chip" id="span"></span>
   <a class="chip" href="/replay/" style="text-decoration:none">Tua lại lệnh backtest</a>
   <span class="price" id="price"></span>
 </header>
@@ -57,7 +58,7 @@
 (() => {
   const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
   const qs = new URLSearchParams(location.search);
-  let coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null;
+  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null;
   const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
   const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
     if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
@@ -75,7 +76,7 @@
     autoSize: true,
     layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc', fontFamily: 'ui-monospace,Consolas,monospace' },
     grid: { vertLines: { color: '#1c2230' }, horzLines: { color: '#1c2230' } },
-    rightPriceScale: { borderColor: '#2a2e39' }, timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 14 }
+    rightPriceScale: { borderColor: '#2a2e39' }, timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 14, minBarSpacing: 0.0005 } // cho thu nhỏ rất xa để thấy toàn bộ lịch sử
   });
   const candles = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350',
     autoscaleInfoProvider: (orig) => { const r = orig(); if (!r || !extra.length) return r; return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...extra), maxValue: Math.max(r.priceRange.maxValue, ...extra) } }; } });
@@ -121,11 +122,14 @@
     $('trend').className = 'chip ' + (/DOWN/.test(d.trendH4) ? 'bad' : /UP/.test(d.trendH4) ? 'good' : '');
     $('radar').textContent = d.radarStatus === 'APPROACHING_RESISTANCE' ? 'Áp sát kháng cự' : d.radarStatus === 'APPROACHING_SUPPORT' ? 'Áp sát hỗ trợ' : 'Giữa vùng';
     $('radar').className = 'chip ' + (d.radarStatus === 'NEUTRAL' ? '' : 'warn');
-    chart.priceScale('right').applyOptions({ mode: intraday() ? 0 : 1 }); // khung dài dùng thang log để thấy các chu kỳ
-    candles.setData(d.candles.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
-    vol.setData(d.candles.map(k => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' })));
+    chart.priceScale('right').applyOptions({ mode: logScale ? 1 : 0 }); // thang log để thấy các chu kỳ dài
+    // giữ phần lịch sử cũ đã nạp, chỉ thay phần đuôi bằng dữ liệu mới
+    if (first || !all.length) all = d.candles.slice(); else { const t0 = d.candles[0][0]; all = all.filter(k => k[0] < t0).concat(d.candles); }
+    hasMore = d.firstSec != null && all[0][0] > d.firstSec;
+    setSeries();
     clear(); extra = [];
-    d.zones.forEach(z => { const [fill, stroke, text] = zoneColors[z.kind]; addPrim({ rects: [{ from: z.top, to: z.bottom, fill, stroke, text, label: `${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] }); });
+    const zt0 = all[Math.max(0, all.length - 400)][0] + sh();
+    d.zones.forEach(z => { const [fill, stroke, text] = zoneColors[z.kind]; addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill, stroke, text, label: `${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] }); });
     d.lines.forEach(l => lines.push(candles.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: l.label })));
     const lastT = d.candles[d.candles.length - 1][0] + sh();
     if (d.signal) posBox(lastT, d.signal.direction, d.signal.entry, d.signal.sl, d.signal.tp, 'Tín hiệu (chưa vào)', true);
@@ -148,6 +152,30 @@
     $('botbox').innerHTML = h;
   }
 
+  function setSeries() {
+    candles.setData(all.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
+    vol.setData(all.map(k => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' })));
+    $('span').textContent = `${all.length.toLocaleString('vi-VN')} nến · từ ${new Date(all[0][0] * 1000).toISOString().slice(0, 10)}${hasMore ? ' (còn cũ hơn, cuộn trái để nạp)' : ' (đã tới nến đầu tiên)'}`;
+  }
+  async function loadOlder(limit = 20000) {
+    if (loadingOlder || !hasMore || !intraday()) return;
+    loadingOlder = true;
+    try {
+      const j = await (await fetch(`/api/candles?coin=${coin}&bar=${bar}&before=${all[0][0]}&limit=${limit}`)).json();
+      if (!j.candles || !j.candles.length) { hasMore = false; return; }
+      const range = chart.timeScale().getVisibleLogicalRange(), add = j.candles.length;
+      all = j.candles.concat(all); hasMore = !!j.hasMore; setSeries();
+      if (range) chart.timeScale().setVisibleLogicalRange({ from: range.from + add, to: range.to + add }); // giữ nguyên vị trí đang xem
+    } finally { loadingOlder = false; }
+  }
+  chart.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r && r.from < 150) loadOlder(); });
+  $('all').onclick = async () => { // nạp hết lịch sử rồi thu vừa khung
+    $('all').disabled = true; setLog(true); // xem từ đầu thì nên dùng thang log
+    if (intraday()) { while (hasMore) { await loadOlder(50000); } }
+    chart.timeScale().fitContent(); $('all').disabled = false;
+  };
+  function setLog(v) { logScale = v; $('log').setAttribute('aria-pressed', String(v)); chart.priceScale('right').applyOptions({ mode: v ? 1 : 0 }); }
+  $('log').onclick = () => setLog(!logScale);
   const TN = (t) => (t > 0 ? '<b class="up">tăng</b>' : t < 0 ? '<b class="down">giảm</b>' : '<b>trung tính</b>');
   const PH = { BULL: 'TĂNG', LEAN_BULL: 'thiên tăng', RANGE: 'đi ngang/chuyển pha', LEAN_BEAR: 'thiên giảm', BEAR: 'GIẢM' };
   function renderMacro(d) {
@@ -165,14 +193,15 @@
       const r = await fetch(`/api/analysis?coin=${coin}&bar=${bar}`), d = await r.json();
       if (d.error) throw new Error(d.error);
       render(d);
+      if (qs.get('all') && !window.__autoAll) { window.__autoAll = true; $('all').click(); } // dùng để kiểm thử: ?all=1 tự bấm 'Từ đầu'
     } catch (e) { $('headline').textContent = 'Lỗi tải dữ liệu: ' + e.message; }
   }
   function pick(id, list, cur, set) {
     $(id).innerHTML = list.map(x => `<button data-v="${x}" aria-pressed="${x === cur}">${x}</button>`).join('');
-    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; set(v); first = true; pick(id, list, v, set); load(); };
+    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; set(v); first = true; setLog(!intraday()); pick(id, list, v, set); load(); };
   }
   pick('coins', COINS, coin, v => coin = v); pick('bars', BARS, bar, v => bar = v);
-  load(); timer = setInterval(load, 30000);
+  setLog(!intraday()); load(); timer = setInterval(load, 30000);
 })();
 </script>
 </body>

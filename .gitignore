@@ -17,3 +17,4 @@ deploy/viewer/node_modules/
 data/cache_long/
 deploy/replay-site/data/
 deploy/viewer/replay/data/
+deploy/viewer/history/
