@@ -40,11 +40,24 @@ export function buildLevels(rows, price, { lookback = 600, L = 3, maxDistPct = 0
     .sort((x, y) => y.mid - x.mid);
 }
 
-/** Giữ lại tối đa `perSide` vùng gần giá nhất mỗi phía (cộng vùng mạnh nhất mỗi phía) để biểu đồ không rối. */
-export function pickKeyLevels(levels, perSide = 3) {
+/** Gộp các vùng chồng lên nhau hoặc cách nhau <= gap thành một (hợp biên, cộng số lần chạm). */
+export function mergeZones(levels, gap = 0, maxSpan = Infinity) {
+  const sorted = [...levels].sort((x, y) => x.bottom - y.bottom), out = [];
+  for (const z of sorted) {
+    const last = out[out.length - 1];
+    if (last && z.bottom <= last.top + gap && Math.max(last.top, z.top) - Math.min(last.bottom, z.bottom) <= maxSpan) { // không gộp nếu vùng mới dày quá maxSpan
+      last.top = Math.max(last.top, z.top); last.bottom = Math.min(last.bottom, z.bottom); last.touches += z.touches; last.lastIdx = Math.max(last.lastIdx, z.lastIdx); last.mid = (last.top + last.bottom) / 2;
+    } else out.push({ ...z });
+  }
+  return out.sort((x, y) => y.mid - x.mid);
+}
+
+/** Giữ lại tối đa `perSide` vùng gần giá nhất mỗi phía (cộng vùng mạnh nhất mỗi phía), đã gộp vùng chồng nhau, để biểu đồ không rối. */
+export function pickKeyLevels(levels, perSide = 3, gap = 0, maxSpan = Infinity) {
   const out = new Set();
+  const merged = mergeZones(levels, gap, maxSpan);
   for (const kind of ['res', 'sup']) {
-    const side = levels.filter(z => z.kind === kind);
+    const side = merged.filter(z => z.kind === kind);
     const nearest = kind === 'res' ? [...side].sort((x, y) => x.mid - y.mid) : [...side].sort((x, y) => y.mid - x.mid);
     nearest.slice(0, perSide).forEach(z => out.add(z));
     const strongest = [...side].sort((x, y) => y.touches - x.touches)[0];
@@ -97,4 +110,100 @@ export function planScenarios({ rows, price, levels, atr: a }) {
   if (!rows || !rows.length || !levels || !levels.length) return { short: null, long: null };
   const ctx = { price, levels, atr: a };
   return { short: build('SHORT', ctx), long: build('LONG', ctx) };
+}
+
+/**
+ * Mô hình 2 đỉnh / 2 đáy: hai đỉnh (đáy) gần bằng nhau (lệch <= 0.6 ATR), đường cổ là đáy (đỉnh) giữa hai điểm,
+ * mục tiêu đo theo chiều cao mô hình (TP1 = 1x, TP2 = 1.618x). Trả về kế hoạch cùng dạng với planScenarios kèm `pattern`
+ * (3 điểm đỉnh-cổ-đỉnh để vẽ). null nếu không có, hoặc giá đã chạy gần hết mục tiêu (không gợi ý vào muộn).
+ */
+export function planPattern({ rows, price, atr: a, L = 3, maxBars = 200 }) {
+  if (!rows || rows.length < 40 || !(a > 0)) return null;
+  const w = rows.slice(-maxBars), found = [];
+  const piv = [];
+  for (let i = L; i < w.length - L; i++) {
+    let hi = true, lo = true;
+    for (let d = 1; d <= L; d++) {
+      if (!(w[i][2] > w[i - d][2] && w[i][2] > w[i + d][2])) hi = false;
+      if (!(w[i][3] < w[i - d][3] && w[i][3] < w[i + d][3])) lo = false;
+    }
+    if (hi) piv.push({ i, p: w[i][2], type: 'top' });
+    if (lo) piv.push({ i, p: w[i][3], type: 'bot' });
+  }
+  for (const type of ['top', 'bot']) {
+    const top = type === 'top', same = piv.filter(q => q.type === type);
+    if (same.length < 2) continue;
+    const b = same[same.length - 1], a1 = same[same.length - 2], gap = b.i - a1.i;
+    if (gap < 8 || gap > 120 || w.length - 1 - b.i > 60 || Math.abs(a1.p - b.p) > 0.6 * a) continue;
+    let ni = a1.i; // vị trí đường cổ: đáy thấp nhất (đỉnh cao nhất) giữa hai điểm
+    for (let j = a1.i; j <= b.i; j++) if (top ? w[j][3] < w[ni][3] : w[j][2] > w[ni][2]) ni = j;
+    const neck = top ? w[ni][3] : w[ni][2], ext = top ? Math.max(a1.p, b.p) : Math.min(a1.p, b.p), height = Math.abs((a1.p + b.p) / 2 - neck);
+    if (height < 1.5 * a) continue;
+    const after = w.slice(b.i + 1);
+    if (after.some(r => (top ? r[4] > ext + 0.3 * a : r[4] < ext - 0.3 * a))) continue; // đã vượt đỉnh/đáy thứ hai: mô hình hỏng
+    const broken = after.some(r => (top ? r[4] < neck : r[4] > neck)), sgn = top ? 1 : -1;
+    const tp1 = neck - sgn * height, tp2 = neck - sgn * 1.618 * height, sl = ext + sgn * 0.3 * a, risk = Math.abs(sl - neck);
+    if (Math.abs(price - neck) > 0.9 * height && (top ? price < neck : price > neck)) continue; // giá đã gần hết mục tiêu
+    const mid = (x, y, f) => x + (y - x) * f, bars = [];
+    const pts = [{ price, label: 'Giá hiện tại' }, { price: neck - sgn * 0.3 * a, label: 'Thủng cổ' }, { price: neck, label: 'Hồi test cổ' }, { price: neck - sgn * 0.1 * a, label: 'Vào lệnh' },
+      { price: mid(neck, tp1, 0.55), label: 'Rời cổ' }, { price: tp1, label: 'TP1' }, { price: mid(tp1, neck, 0.25), label: 'Nhịp hồi' }, { price: tp2, label: 'TP2' }];
+    let acc = 0;
+    const path = pts.map((p, k) => { if (k) acc += legBars(p.price - pts[k - 1].price, a); bars.push(acc); return { bars: acc, price: r2(p.price), label: p.label }; });
+    path[0].price = price;
+    const name = top ? 'Mô hình 2 đỉnh' : 'Mô hình 2 đáy', word = top ? 'THỦNG' : 'VƯỢT', dirWord = top ? 'Short' : 'Long';
+    found.push({
+      dir: top ? 'SHORT' : 'LONG', name, state: broken ? 'BROKEN' : 'FORMING', entry: r2(neck), sl: r2(sl), tp1: r2(tp1), tp2: r2(tp2),
+      rr1: r2(height / risk), rr2: r2(1.618 * height / risk), tp1Note: 'Mục tiêu đo theo chiều cao mô hình (1×), TP2 = 1,618×',
+      zone: { top: r2(neck + 0.15 * a), bottom: r2(neck - 0.15 * a), touches: 2 }, slPct: r2(risk / neck * 100), path, lastBar: w.length - 1 - b.i,
+      pattern: { neckline: r2(neck), height: r2(height), points: [{ t: w[a1.i][0], price: r2(a1.p), label: top ? 'Đỉnh 1' : 'Đáy 1' }, { t: w[ni][0], price: r2(neck), label: 'Cổ' }, { t: w[b.i][0], price: r2(b.p), label: top ? 'Đỉnh 2' : 'Đáy 2' }] },
+      trigger: broken
+        ? `Đã ${word} cổ ${r2(neck)}. Chỉ vào ${dirWord} khi giá hồi test lại cổ rồi bị từ chối (nến đóng cửa ${top ? 'dưới' : 'trên'} ${r2(neck)}); hủy nếu đóng cửa ${top ? 'trên' : 'dưới'} ${r2(sl)}.`
+        : `Chờ nến đóng cửa ${word} cổ ${r2(neck)} (xác nhận mô hình) rồi mới vào ${dirWord}; hủy nếu đóng cửa ${top ? 'trên' : 'dưới'} ${r2(sl)}.`
+    });
+  }
+  return found.sort((x, y) => x.lastBar - y.lastBar)[0] || null; // lấy mô hình hoàn thành gần đây nhất
+}
+
+/**
+ * Nhánh xử lý cho một kịch bản (Short ở kháng cự / Long ở hỗ trợ), nhận trạng thái từ nến đã đóng gần nhất:
+ *  REJECT   - từ chối / quét thanh khoản rồi quay lại (kế hoạch chính)
+ *  BREAKOUT - đóng cửa vượt vùng (có khối lượng >= 1.5x thì chắc, yếu thì nghi phá giả): hủy kế hoạch chính, đảo vai tại retest
+ *  FAKE     - đã đóng cửa vượt vùng nhưng trong <= 8 nến đóng lại quay về phía cũ: phá giả (bẫy), vào theo hướng kế hoạch chính, SL ngoài đỉnh/đáy cú phá giả
+ * Nến dạng [giây, mở, cao, thấp, đóng, khối lượng]; nến cuối là nến đang chạy nên bị bỏ qua.
+ */
+export function planBranches({ sc, rows, levels, atr: a }) {
+  if (!sc || !rows || rows.length < 30 || !(a > 0)) return null;
+  const short = sc.dir === 'SHORT', z = sc.zone, closed = rows.slice(0, -1), recent = closed.slice(-8), last = recent[recent.length - 1];
+  const beyond = (c) => (short ? c[4] > z.top : c[4] < z.bottom);
+  let state = 'APPROACH', relVol = 0;
+  if (beyond(last) || recent.some(beyond)) {
+    let k = closed.length - 1; while (k > 0 && beyond(closed[k - 1]) && closed.length - k < 8) k--; // nến đầu tiên của chuỗi đóng cửa vượt vùng
+    while (k < closed.length - 1 && !beyond(closed[k])) k++;
+    const base = closed.slice(Math.max(0, k - 20), k), avg = base.length ? base.reduce((s, r) => s + r[5], 0) / base.length : 0;
+    relVol = avg > 0 ? closed[k][5] / avg : 0;
+    state = beyond(last) ? (relVol >= 1.5 ? 'BREAKOUT' : 'BREAKOUT_WEAK') : 'FAKE';
+  }
+  const edge = short ? z.top : z.bottom, dirWord = short ? 'Short' : 'Long', flipWord = short ? 'Long' : 'Short', over = short ? 'trên' : 'dưới', back = short ? 'dưới' : 'trên';
+  // nhánh đảo vai: vùng bị phá đổi vai (kháng cự -> hỗ trợ), vào tại retest mép vừa phá
+  const entryB = edge, slB = short ? z.bottom - 0.3 * a : z.top + 0.3 * a, riskB = Math.abs(entryB - slB);
+  const ahead = (levels || []).filter(q => (short ? q.kind === 'res' && q.bottom > entryB : q.kind === 'sup' && q.top < entryB)).sort((x, y) => (short ? x.bottom - y.bottom : y.top - x.top))[0];
+  const tp1B = ahead ? (short ? ahead.bottom : ahead.top) : entryB + (short ? 2 : -2) * riskB;
+  // nhánh phá giả: SL ngoài cực trị của cú phá giả
+  const ext = short ? Math.max(...recent.map(r => r[2])) : Math.min(...recent.map(r => r[3])), slF = ext + (short ? 0.2 : -0.2) * a, entryF = short ? z.bottom : z.top, riskF = Math.abs(slF - entryF);
+  const branches = [
+    { id: 'REJECT', title: 'Từ chối / quét thanh khoản (kế hoạch chính)', when: sc.trigger, plan: { dir: sc.dir, entry: sc.entry, sl: sc.sl, tp1: sc.tp1, rr1: sc.rr1 } },
+    { id: 'BREAKOUT', title: `Phá ${short ? 'lên' : 'xuống'} thật: hủy ${dirWord}, đảo vai`,
+      when: `Nếu nến đóng cửa ${over} ${r2(edge)} KÈM khối lượng >= 1.5× trung bình, rồi hồi test ${r2(edge)} mà không đóng cửa ngược lại -> hủy ${dirWord}, vùng đổi vai, canh ${flipWord} tại retest.`,
+      plan: { dir: short ? 'LONG' : 'SHORT', entry: r2(entryB), sl: r2(slB), tp1: r2(tp1B), rr1: r2(Math.abs(tp1B - entryB) / riskB) } },
+    { id: 'FAKE', title: `Phá ${short ? 'lên' : 'xuống'} giả rồi quay đầu (bẫy)`,
+      when: `Nếu nến đóng cửa ${over} ${r2(edge)} nhưng trong tối đa 8 nến đóng cửa quay lại ${back} ${r2(entryF)} -> phá giả (bẫy), vào ${dirWord} với SL ngoài đỉnh/đáy cú phá giả.`,
+      plan: { dir: sc.dir, entry: r2(entryF), sl: r2(slF), tp1: sc.tp1, rr1: r2(Math.abs(entryF - sc.tp1) / riskF) } }
+  ];
+  const stateText = {
+    BREAKOUT: `Đang đóng cửa ${over} vùng với khối lượng ${relVol.toFixed(1)}×: kế hoạch ${dirWord} bị đe dọa, theo dõi retest để đảo vai.`,
+    BREAKOUT_WEAK: `Đóng cửa ${over} vùng nhưng khối lượng yếu (${relVol.toFixed(1)}×): nghi phá giả, chờ xác nhận thêm.`,
+    FAKE: `Đã đóng cửa ${over} vùng rồi quay lại: dấu hiệu phá giả (bẫy), kế hoạch ${dirWord} mạnh hơn nhưng SL phải ngoài cực trị cú phá.`,
+    APPROACH: `Giá chưa vượt vùng: kế hoạch chính (từ chối) đang hiệu lực.`
+  }[state];
+  return { state, relVol: r2(relVol), active: state === 'FAKE' ? 'FAKE' : state === 'APPROACH' ? 'REJECT' : 'BREAKOUT', stateText, branches };
 }

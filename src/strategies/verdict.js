@@ -24,7 +24,7 @@ export function analyzeVolume(rows, n = 20) {
 const SUPPORTS = { SHORT: 'CLIMAX_UP_REJECT', LONG: 'CLIMAX_DOWN_REJECT' };
 const VETO = { SHORT: 'BREAKOUT_UP', LONG: 'BREAKOUT_DOWN' };
 
-export function buildVerdict({ signal, blocked, volTf, radarStatus }) {
+export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = null, branch = null }) {
   const notes = [];
   if (blocked) notes.push(`Engine đang chặn setup: ${String(blocked).split(':')[0]}.`);
   if (signal) {
@@ -32,20 +32,28 @@ export function buildVerdict({ signal, blocked, volTf, radarStatus }) {
       headline: `BOT ĐANG CÓ TÍN HIỆU ${signal.direction} (${signal.strategy}): sẽ chờ xác nhận 60 phút rồi vào lệnh.`,
       checklist: [{ ok: true, text: 'Engine của bot đã phát tín hiệu và qua bộ lọc' }] };
   }
+  const withPattern = (v) => { // nhắc mô hình 2 đỉnh/đáy và đối chiếu hướng với ưu tiên
+    if (!pattern) return v;
+    const dir = pattern.dir === 'SHORT' ? 'Short' : 'Long', st = pattern.state === 'BROKEN' ? 'đã thủng cổ' : 'chưa thủng cổ';
+    const rel = v.favored ? (v.favored === pattern.dir ? 'cùng hướng với ưu tiên của hệ thống' : 'NGƯỢC hướng ưu tiên của hệ thống: thận trọng, chờ thêm xác nhận') : 'không trùng kịch bản nào của hệ thống';
+    v.notes.push(`Phát hiện ${pattern.name} (${st}), hướng ${dir}, ${rel}. Xem nút "Mô hình".`);
+    return v;
+  };
   const side = radarStatus === 'APPROACHING_RESISTANCE' ? 'SHORT' : radarStatus === 'APPROACHING_SUPPORT' ? 'LONG' : null;
   const kind = volTf ? volTf.kind : 'UNKNOWN';
-  if (side && kind === VETO[side]) {
+  if (branch && branch.state && branch.state !== 'APPROACH') notes.push(branch.stateText);
+  if (side && (kind === VETO[side] || (branch && branch.state === 'BREAKOUT'))) {
     notes.push(`Giá áp sát ${side === 'SHORT' ? 'kháng cự' : 'hỗ trợ'} nhưng đang phá ${side === 'SHORT' ? 'lên' : 'xuống'} có khối lượng: không bắt ${side === 'SHORT' ? 'đỉnh' : 'đáy'}.`);
-    return { decision: 'WAIT', source: 'PLAN', favored: null, avoid: side, notes, headline: `Đứng ngoài: tránh ${side} vì giá đang phá có khối lượng.`, checklist: [] };
+    return withPattern({ decision: 'WAIT', source: 'PLAN', favored: null, avoid: side, notes, headline: `Đứng ngoài: tránh ${side} vì giá đang phá có khối lượng.`, checklist: [] });
   }
-  if (!side) return { decision: 'WAIT', source: 'PLAN', favored: null, avoid: null, notes, headline: 'Đứng ngoài: giá đang ở giữa vùng, chưa có kịch bản.', checklist: [] };
+  if (!side) return withPattern({ decision: 'WAIT', source: 'PLAN', favored: null, avoid: null, notes, headline: 'Đứng ngoài: giá đang ở giữa vùng, chưa có kịch bản.', checklist: [] });
   const confirmed = kind === SUPPORTS[side];
-  return { decision: 'WAIT', source: 'PLAN', favored: side, avoid: null, notes,
+  return withPattern({ decision: 'WAIT', source: 'PLAN', favored: side, avoid: null, notes,
     headline: `Chưa vào lệnh: ưu tiên canh ${side}, chờ xác nhận.`,
     checklist: [
       { ok: true, text: `Giá đang áp sát ${side === 'SHORT' ? 'kháng cự' : 'hỗ trợ'}` },
       { ok: confirmed, text: `Khối lượng xác nhận (climax + râu): ${volTf && volTf.text ? volTf.text : 'chưa có dữ liệu'}` },
       { ok: false, text: 'Nến M15 đóng cửa quay lại + râu dài + khối lượng hấp thụ (điều kiện bot cần)' },
       { ok: false, text: 'Bot chưa phát tín hiệu (cần điểm chất lượng đạt ngưỡng)' }
-    ] };
+    ] });
 }

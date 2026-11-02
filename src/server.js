@@ -13,6 +13,7 @@ import { latestSmcFvgSignal } from './strategies/smc_fvg.js';
 import { persistentMap } from './alert_state.js';
 import { startStateApi, readHistory } from './state_api.js';
 import { getMacroContext } from './market_history.js';
+import { analyzeVolume } from './strategies/verdict.js';
 import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize, generateKeyLevelRadar, registerTakeProfitHit, detectMacroRangeBox, buildBoxAlert } from './engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG, getEffectiveConfig } from './config.js';
 import {
@@ -707,7 +708,9 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
 async function signalContext(symbol) {
   const coin = symbol.replace('-USDT', '');
   const m = await getMacroContext(coin);
-  return { ...(m && m.summary ? { macroSummary: m.summary } : {}), ...(process.env.VIEWER_URL ? { viewerUrl: `${process.env.VIEWER_URL.replace(/\/$/, '')}/?coin=${coin}` } : {}) };
+  let volumeNote; // đọc khối lượng M15 (khung bot quyết định) đính kèm tin
+  try { const v = analyzeVolume((await fetchOkxCandles(`${symbol}-SWAP`, '15m', 60)).map(x => [Math.floor(x.ts / 1000), x.open, x.high, x.low, x.close, x.vol])); if (v.kind !== 'UNKNOWN') volumeNote = v.text; } catch { /* thiếu dữ liệu thì tin vẫn đi */ }
+  return { ...(volumeNote ? { volumeNote } : {}), ...(m && m.summary ? { macroSummary: m.summary } : {}), ...(process.env.VIEWER_URL ? { viewerUrl: `${process.env.VIEWER_URL.replace(/\/$/, '')}/?coin=${coin}&bar=15m` } : {}) };
 }
 
 async function openPositionNow(instId, symbol, signal, score, reasons) {

@@ -10,7 +10,7 @@ import { generateKeyLevelRadar } from './src/strategies/radar.js';
 import { evaluateMarket } from './src/engine.js';
 import { BOT_CONFIG } from './src/config.js';
 import { loadDailyHistory } from './src/market_history.js';
-import { atr as atrOf, buildLevels, pickKeyLevels, planScenarios } from './src/strategies/scenario_planner.js';
+import { atr as atrOf, buildLevels, mergeZones, pickKeyLevels, planScenarios, planPattern, planBranches } from './src/strategies/scenario_planner.js';
 import { analyzeVolume, buildVerdict } from './src/strategies/verdict.js';
 import { buildMacroContext, resample } from './src/strategies/macro_context.js';
 
@@ -134,16 +134,21 @@ async function analysis(coin, bar) {
   const initial = longTf ? rows : rows.slice(-INIT);
   // vùng + kịch bản tính từ CHÍNH cấu trúc của khung đang xem (không dùng chung vùng H4 cho mọi khung)
   const TFCFG = { '15m': [800, 0.04], '1H': [800, 0.08], '4H': [700, 0.12], '1D': [700, 0.3], '1W': [400, 0.6], '1M': [200, 0.9] }[bar];
-  const win = rows.slice(-TFCFG[0]), levels = buildLevels(win, price, { lookback: TFCFG[0], maxDistPct: TFCFG[1] });
+  const win = rows.slice(-TFCFG[0]), a0 = atrOf(win), levels = mergeZones(buildLevels(win, price, { lookback: TFCFG[0], maxDistPct: TFCFG[1] }), 0.6 * a0, 3 * a0); // gộp vùng chồng nhau (dày tối đa 3 ATR): vùng vẽ = vùng dùng lập kế hoạch
   const scenarios = planScenarios({ rows: win, price, levels, atr: atrOf(win) });
+  scenarios.pattern = planPattern({ rows: win, price, atr: atrOf(win) });
+  for (const k of ['short', 'long']) if (scenarios[k]) scenarios[k].branches = planBranches({ sc: scenarios[k], rows: win, levels, atr: a0 }); // nhánh: từ chối / phá thật / phá giả
+  // số đo lịch sử của mô hình (vào tại cổ khi đóng cửa thủng, SL ngoài đỉnh/đáy 2, TP1 = chiều cao, phí 2 chiều): xem RESEARCH_LOG mục 13
+  const PATTERN_STAT = { '1H': 'Đo lịch sử 5 coin khung 1H: PF 0,88 (LỖ), không nên vào theo mô hình này ở 1H.', '4H': 'Đo lịch sử 5 coin khung 4H: 744 lệnh, thắng 68%, PF 1,17 (BTC 1,51; ETH 1,24; SOL 0,91; LINK/NEAR ~1,0). Lợi thế nhỏ, R:R gần 1:1.' }[bar] || 'Khung này chưa được đo lịch sử.';
+  if (scenarios.pattern) scenarios.pattern.statNote = PATTERN_STAT;
   const volTf = analyzeVolume(rows), volM15 = analyzeVolume(series(coin, '15m')); // bot quyết định trên M15 nên phán quyết dùng khối lượng M15
   const radar = generateKeyLevelRadar({ symbol: `${coin}-USDT`, candlesH4: closed(h4), curPrice: price, candlesH1: closed(h1) });
   const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
   const v = {
     coin, bar, price, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
     candles: initial, firstSec: rows.length ? rows[0][0] : null, total: rows.length,
-    volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus }),
-    zones: pickKeyLevels(levels, 3).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` })), scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
+    volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus, pattern: scenarios.pattern, branch: ((radar.radarStatus === 'APPROACHING_RESISTANCE' ? scenarios.short : radar.radarStatus === 'APPROACHING_SUPPORT' ? scenarios.long : null) || {}).branches || null }),
+    zones: pickKeyLevels(levels, 2, 0.6 * a0, 3 * a0).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` })), scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
     signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
     blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
   };

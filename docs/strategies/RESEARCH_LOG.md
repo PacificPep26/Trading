@@ -178,3 +178,9 @@ Dữ liệu: nến M15 Bitstamp (spot USD) nối với cache OKX từ 12/2019; H
 - ETH 2018-2020: 25 lệnh, PF 0.89, -2.2R (2018: 0/6 lệnh thắng). Không có lợi thế rõ.
 - Thành phần đảo vai: 2014-2020 BTC Kane thuận xu hướng PF 2.34 (+29.4R) còn SMC Sweep PF 0.93 (-2.2R); 2021-26 thì ngược lại (SMC Sweep PF 1.45, Kane PF 0.95). LỢI THẾ TỪNG THÀNH PHẦN KHÔNG BỀN QUA CÁC GIAI ĐOẠN; chỉ có danh mục gộp là dương ở cả hai.
 Kết luận: BTC dương trên giai đoạn chưa từng dùng để chọn tham số (ngoài mẫu) nhưng 2014-15 lỗ (thị trường mỏng, phí/spread thực tế lúc đó cao hơn giả định), ETH không xác nhận. Không đổi cấu hình dựa trên kết quả này. Giới hạn: spot chứ không phải hợp đồng, không có funding, mẫu mỗi năm rất nhỏ.
+
+## 13. Mô hình 2 đỉnh / 2 đáy (02/11/2026)
+Phát hiện: 2 đỉnh (đáy) lệch <= 0.6 ATR, cách nhau 8-120 nến, chiều cao >= 1.5 ATR; cổ = đáy (đỉnh) giữa hai điểm. Vào tại đóng cửa thủng/vượt cổ (chờ tối đa 30 nến, lúc phát hiện chưa thủng nên không nhìn trước), SL ngoài đỉnh/đáy thứ hai 0.3 ATR, TP1 = chiều cao mô hình (1x), tối đa 120 nến. Phí 0.19% khứ hồi. Dữ liệu: BTC từ 2014, ETH 2017, SOL/LINK/NEAR từ lúc niêm yết.
+- 4H gộp 5 coin: 744 lệnh, thắng 68%, PF 1.17, +39.5R (BTC 228 lệnh PF 1.51 +29.8R; ETH 166 PF 1.24 +11.8R; SOL 108 PF 0.91; LINK 138 PF 1.02; NEAR 104 PF 1.02).
+- 1H gộp: 3444 lệnh, thắng 64%, PF 0.88, -151.6R (LỖ).
+Kết luận: tỉ lệ thắng cao nhưng R:R gần 1:1 nên lợi thế rất mỏng ở 4H và âm ở 1H; không có tách trong/ngoài mẫu, BTC chiếm phần lớn lãi, mẫu giai đoạn Bitstamp 2014-19 dùng giá spot. KHÔNG đưa vào quyết định của bot; chỉ hiển thị trong viewer như thông tin tham khảo kèm số đo này. Muốn dùng làm tín hiệu cần: đặt tiêu chí trước, chạy qua backtest_multi_year có phí, chia trong/ngoài mẫu, theo dõi paper.

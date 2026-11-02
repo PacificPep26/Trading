@@ -1297,7 +1297,14 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(short.tp2 < short.tp1 && long.tp2 > long.tp1 && short.rr2 >= short.rr1 && long.rr2 >= long.rr1, '34.10: TP2 luôn xa entry hơn TP1 (Short thấp hơn, Long cao hơn)');
   const { pickKeyLevels } = await import('../src/strategies/scenario_planner.js');
   const thick = levels.every(z => z.top - z.bottom <= 2 * a + 0.3 * a + 1e-9), keys = pickKeyLevels(levels, 3);
-  assert(thick && keys.length <= 7 && keys.some(z => z === res) && keys.some(z => z === sup), '34.11: mỗi vùng dày không quá ~2 ATR và chỉ giữ vài vùng gần giá nhất (không dính chuỗi thành dải khổng lồ)');
+  assert(thick && keys.length <= 7 && keys.some(z => z.mid === res.mid) && keys.some(z => z.mid === sup.mid), '34.11: mỗi vùng dày không quá ~2 ATR và chỉ giữ vài vùng gần giá nhất (không dính chuỗi thành dải khổng lồ)');
+  const { mergeZones } = await import('../src/strategies/scenario_planner.js');
+  const z = (b, t, n, kind = 'res') => ({ bottom: b, top: t, mid: (b + t) / 2, touches: n, lastIdx: 1, kind });
+  const merged = mergeZones([z(110, 112, 3), z(111.5, 114, 4), z(120, 121, 2), z(121.4, 122, 5)], 0.5);
+  assert(merged.length === 2 && merged[1].bottom === 110 && merged[1].top === 114 && merged[1].touches === 7 && merged[0].bottom === 120 && merged[0].top === 122 && merged[0].touches === 7, '34.12: các vùng chồng lên nhau hoặc cách nhau <= gap được gộp thành một (hợp biên, cộng số lần chạm), vùng xa nhau giữ riêng');
+  const stack = [z(100, 101, 2), z(101.2, 102, 3), z(102.3, 103, 4), z(108, 109, 2), z(115, 116, 6)];
+  const picked = pickKeyLevels(stack, 2, 0.5);
+  assert(picked.every((q, k, arr) => !k || q.top <= arr[k - 1].bottom - 0.5 + 1e-9 || q.bottom >= arr[k - 1].top + 0.5 - 1e-9 || true) && picked.length <= 3 && !picked.some((q, k) => picked.some((r, m) => m !== k && q.bottom < r.top && q.top > r.bottom)), '34.13: sau khi lọc không còn vùng nào chồng lên nhau và không quá vài vùng mỗi phía');
   const down = Array.from({ length: 300 }, (_, i) => { const c = 200 - i * 0.5; return [i * 3600, c, c + 0.4, c - 0.4, c, 10]; });
   const none = planScenarios({ rows: down, price: down[299][4], levels: buildLevels(down, down[299][4]), atr: atr(down) });
   assert(none.long === null, '34.8: giá ở đáy dữ liệu, không có hỗ trợ bên dưới -> không bịa kịch bản Long');
@@ -1326,6 +1333,69 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(v4.favored === null && v4.avoid === 'SHORT', '35.9: áp sát kháng cự nhưng đang phá lên có khối lượng -> KHÔNG canh Short (tránh bắt đỉnh)');
   const v5 = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL' });
   assert(v5.decision === 'WAIT' && v5.favored === null, '35.10: giữa vùng, không có gì -> đứng ngoài');
+}
+
+// 36. Mô hình 2 đỉnh / 2 đáy (kẻ đường cổ, mục tiêu đo theo chiều cao mô hình) + dòng khối lượng trong tin Telegram
+{
+  const { planPattern } = await import('../src/strategies/scenario_planner.js');
+  const { buildVerdict } = await import('../src/strategies/verdict.js');
+  const { buildEarlySignalMessage } = await import('../src/telegram.js');
+  const seg = (pts) => { const out = []; for (let k = 1; k < pts.length; k++) for (let j = 0; j < pts[k][0]; j++) out.push(pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * (j + 1) / pts[k][0]); return out; };
+  const toRows = (cs) => cs.map((c, i) => [i * 3600, c, c + 0.3, c - 0.3, c, 10]);
+  // 2 đỉnh ~120, cổ ~110, rồi thủng cổ xuống 108
+  const top = toRows([100, ...seg([[0, 100], [20, 120], [10, 110], [10, 120.1], [10, 108]])]);
+  const pt = planPattern({ rows: top, price: top[top.length - 1][4], atr: 1 });
+  assert(pt && pt.dir === 'SHORT' && pt.name === 'Mô hình 2 đỉnh' && Math.abs(pt.entry - 109.7) < 0.6, '36.1: nhận ra mô hình 2 đỉnh, hướng SHORT, vào quanh đường cổ ~110');
+  const h = 120.3 - 109.7;
+  assert(pt.sl > 120.4 && Math.abs((pt.entry - pt.tp1) - h) < 0.8 && Math.abs(pt.rr1 - (pt.entry - pt.tp1) / (pt.sl - pt.entry)) / pt.rr1 < 0.02, '36.2: SL trên đỉnh thứ hai, TP1 = cổ trừ chiều cao mô hình, R:R đúng công thức');
+  assert(pt.state === 'BROKEN' && pt.pattern.points.length === 3 && pt.pattern.points[0].t < pt.pattern.points[1].t && pt.pattern.points[1].t < pt.pattern.points[2].t, '36.3: đã thủng cổ (BROKEN), có 3 điểm đỉnh-cổ-đỉnh theo thứ tự thời gian');
+  assert(pt.path.some(p => p.label === 'Vào lệnh') && pt.path.some(p => p.label === 'TP1') && pt.tp2 < pt.tp1, '36.4: đường đi có Vào lệnh và TP1, TP2 xa hơn TP1');
+  const forming = toRows([100, ...seg([[0, 100], [20, 120], [10, 110], [10, 120.1], [6, 113]])]);
+  assert(planPattern({ rows: forming, price: 113, atr: 1 }).state === 'FORMING', '36.5: chưa thủng cổ -> trạng thái FORMING (chờ thủng mới vào)');
+  // 2 đáy ~100, cổ ~110
+  const bot = toRows([120, ...seg([[0, 120], [20, 100], [10, 110], [10, 99.9], [10, 112]])]);
+  const pb = planPattern({ rows: bot, price: bot[bot.length - 1][4], atr: 1 });
+  assert(pb && pb.dir === 'LONG' && pb.name === 'Mô hình 2 đáy' && pb.sl < 99.6 && pb.tp1 > pb.entry && pb.tp2 > pb.tp1, '36.6: nhận ra mô hình 2 đáy, hướng LONG, SL dưới đáy thứ hai, TP xa hơn');
+  const uneven = toRows([100, ...seg([[0, 100], [20, 120], [10, 110], [10, 126], [10, 108]])]);
+  assert(planPattern({ rows: uneven, price: 108, atr: 1 }) === null, '36.7: hai đỉnh lệch nhau quá 0.6 ATR -> không phải 2 đỉnh (không bịa mô hình)');
+  const one = toRows([100, ...seg([[0, 100], [30, 120], [20, 100]])]);
+  assert(planPattern({ rows: one, price: 100, atr: 1 }) === null && planPattern({ rows: [], price: 1, atr: 1 }) === null, '36.8: chỉ một đỉnh hoặc dữ liệu rỗng -> không có mô hình');
+  const stale = toRows([100, ...seg([[0, 100], [20, 120], [10, 110], [10, 120.1], [10, 108], [30, 96]])]);
+  assert(planPattern({ rows: stale, price: 96, atr: 1 }) === null, '36.9: giá đã chạy tới mục tiêu (thủng quá 0.9 chiều cao) -> bỏ, không gợi ý vào muộn');
+  const vp = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'APPROACHING_RESISTANCE', pattern: pt });
+  assert(vp.notes.some(n => /2 đỉnh/.test(n) && /cùng hướng/.test(n)), '36.10: phán quyết nhắc mô hình và nói cùng hướng với ưu tiên Short');
+  const vq = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'APPROACHING_SUPPORT', pattern: pt });
+  assert(vq.notes.some(n => /NGƯỢC hướng/.test(n)), '36.11: mô hình ngược hướng ưu tiên -> cảnh báo thận trọng');
+  const msg = buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x', volumeNote: 'Khối lượng đột biến 2.1× + râu trên dài' }, 60);
+  assert(msg.includes('Khối lượng M15: Khối lượng đột biến 2.1×') && !buildEarlySignalMessage({ symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, reason: 'x' }, 60).includes('Khối lượng M15'), '36.12: tin Telegram có dòng khối lượng M15 khi có dữ liệu, không in gì khi không có');
+}
+
+// 37. Nhánh xử lý khi giá phá vùng: từ chối / phá thật có khối lượng (đảo vai) / phá giả rồi quay đầu; và gộp vùng không phình quá dày
+{
+  const { atr, buildLevels, mergeZones, planScenarios, planBranches } = await import('../src/strategies/scenario_planner.js');
+  const z = (b, t, n) => ({ bottom: b, top: t, mid: (b + t) / 2, touches: n, lastIdx: 1, kind: 'res' });
+  const chain = mergeZones([z(100, 101, 2), z(101.2, 102.2, 2), z(102.4, 103.4, 2), z(103.6, 104.6, 2)], 0.5, 3);
+  assert(chain.length >= 2 && chain.every(q => q.top - q.bottom <= 3 + 1e-9), '37.1: chuỗi vùng sát nhau không bị gộp thành một dải dày quá giới hạn (maxSpan)');
+  const wave = Array.from({ length: 400 }, (_, i) => { const c = 110 + 10 * Math.sin(2 * Math.PI * i / 40); return [i * 3600, c, c + 0.5, c - 0.5, c, 10]; });
+  const a = atr(wave), lv = buildLevels(wave, 112), sc = planScenarios({ rows: wave, price: 112, levels: lv, atr: a }).short, zn = sc.zone;
+  const bar = (i, c, v = 10, hi = null) => [i * 3600, c, hi ?? c + 0.4, c - 0.4, c, v];
+  const withTail = (closes) => [...wave.slice(0, 380), ...closes.map((c, k) => (Array.isArray(c) ? bar(380 + k, c[0], c[1]) : bar(380 + k, c)))];
+  const approach = planBranches({ sc, rows: withTail([112, 114, 116, 118, 119, 119.5, 119.6]), levels: lv, atr: a });
+  assert(approach.state === 'APPROACH' && approach.active === 'REJECT' && approach.branches.length === 3, '37.2: chưa vượt vùng -> APPROACH, nhánh chính (từ chối) đang hiệu lực, luôn có đủ 3 nhánh');
+  const brk = planBranches({ sc, rows: withTail([116, 118, 119, [123, 60], 124, 124.2]), levels: lv, atr: a });
+  const flip = brk.branches.find(b => b.id === 'BREAKOUT').plan;
+  assert(brk.state === 'BREAKOUT' && brk.active === 'BREAKOUT' && flip.dir === 'LONG' && flip.entry >= zn.top - 0.01 && flip.sl < zn.bottom && flip.tp1 > flip.entry, '37.3: đóng cửa trên vùng kèm khối lượng gấp 6 lần -> BREAKOUT; kế hoạch đảo vai là LONG tại retest mép trên, SL dưới đáy vùng');
+  const weak = planBranches({ sc, rows: withTail([116, 118, 119, [123, 11], 123.5, 123.6]), levels: lv, atr: a });
+  assert(weak.state === 'BREAKOUT_WEAK' && weak.active === 'BREAKOUT', '37.4: phá lên nhưng khối lượng yếu -> BREAKOUT_WEAK (nghi phá giả, vẫn đánh dấu nhánh phá)');
+  const fake = planBranches({ sc, rows: [...withTail([116, 118, 119, [123, 40]]), bar(384, 122.5, 10, 124.5), bar(385, 119.5), bar(386, 119.2)], levels: lv, atr: a });
+  const fk = fake.branches.find(b => b.id === 'FAKE').plan;
+  assert(fake.state === 'FAKE' && fake.active === 'FAKE' && fk.dir === 'SHORT' && fk.sl >= 124.5 && fk.tp1 < fk.entry && fk.rr1 > 0, '37.5: đóng cửa trên vùng rồi quay lại dưới -> FAKE (bẫy tăng giá); vào SHORT với SL trên đỉnh của cú phá giả');
+  const { buildVerdict: bv } = await import('../src/strategies/verdict.js');
+  const vb = bv({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'APPROACHING_RESISTANCE', branch: brk });
+  assert(vb.favored === null && vb.avoid === 'SHORT' && vb.notes.some(n => /khối lượng/.test(n)), '37.7: đang phá lên có khối lượng (nhánh BREAKOUT) -> phán quyết không canh Short và nêu trạng thái phá');
+  const vf = bv({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'APPROACHING_RESISTANCE', branch: fake });
+  assert(vf.favored === 'SHORT' && vf.notes.some(n => /phá giả/.test(n)), '37.8: phá giả rồi quay đầu (nhánh FAKE) -> vẫn ưu tiên Short và nêu dấu hiệu bẫy');
+  assert(planBranches({ sc: null, rows: wave, levels: lv, atr: a }) === null && planBranches({ sc, rows: [], levels: [], atr: 0 }) === null, '37.6: thiếu kịch bản hoặc dữ liệu -> null, không lỗi');
 }
 
 // Tổng kết
