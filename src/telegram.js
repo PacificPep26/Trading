@@ -5,10 +5,32 @@
  */
 
 import dotenv from 'dotenv';
+import { BOT_CONFIG } from './config.js';
 dotenv.config();
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+/**
+ * Định dạng giá hiển thị chuẩn, tránh lỗi tràn số thập phân float (e.g. 87.72089426882395)
+ * @param {number|string} price
+ * @returns {string}
+ */
+export function formatPrice(price) {
+  if (price === null || price === undefined || price === '') return 'N/A';
+  const num = Number(price);
+  if (!Number.isFinite(num)) return String(price);
+  if (Math.abs(num) >= 1000) {
+    return Number(num.toFixed(2)).toLocaleString('en-US');
+  }
+  if (Math.abs(num) >= 10) {
+    return Number(num.toFixed(3)).toString();
+  }
+  if (Math.abs(num) >= 1) {
+    return Number(num.toFixed(4)).toString();
+  }
+  return Number(num.toFixed(6)).toString();
+}
 
 /**
  * Loại bỏ triệt để các dấu sao ** thừa do markdown sinh ra, giúp hiển thị sạch đẹp trên mọi nền tảng
@@ -27,8 +49,28 @@ export function stripMarkdownAsterisks(str) {
  * @param {string} text - Nội dung tin nhắn (hỗ trợ HTML)
  * @returns {Promise<boolean>}
  */
+/** Chạy thử (--single-run/--dry-run hoặc TELEGRAM_DRY_RUN=1) tuyệt đối không gửi tin thật. */
+export const isDryRun = () => process.argv.includes('--single-run') || process.argv.includes('--dry-run') || process.env.TELEGRAM_DRY_RUN === '1';
+
+/** Gộp cảnh báo biên hộp của nhiều coin thành một tin (thay vì mỗi coin một tin). */
+export function buildBoxDigestMessage(items) {
+  const f = (n) => Number(n) >= 1000 ? Number(n).toFixed(1) : Number(n).toFixed(2);
+  const lines = items.map(({ symbol, alert: a }) => `• <b>${symbol}</b> ${f(a.price)} | sàn ${f(a.rangeLow)} | giữa ${f(a.equilibrium)} | trần ${f(a.rangeHigh)} → sát ${a.zone === 'LOW' ? 'SÀN (canh Long)' : 'TRẦN (canh Short)'}`);
+  return `📦 <b>Hộp vĩ mô: ${items.length} coin sát biên</b>
+${lines.join('\n')}
+Kịch bản: chờ quét thủng biên rồi đóng cửa thụt lại; đóng nến ngoài biên thì bỏ.
+<i>Chỉ cảnh báo quan sát — bot KHÔNG tự vào lệnh.</i>`;
+}
+
 export async function sendTelegramMessage(text) {
   const cleanedText = stripMarkdownAsterisks(text);
+
+  if (isDryRun()) {
+    console.log('\n[DRY-RUN: KHÔNG gửi Telegram] ----------------------');
+    console.log(cleanedText.replace(/<[^>]*>?/gm, ''));
+    console.log('----------------------------------------------------\n');
+    return false;
+  }
 
   if (!BOT_TOKEN || !CHAT_ID) {
     console.log('\n[TELEGRAM CONSOLE LOG] -----------------------------');
@@ -105,52 +147,128 @@ async function sendSingleTelegramChunk(text) {
  * Thông báo khi phát hiện Tín hiệu vào lệnh mới (Gọn gàng, loại bỏ RR & Quản trị vốn)
  * @param {object} signal
  */
-export async function notifyNewSignal(signal) {
+/** Bối cảnh lớn + link biểu đồ (chỉ in khi có dữ liệu). */
+const contextLines = (s) => `${s.macroSummary ? `
+🌍 ${s.macroSummary}` : ''}${s.viewerUrl ? `
+📈 <a href="${s.viewerUrl}">Xem biểu đồ & kịch bản</a>` : ''}`;
+
+export function buildNewSignalMessage(signal) {
   const isLong = signal.direction === 'LONG';
   const icon = isLong ? '🟢' : '🔴';
   const dirText = isLong ? 'MUA (LONG)' : 'BÁN (SHORT)';
-  // PHÂN HẠNG CHẤT LƯỢNG KÈO: backtest cho thấy điểm càng cao thì win rate &
-  // PF càng cao (75đ: WR 52%/PF 1.70 | 85đ+: WR 58%/PF 2.04). Giữ nguyên
-  // ngưỡng vào lệnh 75 (để không bỏ lỡ tổng lợi nhuận), nhưng gắn NHÃN hạng
-  // để người dùng biết con nào "chắc ăn" hơn mà cân nhắc chú ý/vào tay thêm.
-  let tierTag = '';
-  if (signal.qualityScore >= 90) tierTag = '\n👑 <b>HẠNG KÈO:</b> <code>SIÊU VIP S (Win rate cao nhất)</code>';
-  else if (signal.qualityScore >= 85) tierTag = '\n💎 <b>HẠNG KÈO:</b> <code>VIP A+ (Thắng ~58%, PF 2.0+)</code>';
-  else if (signal.qualityScore >= 80) tierTag = '\n⭐ <b>HẠNG KÈO:</b> <code>A (Thắng ~54%)</code>';
-  else tierTag = '\n✅ <b>HẠNG KÈO:</b> <code>Chuẩn B (Thắng ~52%)</code>';
+  const fmtTime = (t) => new Date(t).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  const triggerTime = signal.triggerTime || Date.now();
+  const entryTime = signal.entryTime || triggerTime;
+  const delayMin = Math.max(0, Math.round((entryTime - triggerTime) / 60000));
+  const slPct = (Math.abs(signal.entry - signal.stopLoss) / signal.entry * 100).toFixed(1);
+  const lev = BOT_CONFIG.leverage;
 
-  const scoreInfo = signal.qualityScore ? `\n⚡ <b>Điểm Sức Mạnh:</b> <code>${signal.qualityScore}/100 pts</code>${tierTag}` : '';
-  const reasonInfo = signal.qualityReasons && signal.qualityReasons.length > 0 ? `\n⭐ <b>Hội tụ sức mạnh:</b> ${signal.qualityReasons.join(' | ')}` : '';
-  const orderTypeTag = `\n🏷️ <b>Khớp Lệnh:</b> <code>Limit Post-Only (Phí Maker 0.02%)</code>`;
+  // Chỉ nêu điểm và ngưỡng vào lệnh; KHÔNG ghi winrate/PF vì backtest 1 năm chưa chứng minh.
+  const scoreInfo = signal.qualityScore ? `
+⚡ <b>Điểm setup:</b> <code>${signal.qualityScore}/100</code> (ngưỡng vào lệnh ${BOT_CONFIG.minSetupQualityScore})` : '';
+  const reasonInfo = signal.qualityReasons && signal.qualityReasons.length > 0 ? `
+⭐ <b>Hội tụ:</b> ${signal.qualityReasons.join(' | ')}` : '';
+  const rrInfo = signal.riskReward ? `
+⚖️ <b>RR thực tế:</b> <code>RR ${signal.riskReward}</code> (tính tại giá vào, sau khi chờ xác nhận)` : '';
+  const sizeInfo = signal.sizing ? `
+🧮 <b>Size:</b> <code>${signal.sizing.size.toFixed(4)}</code> | Ký quỹ: <code>$${signal.sizing.margin.toFixed(2)}</code> (đòn bẩy ${lev}x)` : '';
+  const delayInfo = delayMin > 0
+    ? `
+⏱️ <b>Tín hiệu:</b> ${fmtTime(triggerTime)}
+⏰ <b>Vào lệnh:</b> ${fmtTime(entryTime)} (trễ ${delayMin} phút chờ xác nhận)`
+    : `
+⏰ <b>Thời gian:</b> ${fmtTime(entryTime)}`;
 
-  const msg = `
+  return `
 🧪 <b>[PAPER TRADE MÔ PHỎNG]</b>
-${icon} <b>${dirText} 10X: ${signal.symbol}</b>
+${icon} <b>${dirText} ${lev}X: ${signal.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-💵 <b>Entry (Limit):</b> <code>${signal.entry}</code>
-🛑 <b>SL:</b> <code>${signal.stopLoss}</code>
-🎯 <b>TP:</b> <code>${signal.takeProfit}</code>${orderTypeTag}${scoreInfo}${reasonInfo}
-📝 <b>Lý do:</b> ${signal.reason}
-🛡️ <b>Quản trị vốn:</b> Giả lập rủi ro 1R = $10 (Không mất tiền thật)
-⏰ <b>Thời gian:</b> ${new Date(signal.triggerTime || Date.now()).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+💵 <b>Giá vào (giá đóng nến M15 sau xác nhận, KHÔNG phải lệnh Limit):</b> <code>${formatPrice(signal.entry)}</code>
+🛑 <b>SL:</b> <code>${formatPrice(signal.stopLoss)}</code> (cách ${slPct}%)
+🎯 <b>TP:</b> <code>${formatPrice(signal.takeProfit)}</code>${rrInfo}${sizeInfo}${scoreInfo}${reasonInfo}
+📝 <b>Lý do:</b> ${signal.reason}${contextLines(signal)}${delayInfo}
+⚠️ Giá hiện tại có thể đã khác giá vào — kiểm tra lại trước khi đặt lệnh tay.
+🛡️ <b>Quản trị vốn:</b> Giả lập rủi ro 1R = $${BOT_CONFIG.riskUsd} (Không mất tiền thật)
 `.trim();
-
-  await sendTelegramMessage(msg);
 }
 
 /**
- * Thông báo khi vị thế đạt +1.5R và tự động Kéo SL lên khóa +1.0R
+ * Tin báo SỚM: gửi ngay lúc phát hiện tín hiệu, TRƯỚC khi bot vào lệnh.
+ * Bot vẫn quan sát thêm `delayMin` phút rồi mới tự vào lệnh giả lập; người đọc không bị chậm.
+ */
+export function buildEarlySignalMessage(signal, delayMin) {
+  const isLong = signal.direction === 'LONG';
+  const icon = isLong ? '🟢' : '🔴';
+  const slPct = (Math.abs(signal.entry - signal.stopLoss) / signal.entry * 100).toFixed(1);
+  const score = signal.qualityScore ? `
+⚡ <b>Điểm setup:</b> <code>${signal.qualityScore}/100</code> (ngưỡng ${BOT_CONFIG.minSetupQualityScore})` : '';
+  return `
+⏳ <b>BÁO SỚM — CHƯA vào lệnh</b>
+${icon} <b>${isLong ? 'LONG' : 'SHORT'} ${signal.symbol}</b> (${signal.strategy || 'setup'})
+━━━━━━━━━━━━━━━━━━━━
+📍 <b>Giá tham chiếu lúc phát hiện:</b> <code>${formatPrice(signal.entry)}</code>
+🛑 <b>SL:</b> <code>${formatPrice(signal.stopLoss)}</code> (cách ${slPct}%)
+🎯 <b>TP:</b> <code>${formatPrice(signal.takeProfit)}</code>${signal.riskReward ? ` | RR ${signal.riskReward}` : ''}${score}
+📝 ${signal.reason}${contextLines(signal)}
+👀 Bot quan sát thêm <b>${delayMin} phút</b> rồi mới tự vào lệnh giả lập. Sẽ báo HỦY nếu SL/TP bị chạm trước hoặc RR giảm dưới 1.
+⚠️ Chỉ là cảnh báo sớm để bạn tự theo dõi, không phải lệnh đã khớp.
+`.trim();
+}
+
+/** Cảnh báo SMC FVG (video): chỉ để bạn tự đặt lệnh Limit, bot KHÔNG tự vào lệnh. */
+export function buildSmcFvgAlertMessage(symbol, sig) {
+  const isLong = sig.direction === 'LONG';
+  const slPct = (Math.abs(sig.entry - sig.stopLoss) / sig.entry * 100).toFixed(2);
+  return `
+📐 <b>SMC ${isLong ? 'MUA' : 'BÁN'} — ${symbol}</b> (BOS + FVG + quét thanh khoản, M15)
+━━━━━━━━━━━━━━━━━━━━
+💵 <b>Đặt lệnh LIMIT ${isLong ? 'BUY' : 'SELL'}:</b> <code>${formatPrice(sig.entry)}</code> (mép ${isLong ? 'trên' : 'dưới'} FVG ${formatPrice(sig.fvg.bot)} - ${formatPrice(sig.fvg.top)})
+🛑 <b>SL:</b> <code>${formatPrice(sig.stopLoss)}</code> (cách ${slPct}%, ngoài mép kia của FVG)
+🎯 <b>TP:</b> <code>${formatPrice(sig.takeProfit)}</code> (RR 1:${sig.rr})
+📊 Backtest M15 2020–26 (SL ≥0.8%): PF 1.21 chưa trừ phí, ~1.07 sau phí Maker; tỷ lệ thắng ~29%, ăn lớn khi thắng.
+⚠️ Chỉ cảnh báo — bot KHÔNG tự vào lệnh. Hủy nếu giá đóng cửa xuyên thủng FVG.
+`.trim();
+}
+
+export function buildPendingCancelMessage(signal, reason) {
+  return `
+❌ <b>HỦY tín hiệu ${signal.direction} ${signal.symbol}</b>
+Lý do: ${reason}
+Bot không vào lệnh này — nếu bạn đã chuẩn bị vào tay thì đừng vào.
+`.trim();
+}
+
+async function safeSend(msg) {
+  try { await sendTelegramMessage(msg); } catch (e) { console.error('[TELEGRAM] Gửi tin thất bại:', e.message); }
+}
+export const notifyEarlySignal = (signal, delayMin) => safeSend(buildEarlySignalMessage(signal, delayMin));
+export const notifyPendingCancelled = (signal, reason) => safeSend(buildPendingCancelMessage(signal, reason));
+
+export async function notifyNewSignal(signal) {
+  await sendTelegramMessage(buildNewSignalMessage(signal));
+}
+
+/**
+ * Thông báo khi vị thế kích hoạt dời SL bảo vệ vốn hoặc khóa lợi nhuận
  * @param {object} position
  * @param {number} newSL
  */
 export async function notifyBreakevenTriggered(position, newSL) {
+  const isProfitLock = position.isProfitLocked;
+  const title = isProfitLock
+    ? '🔒 <b>KÍCH HOẠT KHÓA LỢI NHUẬN (DỜI SL DƯƠNG)</b>'
+    : '🛡️ <b>KÍCH HOẠT CO SL GIẢM THIỂU RỦI RO</b>';
+  const actionText = isProfitLock
+    ? `Đã kéo Stop Loss lên <b>+1.0R</b> (<code>${formatPrice(newSL)}</code>) để khóa chắc lợi nhuận!`
+    : `Đã co Stop Loss về <b>-0.3R</b> (<code>${formatPrice(newSL)}</code>) để cắt giảm 70% rủi ro!`;
+
   const msg = `
-🧪 <b>[PAPER TRADE]</b> 🔒 <b>KÍCH HOẠT KHÓA LỢI NHUẬN (+1.5R ➔ SL +1.0R): ${position.symbol}</b>
+🧪 <b>[PAPER TRADE]</b> ${title}: <b>${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-📈 Lợi nhuận tạm tính đã chạm mốc <b>+1.5R</b>!
-🔒 <b>Hành động:</b> Đã kéo Stop Loss lên mức <b>DƯƠNG +1.0R</b> (<code>${newSL}</code>) để khóa chắc 1R lợi nhuận!
-💎 <b>Trạng thái:</b> <b>GIỮ NGUYÊN 100% VỊ THẾ</b> để gồng tiếp tới Take Profit: <code>${position.takeProfit}</code>.
-✨ Dù thị trường quay đầu, bạn chắc chắn vẫn bỏ túi +1.0R lợi nhuận!
+📈 Giá đang di chuyển thuận lợi theo đúng kịch bản!
+🔒 <b>Hành động:</b> ${actionText}
+💎 <b>Mục tiêu TP:</b> <code>${formatPrice(position.takeProfit)}</code> (Tiếp tục gồng lệnh).
+✨ Vị thế được bảo vệ rủi ro tối đa!
 `.trim();
 
   await sendTelegramMessage(msg);
@@ -167,7 +285,7 @@ export async function notifyTakeProfit(position, exitPrice, pnlR, netPnlUsd) {
   const msg = `
 🧪 <b>[PAPER TRADE]</b> 🎯 <b>CHỐT LỜI THÀNH CÔNG (TP HIT): ${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-🚀 <b>Đóng 100% vị thế tại TP:</b> <code>${exitPrice}</code>
+🚀 <b>Đóng 100% vị thế tại TP:</b> <code>${formatPrice(exitPrice)}</code>
 💰 <b>Lợi nhuận đạt:</b> <b>+${pnlR.toFixed(2)}R</b>
 💵 <b>Thực nhận (Mô phỏng):</b> <b>+$${netPnlUsd.toFixed(2)} USDT</b>
 ⏰ <b>Thời gian đóng:</b> ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
@@ -191,7 +309,7 @@ export async function notifyStopLoss(position, exitPrice, pnlR, netPnlUsd, isBE 
   const msg = `
 🧪 <b>[PAPER TRADE]</b> ${title}: <b>${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-📉 <b>Giá khớp thoát:</b> <code>${exitPrice}</code>
+📉 <b>Giá khớp thoát:</b> <code>${formatPrice(exitPrice)}</code>
 📊 <b>Kết quả PnL:</b> ${pnlR >= 0 ? '+' : ''}${pnlR.toFixed(2)}R ($${netPnlUsd.toFixed(2)} USDT)
 📌 Kỷ luật 1R bảo vệ an toàn tối đa cho tài khoản!
 `.trim();
@@ -210,7 +328,7 @@ export async function notifyPostMortemPenalty(position, mistake, penalty) {
 🚨 <b>BẢN KIỂM ĐIỂM THẤT BẠI & HÌNH PHẠT BOT</b>
 ━━━━━━━━━━━━━━━━━━━━
 📌 <b>Cặp giao dịch:</b> <b>${position.symbol}</b> (${position.direction})
-📉 <b>Stop Loss tại:</b> <code>${position.stopLoss}</code>
+📉 <b>Stop Loss tại:</b> <code>${formatPrice(position.stopLoss)}</code>
 🛑 <b>Lỗ:</b> <b>-1.0R (-$10.00 USDT)</b>
 
 🔍 <b>MỔ XẺ ĐIỂM SAI CỦA BOT:</b>
@@ -240,7 +358,7 @@ export async function notifyTimeStop(position, exitPrice, netPnlUsd) {
   const msg = `
 ⏱️ <b>KÍCH HOẠT TIME-STOP (16 NẾN M15 / 4 TIẾNG): ${position.symbol}</b>
 ━━━━━━━━━━━━━━━━━━━━
-⚠️ Sau 4 giờ dao động đi ngang trong biên độ hẹp, hệ thống chủ động đóng lệnh tại <code>${exitPrice}</code>.
+⚠️ Sau 4 giờ dao động đi ngang trong biên độ hẹp, hệ thống chủ động đóng lệnh tại <code>${formatPrice(exitPrice)}</code>.
 💵 <b>PnL ròng:</b> $${netPnlUsd.toFixed(2)} USDT
 🔄 Thu hồi vốn để dồn cho các cơ hội cấu trúc sắc nét hơn!
 `.trim();

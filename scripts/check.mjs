@@ -34,7 +34,13 @@ import {
   evaluateMarket,
   generateKeyLevelRadar,
   calculateSetupQualityScore,
-  DEFAULT_CONFIG
+  DEFAULT_CONFIG,
+  detectMacroRangeBox,
+  evaluateMacroRangeFade,
+  buildBoxAlert,
+  evaluateVolumeBreakout,
+  evaluateTradeFlipOpportunity,
+  registerTakeProfitHit
 } from '../src/engine.js';
 
 import { getEffectiveConfig, BOT_CONFIG } from '../src/config.js';
@@ -47,6 +53,15 @@ import {
 } from '../src/learning.js';
 
 import { fetchOkxCandles } from '../src/server.js';
+import { formatPrice, buildNewSignalMessage, buildEarlySignalMessage, buildPendingCancelMessage, buildSmcFvgAlertMessage, buildBoxDigestMessage, sendTelegramMessage } from '../src/telegram.js';
+import { persistentMap } from '../src/alert_state.js';
+import os from 'os';
+import fsNode from 'fs';
+import pathNode from 'path';
+import { latestSmcFvgSignal } from '../src/strategies/smc_fvg.js';
+import { tryKaneLongSetup, tryKaneShortSetup } from '../src/strategies/kane_strategy.js';
+import { computeH4Freshness, isInTradingSession, computeStructTrend } from '../src/strategies/regime.js';
+import { evaluateWyckoffSpring, evaluateWyckoffBreakoutRetest } from '../src/strategies/wyckoff_box.js';
 
 let passed = 0;
 let failed = 0;
@@ -607,7 +622,7 @@ const chopMarketResult = evaluateMarket({
   candlesM15: mockChopM15,
   btcH1Candles: mockBtcH1,
   btcH4Candles: mockChopH4,
-  config: BOT_CONFIG
+  config: { ...BOT_CONFIG, enableChopSleepMode: true, regime: { ...BOT_CONFIG.regime, enableChopSleepMode: true } } // độc lập với .env của máy
 });
 assert(chopMarketResult && chopMarketResult.isBlocked === true, 'evaluateMarket tự động chặn lệnh trong Chop Sleep Mode khi H1 ADX <= 20');
 assert(chopMarketResult && chopMarketResult.blockReason.includes('CHOP_SLEEP_MODE'), 'Lý do chặn nêu rõ CHOP_SLEEP_MODE');
@@ -732,6 +747,535 @@ console.log('\n18. Kiểm tra Nhận diện Mẫu hình Nến Cổ điển (Pric
   assert(DEFAULT_CONFIG.weeklyCircuitBreakerMaxLossR === 3.5, 'DEFAULT_CONFIG.weeklyCircuitBreakerMaxLossR mặc định = 3.5R');
   assert(DEFAULT_CONFIG.enableFreeRollPyramiding === false, 'DEFAULT_CONFIG.enableFreeRollPyramiding mặc định TẮT (Phase C chưa test OOS)');
   assert(DEFAULT_CONFIG.minD1NATR === 0.030, 'DEFAULT_CONFIG.minD1NATR mặc định = 0.030 (3.0%)');
+  assert(DEFAULT_CONFIG.useFlipLevels === true, 'DEFAULT_CONFIG.useFlipLevels mặc định BẬT sau khi kiểm chứng sweep 32 tổ hợp');
+  assert(DEFAULT_CONFIG.enableChopSleepMode === (process.env.ENABLE_CHOP_SLEEP_MODE !== 'false'), 'DEFAULT_CONFIG.enableChopSleepMode đi theo ENABLE_CHOP_SLEEP_MODE (mặc định BẬT khi không đặt)');
+}
+
+// ==========================================================================
+// 22. KIỂM TRA S/R FLIP LEVELS (BREAKER RETEST INTO KEY LEVELS & RADAR)
+// ==========================================================================
+{
+  console.log('\n22. Kiểm tra Flip Levels (Breaker Retest into Key Levels & Radar):');
+  const breakerCandles = [
+    { ts: 0, open: 100, high: 101, low: 99, close: 100 },
+    { ts: 1, open: 100, high: 102, low: 98, close: 101 },
+    { ts: 2, open: 101, high: 103, low: 97, close: 102 },
+    { ts: 3, open: 102, high: 103, low: 96, close: 101 },
+    { ts: 4, open: 101, high: 102, low: 95, close: 100 }, // swing low pivot = 95
+    { ts: 5, open: 100, high: 103, low: 97, close: 102 },
+    { ts: 6, open: 102, high: 104, low: 98, close: 103 },
+    { ts: 7, open: 103, high: 106, low: 100, close: 105 }, // swing high pivot = 106
+    { ts: 8, open: 105, high: 104, low: 101, close: 103 },
+    { ts: 9, open: 103, high: 103, low: 99, close: 101 },
+    { ts: 10, open: 101, high: 102, low: 93, close: 94 },  // phá dưới swing low 95
+    { ts: 11, open: 94, high: 96, low: 93, close: 95 },
+    { ts: 12, open: 95, high: 108, low: 94, close: 107 },  // phá qua swing high 106 -> xác nhận Bullish Breaker bottom 95
+    { ts: 13, open: 107, high: 108, low: 106, close: 107 },
+    { ts: 14, open: 107, high: 108, low: 106, close: 107 },
+    { ts: 15, open: 107, high: 108, low: 106, close: 107 }
+  ];
+
+  // Radar khi TẮT useFlipLevels
+  const radarOff = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: breakerCandles,
+    curPrice: 100,
+    config: { ...DEFAULT_CONFIG, useFlipLevels: false }
+  });
+  // Radar khi BẬT useFlipLevels
+  const radarOn = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: breakerCandles,
+    curPrice: 100,
+    config: { ...DEFAULT_CONFIG, useFlipLevels: true, breakerPivotL: 2, breakerPivotR: 2 }
+  });
+
+  assert(radarOff !== null && radarOn !== null, 'generateKeyLevelRadar chạy an toàn với cả 2 trạng thái cờ useFlipLevels');
+  assert(radarOn.nearestSup === 95, `Khi BẬT useFlipLevels, radar nhận diện mức hỗ trợ flip 95 từ Bullish Breaker (nearestSup=${radarOn.nearestSup})`);
+}
+
+// ==========================================================================
+// 23. KIỂM TRA D1 MACRO KEY LEVELS (SWING PIVOTS D1 INTO KEY LEVELS & RADAR)
+// ==========================================================================
+{
+  console.log('\n23. Kiểm tra D1 Macro Key Levels (Swing Pivots D1 into Key Levels & Radar):');
+  const d1Candles = [
+    { ts: 0, open: 100, high: 101, low: 99, close: 100 },
+    { ts: 1, open: 100, high: 102, low: 98, close: 101 },
+    { ts: 2, open: 101, high: 103, low: 75, close: 80 },  // D1 swing low = 75
+    { ts: 3, open: 80, high: 85, low: 78, close: 83 },
+    { ts: 4, open: 83, high: 90, low: 81, close: 88 },
+    { ts: 5, open: 88, high: 95, low: 87, close: 92 },
+    { ts: 6, open: 92, high: 120, low: 90, close: 115 }, // D1 swing high = 120
+    { ts: 7, open: 115, high: 118, low: 110, close: 112 },
+    { ts: 8, open: 112, high: 114, low: 105, close: 108 },
+    { ts: 9, open: 108, high: 110, low: 102, close: 105 },
+    { ts: 10, open: 105, high: 106, low: 101, close: 102 }
+  ];
+
+  // H4 chỉ dao động trong vùng 90-105 (không có pivot ở 75 hay 120)
+  const h4Candles = Array.from({ length: 20 }, (_, i) => ({
+    ts: i * 14400000,
+    open: 100,
+    high: 102,
+    low: 98,
+    close: 100
+  }));
+
+  const radarD1Off = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: h4Candles,
+    curPrice: 97, // Giá lơ lửng dưới 98
+    candlesD1: d1Candles,
+    config: { ...DEFAULT_CONFIG, useD1MacroLevels: false }
+  });
+
+  const radarD1On = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: h4Candles,
+    curPrice: 97,
+    candlesD1: d1Candles,
+    config: { ...DEFAULT_CONFIG, useD1MacroLevels: true }
+  });
+
+  const radarD1OnHigh = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: h4Candles,
+    curPrice: 105, // Giá vượt qua cản H4 (cao nhất H4 là 102)
+    candlesD1: d1Candles,
+    config: { ...DEFAULT_CONFIG, useD1MacroLevels: true }
+  });
+
+  assert(radarD1Off !== null && radarD1On !== null, 'generateKeyLevelRadar an toàn với candlesD1');
+  assert(radarD1Off.nearestSup === null || radarD1Off.nearestSup === 98, 'Khi TẮT useD1MacroLevels, radar chỉ thấy cản H4');
+  assert(radarD1On.nearestSup === 75, `Khi BẬT useD1MacroLevels, radar nhìn xa thấy Hỗ trợ D1 tại 75 (nearestSup=${radarD1On.nearestSup})`);
+  assert(radarD1OnHigh.nearestRes === 120, `Khi BẬT useD1MacroLevels và vượt cản H4, radar nhìn xa thấy Kháng cự D1 tại 120 (nearestRes=${radarD1OnHigh.nearestRes})`);
+}
+
+// 24. Kiểm tra W1 Macro Levels (PWH / PWL / W1 EMA34):
+console.log('\n24. Kiểm tra W1 Macro Levels (PWH / PWL / W1 EMA34):');
+{
+  const h4Candles = Array.from({ length: 20 }, (_, i) => ({
+    ts: i * 14400000,
+    open: 100,
+    high: 102,
+    low: 98,
+    close: 100
+  }));
+
+  const mockW1Candles = [
+    { ts: 1000, open: 110, high: 115, low: 105, close: 106, confirm: 1 },
+    { ts: 2000, open: 106, high: 112, low: 95, close: 96, confirm: 1 }, // Tuần trước: PWH 112, PWL 95
+    { ts: 3000, open: 96, high: 99, low: 90, close: 92, confirm: 0 }    // Tuần này đang chạy
+  ];
+
+  const radarW1 = generateKeyLevelRadar({
+    symbol: 'TEST-USDT',
+    candlesH4: h4Candles,
+    curPrice: 97,
+    candlesW1: mockW1Candles,
+    config: { ...DEFAULT_CONFIG, useW1MacroLevels: true }
+  });
+
+  assert(radarW1 !== null, 'generateKeyLevelRadar an toàn với candlesW1');
+  assert(radarW1.pwh === 112, `Nhận diện chính xác PWH tuần trước là 112 (thực tế: ${radarW1.pwh})`);
+  assert(radarW1.pwl === 95, `Nhận diện chính xác PWL tuần trước là 95 (thực tế: ${radarW1.pwl})`);
+  assert(radarW1.consecutiveRedWeeks >= 2, `Đếm chính xác số tuần đỏ liên tiếp (thực tế: ${radarW1.consecutiveRedWeeks})`);
+}
+
+// 25. Kiểm tra Định dạng Giá Telegram (formatPrice - chống tràn float):
+console.log('\n25. Kiểm tra Định dạng Giá Telegram (formatPrice):');
+{
+  assert(formatPrice(87.72089426882395) === '87.721', 'Triệt tiêu hoàn toàn float dài 87.72089426882395 -> 87.721');
+  assert(formatPrice(89.618) === '89.618', 'Giữ nguyên số tròn 89.618');
+  assert(formatPrice(67450.25) === '67,450.25', 'Định dạng hàng nghìn có dấu phẩy: 67,450.25');
+  assert(formatPrice(2.34567) === '2.3457', 'Làm tròn 4 số thập phân với giá 1..10');
+  assert(formatPrice(null) === 'N/A', 'Xử lý null an toàn trả về N/A');
+}
+
+// 27. Kiểm tra nội dung tin báo lệnh Telegram (không được nói sai sự thật về cách khớp/xác suất)
+console.log('\n27. Kiểm tra buildNewSignalMessage:');
+{
+  const T = Date.parse('2026-10-31T01:45:00Z');
+  const sig = {
+    symbol: 'HYPE-USDT', direction: 'LONG', strategy: 'SMC_SWEEP_REVERSAL_LONG',
+    entry: 89.618, stopLoss: 87.72089426882395, takeProfit: 93.987, riskReward: 2.3,
+    qualityScore: 80, qualityReasons: ['Râu nến 52%'], reason: 'SMC test',
+    triggerTime: T, entryTime: T + 77 * 60000,
+    sizing: { size: 5.27, notional: 472.3, margin: 47.23 }
+  };
+  const msg = buildNewSignalMessage(sig);
+  assert(!/Limit Post-Only|Maker 0\.02/.test(msg), 'Tin KHÔNG khẳng định khớp Limit Post-Only (thực tế vào theo giá đóng nến sau khi chờ xác nhận)');
+  assert(!/Thắng ~|PF 2\.0/.test(msg), 'Tin KHÔNG hứa winrate/PF không có bằng chứng backtest');
+  assert(!msg.includes('87.72089'), 'Tin không tràn số thập phân float');
+  assert(msg.includes('87.721'), 'SL được định dạng 87.721');
+  assert(/RR[^0-9]*2\.3/.test(msg), 'Tin hiển thị RR thực tế sau khi chờ xác nhận (2.3)');
+  assert(/2\.1%/.test(msg), 'Tin hiển thị khoảng cách SL % (2.1%)');
+  assert(msg.includes('77 phút'), 'Tin ghi rõ độ trễ 77 phút giữa lúc có tín hiệu và lúc vào lệnh');
+  assert(/Ký quỹ[^0-9]*47\.2/.test(msg), 'Tin hiển thị ký quỹ');
+  assert(/giá đóng nến M15/i.test(msg), 'Tin nói rõ entry là giá đóng nến M15, không phải lệnh Limit');
+}
+
+// 27b. Tin báo SỚM (lúc phát hiện, chưa vào lệnh) và tin HỦY
+{
+  const sigE = { symbol: 'HYPE-USDT', direction: 'SHORT', entry: 93.97, stopLoss: 95.7042123456, takeProfit: 86.2, riskReward: 4.5, qualityScore: 80, reason: 'MACRO test', triggerTime: Date.parse('2026-10-31T01:45:00Z') };
+  const early = buildEarlySignalMessage(sigE, 60);
+  assert(/CHƯA vào lệnh/.test(early), 'Tin báo sớm nói rõ CHƯA vào lệnh');
+  assert(early.includes('60 phút'), 'Tin báo sớm nêu thời gian chờ xác nhận 60 phút');
+  assert(early.includes('93.97') && early.includes('95.704') && !early.includes('95.7042123'), 'Tin báo sớm có mức tham chiếu, đã định dạng giá');
+  assert(!/Thắng ~|PF 2\.0|Limit Post-Only/.test(early), 'Tin báo sớm không hứa winrate / không nói Limit');
+  assert(/hủy/i.test(early), 'Tin báo sớm nói rõ điều kiện hủy');
+  const cancel = buildPendingCancelMessage(sigE, 'SL/TP gốc đã bị chạm trước khi kịp xác nhận');
+  assert(/HỦY/.test(cancel) && cancel.includes('HYPE-USDT') && cancel.includes('SL/TP gốc'), 'Tin hủy nêu mã và lý do');
+  assert(/đừng vào|không vào/i.test(cancel), 'Tin hủy dặn không vào lệnh tay');
+}
+
+// 28. Setup hộp Wyckoff: Spring/UTAD (phá giả) và phá hộp + retest (LPS/LPSY). Không vào giữa hộp, không đuổi nến phá.
+console.log('\n28. Kiểm tra setup hộp Wyckoff:');
+{
+  const H = 3600000, M = 900000, t0 = Date.UTC(2026, 9, 20, 0, 0);
+  const box = { rangeHigh: 100, rangeLow: 90, equilibrium: 95, rangeHeight: 10, touchesHigh: 3, touchesLow: 3, isEstablishedRange: true };
+  const bar = (ts, o, h, l, c, v) => ({ ts, open: o, high: h, low: l, close: c, vol: v, confirm: 1 });
+  const flat = (n, from = 0) => Array.from({ length: n }, (_, i) => bar(t0 + (from + i) * H, 94, 95.5, 93, 94.5, 1000));
+  const m15 = (startH, rows) => rows.map((r, i) => bar(t0 + startH * H + i * M, ...r));
+  const filler = (n, r) => Array.from({ length: n }, () => r);
+  const run = (fn, h1, m, extra = {}, d1 = 'RANGING') => fn({ symbol: 'T-USDT', candlesH1: h1, candlesM15: m, macroRange: box, atrH1: 1.0, d1Phase: d1, config: { minRR: 2.0, ...extra } });
+
+  // Spring: H1 thò 88.5 dưới sàn 90 rồi đóng lại 90.8; M15 test low 90.5 volume thấp; M15 xanh phá đỉnh nến trước
+  const springH1 = [...flat(25), bar(t0 + 25 * H, 91, 91.5, 88.5, 90.8, 3000), bar(t0 + 26 * H, 91, 92, 90.6, 91.5, 800), bar(t0 + 27 * H, 91.5, 92, 91, 91.6, 800)];
+  const springM15 = m15(26, [...filler(20, [91.5, 92, 91.2, 91.6, 1000]), [91.0, 91.2, 90.5, 91.0, 300], [91.0, 91.3, 90.8, 91.1, 500], [91.1, 91.9, 91.0, 91.8, 900]]);
+  const spring = run(evaluateWyckoffSpring, springH1, springM15);
+  assert(spring && spring.strategy === 'WYCKOFF_SPRING_LONG' && spring.direction === 'LONG', 'Spring: thò dưới sàn, test volume thấp, M15 xác nhận -> LONG');
+  assert(spring && Math.abs(spring.stopLoss - 88.2) < 1e-6, 'Spring: SL ngay dưới đáy cú thò (88.5 - 0.3 ATR)');
+  assert(spring && spring.riskReward >= 2.0 && spring.takeProfit <= 100, 'Spring: RR >= 2 và TP trong hộp');
+  assert(run(evaluateWyckoffSpring, flat(28), springM15) === null, 'Giữa hộp không có cú quét -> KHÔNG vào (không mua Phase B)');
+  assert(run(evaluateWyckoffSpring, springH1, springM15, {}, 'STRONG_DOWNTREND') === null, 'Spring trong downtrend mạnh D1 (phân phối lại) bị loại');
+  const noTestM15 = m15(26, [...filler(20, [91.5, 92, 91.2, 91.6, 1000]), [91.6, 91.9, 91.5, 91.7, 300], [91.7, 91.9, 91.5, 91.6, 500], [91.6, 92.2, 91.5, 92.1, 900]]);
+  assert(run(evaluateWyckoffSpring, springH1, noTestM15) === null, 'Spring chưa có nhịp test quay lại sát sàn -> KHÔNG vào');
+  const loudTestM15 = m15(26, [...filler(20, [91.5, 92, 91.2, 91.6, 1000]), [91.0, 91.2, 90.5, 91.0, 5000], [91.2, 91.5, 91.1, 91.3, 500], [91.3, 91.9, 91.2, 91.8, 900]]);
+  assert(run(evaluateWyckoffSpring, springH1, loudTestM15) === null, 'Nhịp test volume LỚN (cung chưa cạn) -> KHÔNG vào');
+  const brokenM15 = m15(26, [...filler(10, [91.5, 92, 91.2, 91.6, 1000]), [91.5, 91.6, 88.0, 88.6, 1200], ...filler(9, [91.5, 92, 91.2, 91.6, 1000]), [91.0, 91.2, 90.5, 91.0, 300], [91.0, 91.3, 90.8, 91.1, 500], [91.1, 91.9, 91.0, 91.8, 900]]);
+  assert(run(evaluateWyckoffSpring, springH1, brokenM15) === null, 'Giá đã thủng đáy cú Spring (Spring hỏng = vỡ đáy thật) -> KHÔNG vào');
+
+  // UTAD: H1 thò 101.5 trên trần 100 rồi đóng lại 99.2; M15 test high 99.5 volume thấp; M15 đỏ phá đáy nến trước
+  const utadH1 = [...flat(25), bar(t0 + 25 * H, 99, 101.5, 98.8, 99.2, 3000), bar(t0 + 26 * H, 99, 99.4, 98.2, 98.6, 800), bar(t0 + 27 * H, 98.6, 99, 98, 98.4, 800)];
+  const utadM15 = m15(26, [...filler(20, [98.5, 98.8, 98.2, 98.4, 1000]), [99.0, 99.5, 98.8, 99.0, 300], [99.0, 99.2, 98.7, 98.9, 500], [98.9, 99.0, 98.1, 98.2, 900]]);
+  const utad = run(evaluateWyckoffSpring, utadH1, utadM15);
+  assert(utad && utad.strategy === 'WYCKOFF_UTAD_SHORT' && utad.direction === 'SHORT', 'UTAD: thò trên trần, test volume thấp, M15 xác nhận -> SHORT');
+  assert(utad && Math.abs(utad.stopLoss - 101.8) < 1e-6, 'UTAD: SL ngay trên đỉnh cú thò (101.5 + 0.3 ATR)');
+
+  // Phá hộp lên + retest giữ: H1 đóng 101 (>100.2) volume 2.5x; M15 quay lại low 100.2 rồi đóng lại trên trần; xanh phá đỉnh
+  const boH1 = [...flat(20), bar(t0 + 20 * H, 99.5, 101.6, 99.4, 101.0, 2500), bar(t0 + 21 * H, 101, 102, 100.8, 101.5, 1200), bar(t0 + 22 * H, 101.5, 102, 101, 101.6, 1200)];
+  const boM15 = m15(23, [...filler(20, [101.5, 101.9, 101.3, 101.6, 1000]), [101.2, 101.3, 100.2, 100.8, 400], [100.8, 101.0, 100.6, 100.9, 500], [100.9, 101.4, 100.8, 101.3, 900]]);
+  const bo = run(evaluateWyckoffBreakoutRetest, boH1, boM15);
+  assert(bo && bo.strategy === 'WYCKOFF_BREAKOUT_RETEST_LONG' && bo.direction === 'LONG', 'Phá trần + volume, retest giữ vững -> LONG tại retest');
+  assert(bo && Math.abs(bo.takeProfit - 110) < 1e-6 && bo.stopLoss < 100, 'Phá hộp: TP = measured move (chiều cao hộp), SL dưới biên vừa phá');
+  const failedH1 = [...flat(20), bar(t0 + 20 * H, 99.5, 101.6, 99.4, 101.0, 2500), bar(t0 + 21 * H, 101, 101.2, 98.9, 99.0, 1500), bar(t0 + 22 * H, 99, 99.5, 98.5, 99.2, 1200)];
+  assert(run(evaluateWyckoffBreakoutRetest, failedH1, boM15) === null, 'Phá giả (đóng lại trong hộp) KHÔNG vào theo breakout');
+  const noRetestM15 = m15(23, [...filler(20, [101.5, 101.9, 101.3, 101.6, 1000]), [101.6, 101.8, 101.4, 101.5, 400], [101.5, 101.7, 101.4, 101.6, 500], [101.6, 102.0, 101.5, 101.9, 900]]);
+  assert(run(evaluateWyckoffBreakoutRetest, boH1, noRetestM15) === null, 'Chưa có retest thì KHÔNG đuổi nến phá');
+
+  // Phá sàn xuống + retest bị từ chối
+  const bdH1 = [...flat(20), bar(t0 + 20 * H, 90.5, 90.6, 88.4, 89.0, 2500), bar(t0 + 21 * H, 89, 89.2, 88, 88.5, 1200), bar(t0 + 22 * H, 88.5, 89, 88, 88.4, 1200)];
+  const bdM15 = m15(23, [...filler(20, [88.5, 88.7, 88.1, 88.4, 1000]), [88.8, 89.8, 88.7, 89.2, 400], [89.2, 89.4, 89.0, 89.1, 500], [89.1, 89.2, 88.6, 88.7, 900]]);
+  const bd = run(evaluateWyckoffBreakoutRetest, bdH1, bdM15);
+  assert(bd && bd.strategy === 'WYCKOFF_BREAKDOWN_RETEST_SHORT' && bd.direction === 'SHORT' && Math.abs(bd.takeProfit - 80) < 1e-6, 'Phá sàn + retest bị từ chối -> SHORT, TP measured move 80');
+}
+
+// 29. SMC mua/bán theo video: BOS + FVG + thanh khoản (đáy/đỉnh cục bộ) -> vào limit tại mép FVG, SL ngoài FVG, TP 3R
+console.log('\n29. Kiểm tra SMC FVG + BOS + thanh khoản:');
+{
+  const T0 = Date.UTC(2026, 9, 20, 0, 0), M = 900000;
+  const rows = [ // [open, high, low, close]
+    [99.5, 100, 99, 99.5], [99.5, 100.5, 99.5, 100], [100, 101, 99.8, 100.5], [100.5, 100.5, 99.5, 100], [100, 100, 99, 99.5], // 2 = đỉnh swing 101
+    [99.8, 100.2, 99.6, 100.0], [100.0, 100.9, 99.9, 100.8], [101.0, 103, 101.0, 102.8], // 7 = BOS, FVG [100.2 - 101.0]
+    [102.8, 103.2, 102.0, 102.2], [102.2, 102.4, 101.6, 101.8], [101.8, 102.6, 102.0, 102.4], [102.4, 102.8, 102.2, 102.5], // 9 = đáy cục bộ 101.6 (thanh khoản)
+    [102.5, 102.6, 100.9, 101.5] // 12: quét đáy cục bộ + chạm FVG
+  ];
+  const mk = (r, flip = false) => r.map(([o, h, l, c], i) => flip
+    ? { ts: T0 + i * M, open: 200 - o, high: 200 - l, low: 200 - h, close: 200 - c, vol: 1000, confirm: 1 }
+    : { ts: T0 + i * M, open: o, high: h, low: l, close: c, vol: 1000, confirm: 1 });
+  const buy = latestSmcFvgSignal(mk(rows));
+  assert(buy && buy.direction === 'LONG' && Math.abs(buy.entry - 101.0) < 1e-9, 'SMC Buy: BOS + FVG + quét thanh khoản + chạm FVG -> LONG limit tại mép trên FVG 101.0');
+  assert(buy && Math.abs(buy.stopLoss - (100.2 - 0.0005 * 100.2)) < 1e-9, 'SMC Buy: SL ngay dưới mép dưới FVG');
+  assert(buy && Math.abs((buy.takeProfit - buy.entry) / (buy.entry - buy.stopLoss) - 3) < 1e-9, 'SMC Buy: TP đúng RR 1:3');
+  const noPool = rows.map(r => [...r]); noPool[9] = [102.2, 102.4, 102.1, 101.8]; noPool[10] = [101.8, 102.6, 102.2, 102.4];
+  assert(latestSmcFvgSignal(mk(noPool)) === null, 'Chỉ có FVG, không có đáy cục bộ làm thanh khoản -> KHÔNG vào (đúng lời video)');
+  const broken = rows.map(r => [...r]); broken[12] = [102.5, 102.6, 100.0, 100.1];
+  assert(latestSmcFvgSignal(mk(broken)) === null, 'Giá đóng cửa xuyên thủng FVG (hỏng) -> KHÔNG vào');
+  const closeBelow = rows.map(r => [...r]); closeBelow[12] = [102.5, 102.6, 100.16, 100.17];
+  assert(latestSmcFvgSignal(mk(closeBelow)) === null, 'Nến chạm đóng cửa dưới mép FVG (dù râu chưa tới SL) -> FVG hỏng, KHÔNG vào');
+  const wickThrough = rows.map(r => [...r]); wickThrough[12] = [102.5, 102.6, 100.0, 101.5];
+  assert(latestSmcFvgSignal(mk(wickThrough)) === null, 'Râu chọc qua SL ngay nến chạm (dù đóng lại trên FVG) -> KHÔNG đặt lệnh');
+  assert(latestSmcFvgSignal(mk([...rows, [101.5, 102.0, 101.2, 101.8]])) === null, 'Cú chạm không phải nến cuối -> không báo lại (chống trùng tín hiệu)');
+  assert(latestSmcFvgSignal(mk(rows), { minRisk: 0.02 }) === null, 'SL gần hơn ngưỡng tối thiểu (phí ăn hết lợi thế) -> bỏ');
+  const sell = latestSmcFvgSignal(mk(rows, true));
+  assert(sell && sell.direction === 'SHORT' && Math.abs(sell.entry - 99.0) < 1e-9, 'SMC Sell (đối xứng): LONG lật gương thành SHORT limit tại mép dưới FVG');
+  assert(sell && sell.stopLoss > sell.entry && sell.takeProfit < sell.entry, 'SMC Sell: SL trên, TP dưới');
+  const msg = buildSmcFvgAlertMessage('HYPE-USDT', buy);
+  assert(/LIMIT/i.test(msg) && msg.includes('101') && /KHÔNG tự vào lệnh/i.test(msg), 'Tin báo ghi rõ lệnh Limit, mức giá, và bot không tự vào lệnh');
+  assert(/sau phí/i.test(msg), 'Tin báo nêu số liệu backtest sau phí, không chỉ số chưa trừ phí');
+}
+
+// 30. Chống spam Telegram: dry-run không gửi, trạng thái bền qua khởi động lại, gộp cảnh báo hộp thành 1 tin
+console.log('\n30. Kiểm tra chống spam Telegram:');
+{
+  const f = pathNode.join(os.tmpdir(), 'alert_state_test_' + Date.now() + '.json');
+  const m1 = persistentMap(f, true); m1.set('BTC:LOW', 123);
+  assert(persistentMap(f, true).get('BTC:LOW') === 123, 'Trạng thái cảnh báo được lưu và đọc lại sau khi khởi động lại (không gửi trùng)');
+  const f2 = pathNode.join(os.tmpdir(), 'alert_state_dry_' + Date.now() + '.json');
+  const dry = persistentMap(f2, false); dry.set('x', 1);
+  assert(dry.get('x') === 1 && !fsNode.existsSync(f2), 'Chế độ dry-run chỉ giữ trong bộ nhớ, KHÔNG ghi file (không làm cooldown giả)');
+  try { fsNode.unlinkSync(f); } catch {}
+  const digest = buildBoxDigestMessage([
+    { symbol: 'BTC-USDT', alert: { zone: 'LOW', price: 77476.3, rangeLow: 75909.8, rangeHigh: 86622.7, equilibrium: 81266.3 } },
+    { symbol: 'ETH-USDT', alert: { zone: 'LOW', price: 2251.4, rangeLow: 2171.5, rangeHigh: 2763.0, equilibrium: 2467.3 } },
+    { symbol: 'HYPE-USDT', alert: { zone: 'HIGH', price: 95.1, rangeLow: 75.15, rangeHigh: 97.06, equilibrium: 86.1 } }
+  ]);
+  assert(['BTC-USDT', 'ETH-USDT', 'HYPE-USDT'].every(x => digest.includes(x)), 'Tin gộp liệt kê đủ các coin sát biên hộp');
+  assert(/SÀN/.test(digest) && /TRẦN/.test(digest), 'Tin gộp phân biệt sát SÀN và sát TRẦN');
+  assert((digest.match(/KHÔNG tự vào lệnh/g) || []).length === 1, 'Tin gộp chỉ ghi lưu ý "bot KHÔNG tự vào lệnh" một lần');
+  let fetched = false; const realFetch = globalThis.fetch; globalThis.fetch = () => { fetched = true; return Promise.reject(new Error('không được gọi mạng')); };
+  process.env.TELEGRAM_DRY_RUN = '1';
+  let r; try { r = await sendTelegramMessage('thử nghiệm dry-run'); } finally { delete process.env.TELEGRAM_DRY_RUN; globalThis.fetch = realFetch; }
+  assert(r === false && fetched === false, 'DRY-RUN: sendTelegramMessage không gọi mạng, không gửi tin thật');
+}
+
+// 26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engine:
+console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engine:');
+{
+  // 26.1: detectMacroRangeBox
+  const mockH4 = [];
+  for (let i = 0; i < 60; i++) {
+    // Giá dao động giữa 75 và 96
+    const high = (i % 10 === 0) ? 96.0 : (80 + Math.random() * 10);
+    const low = (i % 10 === 5) ? 75.0 : (80 - Math.random() * 4);
+    mockH4.push({ ts: i * 4 * 3600000, open: 85, high, low, close: 85, vol: 1000, confirm: 1 });
+  }
+  const macroBox = detectMacroRangeBox(mockH4, [], 60);
+  assert(macroBox !== null, 'detectMacroRangeBox nhận diện thành công hộp đa tháng');
+  assert(macroBox.rangeHigh >= 94.0 && macroBox.rangeHigh <= 97.0, `Range High định hình chính xác ~96 (thực tế: ${macroBox.rangeHigh})`);
+  assert(macroBox.rangeLow >= 74.0 && macroBox.rangeLow <= 77.0, `Range Low định hình chính xác ~75 (thực tế: ${macroBox.rangeLow})`);
+  assert(macroBox.equilibrium >= 84.0 && macroBox.equilibrium <= 87.0, `Trục giữa Equilibrium chính xác ~85.5 (thực tế: ${macroBox.equilibrium})`);
+
+  // 26.2: evaluateMacroRangeFade Short tại Range High
+  const mockM15NearCeiling = [
+    { ts: 1000, open: 93.0, high: 93.5, low: 92.8, close: 93.2, vol: 1000, confirm: 1 },
+    { ts: 2000, open: 93.2, high: 93.8, low: 93.0, close: 93.6, vol: 1000, confirm: 1 },
+    { ts: 3000, open: 93.6, high: 94.5, low: 93.5, close: 94.2, vol: 1000, confirm: 1 },
+    { ts: 4000, open: 94.2, high: 95.8, low: 94.0, close: 95.2, vol: 1500, confirm: 1 },
+    { ts: 5000, open: 95.2, high: 96.8, low: 94.1, close: 94.4, vol: 2500, confirm: 1 } // Rút râu trên mạnh tại 96.8
+  ];
+  const fadeShort = evaluateMacroRangeFade({
+    symbol: 'HYPE-USDT',
+    candlesH4: mockH4,
+    candlesH1: mockH4,
+    candlesM15: mockM15NearCeiling,
+    macroRange: macroBox,
+    atrH1: 1.5
+  });
+  assert(fadeShort !== null, 'evaluateMacroRangeFade kích hoạt Short thành công tại Range High');
+  assert(fadeShort.direction === 'SHORT', 'Hướng vào lệnh là SHORT');
+  assert(fadeShort.strategy === 'MACRO_RANGE_HIGH_SHORT', 'Chiến lược là MACRO_RANGE_HIGH_SHORT');
+  assert(fadeShort.riskReward >= 1.8, `Tỷ lệ RR đạt chuẩn >= 1.8 (thực tế: ${fadeShort.riskReward})`);
+
+  // 26.2c: Cảnh báo biên hộp (chỉ báo, không tự vào lệnh)
+  const boxAlertTop = buildBoxAlert('HYPE-USDT', macroBox, 95.0);
+  assert(boxAlertTop && boxAlertTop.zone === 'HIGH' && /Short/i.test(boxAlertTop.message), 'buildBoxAlert báo vùng Trần hộp khi giá sát trần');
+  const boxAlertBot = buildBoxAlert('HYPE-USDT', macroBox, 76.0);
+  assert(boxAlertBot && boxAlertBot.zone === 'LOW' && /Long/i.test(boxAlertBot.message), 'buildBoxAlert báo vùng Sàn hộp khi giá sát sàn');
+  assert(buildBoxAlert('HYPE-USDT', macroBox, 85.5) === null, 'buildBoxAlert im lặng khi giá ở giữa hộp');
+  assert(buildBoxAlert('HYPE-USDT', null, 95.0) === null, 'buildBoxAlert an toàn khi không có hộp');
+
+  // 26.3: evaluateVolumeBreakout
+  const mockBreakoutM15 = [];
+  for (let i = 0; i < 30; i++) {
+    // 29 nến nén trong hộp 80.0 - 81.2 với volume 1000
+    mockBreakoutM15.push({ ts: i * 15 * 60000, open: 80.5, high: 81.2, low: 80.0, close: 80.8, vol: 1000, confirm: 1 });
+  }
+  // Nến thứ 30: Nổ volume 4000 (4.0x) phá vỡ lên 82.5
+  mockBreakoutM15.push({ ts: 30 * 15 * 60000, open: 80.8, high: 82.8, low: 80.7, close: 82.5, vol: 4000, confirm: 1 });
+
+  const breakoutSig = evaluateVolumeBreakout({
+    symbol: 'HYPE-USDT',
+    candles15m: mockBreakoutM15,
+    candlesH1: [],
+    candlesH4: [],
+    atrH1: 1.0,
+    resistances: [90.0]
+  });
+  assert(breakoutSig !== null, 'evaluateVolumeBreakout bắt thành công cú phá nền M15');
+  assert(breakoutSig.direction === 'LONG', 'Hướng phá vỡ là LONG');
+  assert(breakoutSig.strategy === 'M15_VOLUME_BREAKOUT_LONG', 'Chiến lược là M15_VOLUME_BREAKOUT_LONG');
+  assert(breakoutSig.entry === 82.5, 'Entry chuẩn xác ngay tại chân nến phá vỡ 82.5');
+
+  // 26.4: Trade Flip Engine
+  registerTakeProfitHit('HYPE-USDT', 'LONG', 95.0, 10000);
+  const flipSig = evaluateTradeFlipOpportunity({
+    symbol: 'HYPE-USDT',
+    candles15m: [
+      { ts: 6000, open: 93.5, high: 94.0, low: 93.2, close: 93.8, vol: 1000, confirm: 1 },
+      { ts: 7000, open: 93.8, high: 94.2, low: 93.5, close: 94.0, vol: 1000, confirm: 1 },
+      { ts: 8000, open: 94.0, high: 94.6, low: 93.8, close: 94.4, vol: 1000, confirm: 1 },
+      { ts: 9000, open: 94.4, high: 95.2, low: 94.0, close: 94.8, vol: 1000, confirm: 1 },
+      { ts: 10000, open: 94.8, high: 95.5, low: 94.2, close: 94.3, vol: 1500, confirm: 1 } // Rút râu trên tại 95.5
+    ],
+    candlesH1: [],
+    atrH1: 1.5
+  });
+  assert(flipSig !== null, 'Trade Flip bắt thành công cơ hội Short đảo chiều ngay sau khi chốt lời Long');
+  assert(flipSig.direction === 'SHORT', 'Hướng Flip là SHORT');
+  assert(flipSig.strategy === 'TRADE_FLIP_SHORT', 'Chiến lược là TRADE_FLIP_SHORT');
+
+  // 26.5: evaluateMarket phải gắn sizing + áp khiên BTC cho Breakout/Flip/MacroRange
+  const mkC = (n, step, o, h, l, c, v) => Array.from({ length: n }, (_, i) => ({ ts: i * step, open: o, high: h, low: l, close: c, vol: v, confirm: 1 }));
+  const gH4 = mkC(100, 14400000, 80.5, 81.5, 79.5, 80.5, 1000).map((c, i) => ({ ...c, close: 80 + i * 0.01 }));
+  const gH1 = mkC(20, 3600000, 80.5, 81, 80, 80.5, 1000);
+  const gM15 = mkC(30, 900000, 80.5, 81.2, 80.0, 80.8, 1000);
+  gM15.push({ ts: 30 * 900000, open: 80.8, high: 82.8, low: 80.7, close: 82.5, vol: 4000, confirm: 1 });
+  const evalG = (btcH1, extra = { enableBreakoutStrategy: true, sessionStartHourUtc: 0 }) => evaluateMarket({ symbol: 'HYPE-USDT', candlesH4: gH4, candlesH1: gH1, candlesM15: gM15, btcH1Candles: btcH1, config: { ...DEFAULT_CONFIG, minCoinPrice: 0, ...extra } });
+  const gSig = evalG(null);
+  assert(gSig && gSig.strategy === 'M15_VOLUME_BREAKOUT_LONG', 'evaluateMarket trả tín hiệu Breakout');
+  assert(gSig.sizing && gSig.sizing.size > 0 && !gSig.sizing.isBlocked, 'Tín hiệu Breakout có sizing 1R hợp lệ');
+  const btcDump = mkC(20, 3600000, 100, 100.5, 99.5, 100, 1000);
+  btcDump[19] = { ts: 19 * 3600000, open: 100, high: 100.1, low: 95, close: 95.1, vol: 5000, confirm: 1 };
+  const gBlocked = evalG(btcDump);
+  assert(gBlocked && gBlocked.isBlocked === true, 'BTC xả Marubozu đỏ chặn Breakout LONG');
+
+  // 26.5c: Chiến lược lỗ cả năm (Breakout/Breakdown, Trade Flip, Macro Long) mặc định TẮT, bật bằng cờ
+  assert(DEFAULT_CONFIG.enableBreakoutStrategy === false, 'Breakout/Breakdown mặc định TẮT');
+  assert(DEFAULT_CONFIG.enableTradeFlip === false, 'Trade Flip mặc định TẮT');
+  assert(DEFAULT_CONFIG.enableMacroRangeLong === false, 'Macro Range Long mặc định TẮT');
+  const gOff = evalG(null, {});
+  assert(!gOff || gOff.strategy !== 'M15_VOLUME_BREAKOUT_LONG', 'Cờ tắt thì evaluateMarket không phát tín hiệu Breakout');
+
+  // 26.6: Trade Flip không kích hoạt chỉ vì râu trên khi nến M15 vẫn xanh (chưa có từ chối thật)
+  registerTakeProfitHit('FLIP-GREEN', 'LONG', 95.0, 10000);
+  const greenFlip = evaluateTradeFlipOpportunity({
+    symbol: 'FLIP-GREEN',
+    candles15m: [
+      { ts: 6000, open: 93.5, high: 94.0, low: 93.2, close: 93.8, vol: 1000, confirm: 1 },
+      { ts: 7000, open: 93.8, high: 94.2, low: 93.5, close: 94.0, vol: 1000, confirm: 1 },
+      { ts: 8000, open: 94.0, high: 94.6, low: 93.8, close: 94.4, vol: 1000, confirm: 1 },
+      { ts: 9000, open: 94.4, high: 95.2, low: 94.0, close: 94.8, vol: 1000, confirm: 1 },
+      { ts: 10000, open: 94.3, high: 95.5, low: 94.2, close: 95.0, vol: 1500, confirm: 1 } // râu trên nhưng đóng xanh
+    ],
+    candlesH1: [],
+    atrH1: 1.5
+  });
+  assert(greenFlip === null, 'Trade Flip KHÔNG vào Short khi nến M15 râu trên nhưng đóng xanh');
+
+  // 26.7: Kane Long/Short đối xứng
+  const kLiq = { isInducementTrapRisk: false, sweepState: 'NONE', details: null, tier2MajorLow: null, tier2MajorHigh: null, tier1Lows: [], tier1Highs: [] };
+  const kVsa = { isAbsorption: false };
+  const kCfg = { atrBufferMultiplier: 0.3, minRR: 2.0, riskUsd: 10, leverage: 10, wickRatioThreshold: 0.35 };
+  const kBtc = { canLong: true, canShort: true };
+  const kBase = { symbol: 'T-USDT', ema34: 100, atrH1: 0.5, marketPhase: 'RANGING', d1Phase: 'RANGING', isLowVolD1: false, btcShield: kBtc, config: kCfg, volAbsorptionH4: kVsa, volAbsorptionM15: kVsa, chopBlockedSignal: false, isFreshH4: true, liquidityTiers: kLiq };
+  const shortArgs = (h4Close) => ({
+    ...kBase,
+    candlesH4: [{ ts: 0, open: 99, high: 99.5, low: 98, close: 99, vol: 1, confirm: 1 }, { ts: 1, open: 99, high: 100.5, low: 98, close: h4Close, vol: 1, confirm: 1 }],
+    candlesM15: Array.from({ length: 10 }, (_, i) => ({ ts: i, open: 99.5, high: 100, low: 99, close: 99.5, vol: 100, confirm: 1 })),
+    currentM15: { ts: 11, open: 99.2, high: 99.3, low: 98.8, close: 98.9, vol: 100, confirm: 1 },
+    prevM15: { ts: 10, open: 99.5, high: 99.6, low: 99.0, close: 99.1, vol: 100, confirm: 1 },
+    lastH4: { ts: 1, open: 99, high: 100.5, low: 98, close: h4Close, vol: 1, confirm: 1 },
+    supports: [95], resistances: [100],
+    h4Anatomy: { upperWickRatio: 0.5, lowerWickRatio: 0 },
+    isBearTrend: true, isActiveUpMove: false, hasBearishPattern: true
+  });
+  assert(tryKaneShortSetup(shortArgs(99.0)) !== null, 'Kane Short hợp lệ khi H4 từ chối và đóng dưới cản');
+  assert(tryKaneShortSetup(shortArgs(100.4)) === null, 'Kane Short bị loại khi H4 đóng cửa TRÊN cản (chưa bị từ chối)');
+  const longArgs = (majorHigh) => ({
+    ...kBase,
+    liquidityTiers: { ...kLiq, tier2MajorHigh: majorHigh },
+    candlesH4: [{ ts: 0, open: 100, high: 101, low: 99, close: 100, vol: 1, confirm: 1 }, { ts: 1, open: 100, high: 101, low: 97.5, close: 100.2, vol: 1, confirm: 1 }],
+    candlesM15: Array.from({ length: 10 }, (_, i) => ({ ts: i, open: 99.5, high: 100, low: 99, close: 99.5, vol: 100, confirm: 1 })),
+    currentM15: { ts: 11, open: 100.0, high: 100.5, low: 99.9, close: 100.4, vol: 100, confirm: 1 },
+    prevM15: { ts: 10, open: 99.5, high: 100.0, low: 99.4, close: 99.9, vol: 100, confirm: 1 },
+    lastH4: { ts: 1, open: 100, high: 101, low: 97.5, close: 100.2, vol: 1, confirm: 1 },
+    supports: [100], resistances: [107],
+    h4Anatomy: { upperWickRatio: 0, lowerWickRatio: 0.5 },
+    isBullTrend: true, isActiveDownMove: false, hasBullishPattern: true
+  });
+  assert(tryKaneLongSetup(longArgs(null)) !== null, 'Kane Long hợp lệ khi không có Cản Lớn sát đầu');
+  assert(tryKaneLongSetup(longArgs(101)) === null, 'Kane Long bị loại khi entry sát Cản Lớn phía trên (đối xứng với Short)');
+
+  // 26.8: Khôi phục hành vi đã kiểm chứng của bản cũ (backtest 1 năm: bản siết quá tay chỉ ra 2 lệnh)
+  const bearSweep = tryKaneLongSetup({ ...longArgs(null), isBullTrend: false, ema34: 100.5, liquidityTiers: { ...kLiq, sweepState: 'BULLISH_SWEEP_CONFIRMED' } });
+  assert(bearSweep !== null && bearSweep.strategy === 'SMC_SWEEP_REVERSAL_LONG', 'Bear-trend: SMC Sweep xác nhận vẫn được Long, không đòi giá cách EMA34 >= 2.5%');
+  const nearRes = tryKaneLongSetup({ ...longArgs(null), resistances: [101.5, 107] });
+  assert(nearRes !== null && Math.abs(nearRes.takeProfit - 107 * 0.9975) < 1e-6, 'Cản gần nằm giữa đường KHÔNG chặn lệnh (TP vẫn tới cản đạt RR, đã trừ đệm 0.25%)');
+  assert(computeH4Freshness(9 * 900000, 0, 8).isFresh === false, 'H4 quá 8 nến M15 sau khi đóng -> không còn tươi');
+  assert(computeH4Freshness(8 * 900000, 0, 8).isFresh === true, 'H4 đúng 8 nến M15 sau khi đóng -> còn tươi');
+  assert(computeH4Freshness(-900000, 0, 8).isFresh === false, 'Nến M15 trước giờ đóng H4 -> không tươi');
+  // 26.9: Phiên giao dịch (SMC nâng cao: phiên Á đi ngang/tạo mồi). Backtest 2021-26: bỏ 00-07 UTC PF 1.06 -> 1.17
+  const at = (h) => Date.UTC(2026, 9, 28, h, 30);
+  assert(isInTradingSession(at(3), 7, 24) === false, 'Phiên Á (03:30 UTC) bị loại');
+  assert(isInTradingSession(at(7), 7, 24) === true, '07:30 UTC (London) được vào lệnh');
+  assert(isInTradingSession(at(23), 7, 24) === true, '23:30 UTC (cuối phiên NY) được vào lệnh');
+  assert(isInTradingSession(at(3), 0, 24) === true, 'Khung 0-24 tắt bộ lọc phiên');
+  assert(DEFAULT_CONFIG.sessionStartHourUtc === 7 && DEFAULT_CONFIG.sessionEndHourUtc === 24, 'Mặc định chỉ vào lệnh 07:00-24:00 UTC');
+  // 26.10: Quản lý lệnh co SL/khóa lãi mặc định TẮT (backtest 2021-26: SL/TP thuần PF 1.17->1.26, +28.5R->+52.4R, thắng 27%->36%)
+  assert(DEFAULT_CONFIG.beStep1TriggerR >= 99 && DEFAULT_CONFIG.beTriggerR >= 99, 'Co SL (step1) và khóa lãi mặc định TẮT (ngưỡng không bao giờ chạm)');
+  // 26.11: Xu hướng theo cấu trúc BOS (Pat): nến ĐÓNG CỬA phá swing high -> tăng, phá swing low -> giảm
+  const zig = (drift) => Array.from({ length: 80 }, (_, i) => { const p = 100 + drift * i + 5 * Math.sin(2 * Math.PI * i / 10); return { ts: i * 14400000, open: p - 0.2, high: p + 0.5, low: p - 0.5, close: p, vol: 1, confirm: 1 }; });
+  assert(computeStructTrend(zig(0.5)) === 1, 'Cấu trúc đỉnh/đáy cao dần (BOS lên) -> xu hướng TĂNG');
+  assert(computeStructTrend(zig(-0.5)) === -1, 'Cấu trúc đỉnh/đáy thấp dần (BOS xuống) -> xu hướng GIẢM');
+  assert(computeStructTrend(zig(0).slice(0, 8)) === 0 && computeStructTrend(null) === 0, 'Quá ít nến hoặc không có dữ liệu -> trung tính (0)');
+  assert(DEFAULT_CONFIG.enableTrendAlignFilter === false || DEFAULT_CONFIG.enableTrendAlignFilter === true, 'Cờ enableTrendAlignFilter tồn tại trong cấu hình');
+  assert(DEFAULT_CONFIG.enableMacroRangeShort === false, 'Macro Range Short mặc định TẮT (lỗ cả năm: PF 0.54)');
+}
+
+// 31. API trạng thái của bot cho trang xem (chỉ đọc, bắt buộc token)
+{
+  const { createStateServer } = await import('../src/state_api.js');
+  const srv = createStateServer(() => ({ positions: [{ symbol: 'BTC-USDT' }], pending: [], history: [] }), { token: 'abc' });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const auth = { headers: { authorization: 'Bearer abc' } };
+  assert((await fetch(base + '/api/state')).status === 401, '31.1: thiếu token -> 401');
+  assert((await fetch(base + '/api/state', { headers: { authorization: 'Bearer sai' } })).status === 401, '31.2: sai token -> 401');
+  const ok = await fetch(base + '/api/state', auth), body = await ok.json();
+  assert(ok.status === 200 && body.positions.length === 1 && typeof body.updatedAt === 'number', '31.3: đúng token -> 200 kèm vị thế và updatedAt');
+  assert((await fetch(base + '/api/state', { ...auth, method: 'POST' })).status === 405, '31.4: chỉ cho GET (POST -> 405)');
+  assert((await fetch(base + '/khac', auth)).status === 404, '31.5: đường dẫn lạ -> 404');
+  let threw = false; try { createStateServer(() => ({}), { token: '' }); } catch { threw = true; }
+  assert(threw, '31.6: không có token thì không cho tạo server (không mở API trần)');
+  srv.close();
+}
+
+// 32. Bối cảnh lớn (toàn lịch sử): gộp nến ngày -> tuần/tháng, ATH/ATL, xu hướng M/W/D, pha thị trường, thống kê theo năm
+{
+  const { resample, buildMacroContext } = await import('../src/strategies/macro_context.js');
+  const DAY = 86400000, t0 = Date.UTC(2020, 0, 6); // thứ Hai
+  const mk = (n, f) => Array.from({ length: n }, (_, i) => { const p = f(i); return { ts: t0 + i * DAY, open: p - 0.3, high: p + 1, low: p - 1, close: p, vol: 1, confirm: 1 }; });
+  const w = resample(mk(28, () => 100), 'W');
+  assert(w.length === 4 && w[0].ts === t0 && w[0].confirm === 1 && w[3].confirm === 0, '32.1: 28 ngày từ thứ Hai -> đúng 4 tuần, tuần cuối chưa đóng');
+  const g = resample([{ ts: t0, open: 10, high: 12, low: 9, close: 11, vol: 2, confirm: 1 }, { ts: t0 + DAY, open: 11, high: 15, low: 10, close: 14, vol: 3, confirm: 1 }], 'W')[0];
+  assert(g.open === 10 && g.high === 15 && g.low === 9 && g.close === 14 && g.vol === 5, '32.2: gộp tuần: open đầu, high max, low min, close cuối, vol cộng');
+  assert(resample(mk(70, () => 100), 'M')[0].ts === Date.UTC(2020, 0, 1), '32.3: gộp tháng bắt đầu ngày 1 (UTC)');
+  const bull = mk(1500, (i) => 100 + i * 0.4 + 6 * Math.sin(i / 9)), bear = mk(1500, (i) => 700 - i * 0.4 + 6 * Math.sin(i / 9));
+  const cb = buildMacroContext(bull), cr = buildMacroContext(bear);
+  assert(cb.phase === 'BULL' && cb.trends.d === 1 && cb.trends.w === 1 && cb.score >= 3, '32.4: chuỗi tăng dài -> pha TĂNG, xu hướng D/W đều tăng');
+  assert(cr.phase === 'BEAR' && cr.trends.w === -1 && cr.score <= -3, '32.5: chuỗi giảm dài -> pha GIẢM');
+  const top = Math.max(...bear.map(c => c.high));
+  assert(Math.abs(cr.ath.price - top) < 1e-9 && cr.drawdownPct > 40 && Math.abs(cb.drawdownPct) < 5, '32.6: ATH đúng và % sụt từ đỉnh (bear > 40%, bull gần đỉnh)');
+  assert(cb.years.length >= 4 && cb.years.every(y => typeof y.returnPct === 'number' && y.maxDrawdownPct >= 0), '32.7: có thống kê theo năm (lợi nhuận, sụt tối đa)');
+  assert(cb.levels.weekOpen && cb.levels.monthOpen && cb.levels.yearOpen && cb.levels.prevMonthHigh > cb.levels.prevMonthLow, '32.8: có các mốc tuần/tháng/năm và đỉnh-đáy tháng trước');
+  assert(buildMacroContext(mk(40, () => 100)).phase === 'UNKNOWN', '32.9: quá ít lịch sử (<200 ngày) -> UNKNOWN, không đoán bừa');
+  assert(/giảm|GIẢM/.test(cr.summary) && /tăng|TĂNG/.test(cb.summary), '32.10: câu tóm tắt tiếng Việt phản ánh đúng pha');
+}
+
+// 33. Tin Telegram kèm bối cảnh lớn + link biểu đồ (chỉ khi có dữ liệu, không thì giữ nguyên tin cũ)
+{
+  const { buildEarlySignalMessage, buildNewSignalMessage } = await import('../src/telegram.js');
+  const base = { symbol: 'BTC-USDT', direction: 'SHORT', entry: 78000, stopLoss: 78400, takeProfit: 76500, riskReward: 3.7, reason: 'SMC sweep', strategy: 'SMC_SWEEP_REVERSAL_SHORT' };
+  const ctx = { macroSummary: 'Bối cảnh lớn: pha thiên tăng | Tháng tăng', viewerUrl: 'https://viewer.example/?coin=BTC' };
+  const e = buildEarlySignalMessage({ ...base, ...ctx }, 60), n = buildNewSignalMessage({ ...base, ...ctx, sizing: { size: 0.1, margin: 5, notional: 50 } });
+  assert(e.includes('Bối cảnh lớn: pha thiên tăng') && e.includes('href="https://viewer.example/?coin=BTC"'), '33.1: tin BÁO SỚM có bối cảnh lớn và link biểu đồ');
+  assert(n.includes('Bối cảnh lớn: pha thiên tăng') && n.includes('href="https://viewer.example/?coin=BTC"'), '33.2: tin VÀO LỆNH có bối cảnh lớn và link biểu đồ');
+  const e0 = buildEarlySignalMessage(base, 60), n0 = buildNewSignalMessage({ ...base, sizing: { size: 0.1, margin: 5, notional: 50 } });
+  assert(!e0.includes('Bối cảnh lớn') && !e0.includes('href=') && !n0.includes('Bối cảnh lớn') && !n0.includes('href='), '33.3: không có dữ liệu bối cảnh thì tin giữ nguyên, không in chữ rỗng/undefined');
+  assert(!e0.includes('undefined') && !n0.includes('undefined'), '33.4: tin không chứa chữ undefined');
 }
 
 // Tổng kết

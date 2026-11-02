@@ -1,0 +1,114 @@
+// Trang xem kịch bản: lấy nến OKX trực tiếp, chạy đúng engine/radar của bot, ghép lệnh thật từ API của bot.
+import './env.mjs';
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { normalizeCandle } from './src/indicators.js';
+import { generateKeyLevelRadar } from './src/strategies/radar.js';
+import { evaluateMarket } from './src/engine.js';
+import { BOT_CONFIG } from './src/config.js';
+import { loadDailyHistory } from './src/market_history.js';
+import { buildMacroContext, resample } from './src/strategies/macro_context.js';
+
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const COINS = ['BTC', 'ETH', 'SOL', 'LINK', 'NEAR', 'HYPE'];
+const BARS = { '15m': '15m', '1H': '1H', '4H': '4H', '1D': '1Dutc', '1W': null, '1M': null }; // 1W/1M gộp từ toàn bộ nến ngày
+const OKX = 'https://www.okx.com/api/v5/market/candles';
+const cache = new Map();
+
+async function okx(inst, bar, limit = 300) {
+  const r = await fetch(`${OKX}?instId=${inst}-USDT-SWAP&bar=${bar}&limit=${limit}`);
+  const j = await r.json();
+  if (!Array.isArray(j.data)) throw new Error(`OKX không trả nến ${inst} ${bar}`);
+  return j.data.map(normalizeCandle).reverse();
+}
+const closed = (c) => c.filter(x => x.confirm === 1);
+
+// Chỉ giữ vùng cách giá <= 8% để biểu đồ không rối.
+function buildZones(radar, price) {
+  const near = (v) => Math.abs(v - price) / price <= 0.08, z = [], pad = 0.0008;
+  (radar.tier1InducementHighs || []).forEach(t => near(t.avgPrice) && z.push({ kind: 'res', top: t.maxPrice, bottom: t.minPrice, label: `Kháng cự thanh khoản (${t.touchCount} lần chạm)` }));
+  (radar.tier1InducementLows || []).forEach(t => near(t.avgPrice) && z.push({ kind: 'sup', top: t.maxPrice, bottom: t.minPrice, label: `Hỗ trợ thanh khoản (${t.touchCount} lần chạm)` }));
+  if (radar.nearestRes) z.push({ kind: 'res', top: radar.nearestRes * (1 + pad), bottom: radar.nearestRes * (1 - pad), label: 'Cản gần nhất' });
+  if (radar.nearestSup) z.push({ kind: 'sup', top: radar.nearestSup * (1 + pad), bottom: radar.nearestSup * (1 - pad), label: 'Hỗ trợ gần nhất' });
+  return z;
+}
+
+function buildLines(radar, macro) {
+  const l = [{ price: radar.ema34, label: 'EMA34 H4', color: '#f59e0b' }, { price: radar.ema89, label: 'EMA89 H4', color: '#a78bfa' }];
+  const m = radar.macroRange;
+  if (m) l.push({ price: m.rangeHigh, label: 'Trần hộp vĩ mô', color: '#ef4444' }, { price: m.rangeLow, label: 'Sàn hộp vĩ mô', color: '#22c55e' }, { price: m.equilibrium, label: 'Trục giữa hộp', color: '#94a3b8' });
+  if (macro && macro.levels) {
+    const L = macro.levels;
+    l.push({ price: L.ath, label: 'Đỉnh lịch sử', color: '#fbbf24' }, { price: L.yearOpen, label: 'Mở cửa năm', color: '#38bdf8' }, { price: L.monthOpen, label: 'Mở cửa tháng', color: '#60a5fa' }, { price: L.weekOpen, label: 'Mở cửa tuần', color: '#93c5fd' });
+    if (L.prevMonthHigh) l.push({ price: L.prevMonthHigh, label: 'Đỉnh tháng trước', color: '#fb7185' }, { price: L.prevMonthLow, label: 'Đáy tháng trước', color: '#4ade80' });
+  }
+  return l.filter(x => x.price);
+}
+
+// Kịch bản + cách vào lệnh bằng chữ, chỉ dựa trên số thật của radar/engine.
+function buildPlaybook(radar, signal) {
+  const f = (v) => (v >= 1000 ? v.toFixed(1) : v >= 1 ? v.toFixed(3) : v.toFixed(4));
+  const steps = [];
+  if (signal && !signal.isBlocked) {
+    const dir = signal.direction === 'LONG' ? 'Long' : 'Short';
+    steps.push(`Bot đang có tín hiệu ${dir} (${signal.strategy}).`, `Vào lệnh tại ${f(signal.entry)}, cắt lỗ ${f(signal.stopLoss)}, chốt lời ${f(signal.takeProfit)} (R:R ${signal.riskReward}).`, 'Bot chờ thêm 4 nến M15 (60 phút) để xác nhận rồi mới vào lệnh thật; nếu SL/TP gốc bị chạm trong lúc chờ thì hủy.');
+  } else {
+    const side = radar.radarStatus === 'APPROACHING_RESISTANCE' ? 'Short' : radar.radarStatus === 'APPROACHING_SUPPORT' ? 'Long' : null;
+    if (side) {
+      const lvl = side === 'Short' ? radar.nearestRes : radar.nearestSup;
+      steps.push(`Giá áp sát ${side === 'Short' ? 'kháng cự' : 'hỗ trợ'} ${f(lvl)}.`, `Chỉ canh ${side} khi nến M15 thọc qua mốc ${f(lvl)} rồi ĐÓNG CỬA quay lại kèm râu dài và volume hấp thụ.`, 'Không vào khi nến chưa đóng; SL đặt ngoài đỉnh/đáy của cú quét.');
+    } else steps.push('Giá đang ở giữa vùng, chưa có kịch bản. Chờ giá tới cản hoặc hỗ trợ.');
+    if (signal && signal.isBlocked) steps.push(`Setup bị bộ lọc chặn: ${String(signal.blockReason).split(':')[0]}.`);
+  }
+  return { headline: radar.scenario || 'Chưa có kịch bản.', steps, plan: radar.limitPlan || null };
+}
+
+async function botState() {
+  const url = process.env.BOT_API_URL, token = process.env.VIEWER_TOKEN;
+  if (!url || !token) return { connected: false, reason: 'chưa cấu hình BOT_API_URL/VIEWER_TOKEN' };
+  try {
+    const r = await fetch(url.replace(/\/$/, '') + '/api/state', { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return { connected: false, reason: `bot trả ${r.status}` };
+    return { connected: true, ...(await r.json()) };
+  } catch (e) { return { connected: false, reason: e.message }; }
+}
+
+async function analysis(coin, bar) {
+  const key = `${coin}:${bar}`, hit = cache.get(key);
+  if (hit && Date.now() - hit.t < 20000) return hit.v;
+  const longTf = ['1D', '1W', '1M'].includes(bar);
+  const [m15, h1, h4, d1, bh1, bh4, hist] = await Promise.all([okx(coin, '15m'), okx(coin, '1H'), okx(coin, '4H'), okx(coin, '1Dutc'), okx('BTC', '1H'), okx('BTC', '4H'), loadDailyHistory(coin).catch(() => null)]);
+  const macro = hist && hist.length >= 200 ? buildMacroContext(hist) : null;
+  const shown = longTf && hist ? (bar === '1D' ? hist : resample(hist, bar === '1W' ? 'W' : 'M')) : bar === '15m' || bar === '1H' || bar === '4H' ? await okx(coin, BARS[bar]) : d1;
+  const price = m15[m15.length - 1].close;
+  const radar = generateKeyLevelRadar({ symbol: `${coin}-USDT`, candlesH4: closed(h4), curPrice: price, candlesH1: closed(h1) });
+  const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
+  const v = {
+    coin, bar, price, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
+    candles: shown.map(c => [Math.floor(c.ts / 1000), c.open, c.high, c.low, c.close, c.vol]),
+    zones: buildZones(radar, price), lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
+    signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
+    blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
+  };
+  cache.set(key, { t: Date.now(), v });
+  return v;
+}
+
+const send = (res, code, body, type = 'application/json') => { res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' }); res.end(typeof body === 'string' ? body : JSON.stringify(body)); };
+
+http.createServer(async (req, res) => {
+  const u = new URL(req.url, 'http://x');
+  try {
+    if (u.pathname === '/') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+    if (u.pathname === '/api/analysis') {
+      const coin = u.searchParams.get('coin') || 'BTC', bar = u.searchParams.get('bar') || '15m';
+      if (!COINS.includes(coin) || !(bar in BARS)) return send(res, 400, { error: 'coin/bar không hợp lệ' });
+      const [a, bot] = await Promise.all([analysis(coin, bar), botState()]);
+      const sym = `${coin}-USDT`;
+      return send(res, 200, { ...a, bot: { connected: bot.connected, reason: bot.reason, positions: (bot.positions || []).filter(p => p.symbol === sym), pending: (bot.pending || []).filter(p => p.symbol === sym), history: (bot.history || []).filter(h => h.symbol === sym).slice(-5) } });
+    }
+    send(res, 404, { error: 'not found' });
+  } catch (e) { send(res, 500, { error: e.message }); }
+}).listen(process.env.PORT || 3000, () => console.log('Viewer on', process.env.PORT || 3000));

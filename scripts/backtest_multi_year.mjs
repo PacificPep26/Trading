@@ -30,7 +30,7 @@ export const PERIODS = [
   { label: '2022 (Bear mạnh - Luna/FTX sập)', start: '2022-01-01', end: '2022-12-31' },
   { label: '2023 (Tích lũy/Sideway)', start: '2023-01-01', end: '2023-12-31' },
   { label: '2024 (Bull trở lại)', start: '2024-01-01', end: '2024-12-31' },
-  { label: '2025 (tới nay)', start: '2025-01-01', end: '2026-10-24' }
+  { label: '2025 (tới nay)', start: '2025-01-01', end: '2026-10-31' }
 ];
 
 export function computeStats(trades) {

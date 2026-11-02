@@ -6,3 +6,7 @@ data/cache_1year/**
 positions.json
 .git/
 scripts/
+deploy/
+scratchpad/
+docs/
+data/cache_long/

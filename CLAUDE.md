@@ -1,7 +1,9 @@
 # PROJECT GUIDE & AGENT DISCIPLINE (CLAUDE.md)
 ## Crypto Futures Quant Bot (OKX USDT-M - Dr. Kane H4/M15 Strategy)
 
-Tài liệu này quy định các nguyên tắc thiết kế bất biến và kỷ luật kỹ thuật bắt buộc dành cho mọi AI Agent khi thao tác trên codebase này.
+Tài liệu này có hai tầng:
+- **Kỷ luật kỹ thuật bất biến** (mục 1, 2, 3 và phần chống look-ahead, SL-first, Fixed 1R ở mục 4): đảm bảo số liệu và backtest đáng tin, KHÔNG được bỏ qua.
+- **Cơ chế giao dịch** (chiến lược, bộ lọc, quản lý lệnh): KHÔNG cố định. Phải thay đổi khi có bằng chứng định lượng là tốt hơn, theo quy trình ở mục 6. Mô tả cơ chế trong tài liệu này là trạng thái hiện tại, không phải chân lý.
 
 ---
 
@@ -28,7 +30,8 @@ Tài liệu này quy định các nguyên tắc thiết kế bất biến và k�
 - **Quy trình Verify 3 bước bắt buộc trước khi bàn giao bất kỳ task nào:**
   1. `npm run check`: Chạy toàn bộ Unit Tests và Contract Tests (phải đạt 100% PASS).
   2. `node src/server.js --single-run`: **BẮT BUỘC** chạy đường live thực tế với OKX API để xác nhận scanner không bị tắc nghẽn, không bị rỗng nến và xử lý đúng vị thế.
-  3. `npm run backtest`: Chạy Walk-Forward kiểm thử để đảm bảo chiến lược không bị hồi quy (regression).
+  - Bước 2 là DRY-RUN: `--single-run` KHÔNG gửi Telegram thật và không ghi trạng thái cooldown (chỉ in ra màn hình); trạng thái chống trùng cảnh báo bền ở `data/alerts/`.
+  3. `npm run backtest` + `node scripts/backtest_1year.mjs` + `node scripts/backtest_multi_year.mjs`: Walk-Forward 1 tháng, 1 năm và đa năm (2021-26) để đảm bảo không hồi quy. Kết quả 1 tháng/1 năm đơn lẻ KHÔNG đủ để kết luận.
 
 ---
 
@@ -56,11 +59,13 @@ Tài liệu này quy định các nguyên tắc thiết kế bất biến và k�
 - **Kỷ luật Fixed 1R:**
   - Ký quỹ tính theo công thức: $\text{Size} = \frac{\text{Risk USD}}{|\text{Entry} - \text{SL}|}$.
   - Đòn bẩy tài khoản: Isolated 10X.
-  - Trailing Khóa Lợi Nhuận: Tự động kéo SL lên mức DƯƠNG +1.0R ngay khi giá chạm +1.5R, gồng tiếp 100% vị thế tới Take Profit (>= 2.0R). Dù thị trường đảo chiều vẫn bảo đảm bỏ túi +1.0R.
+  - **Quản lý lệnh (hiện tại, 31/10/2026): SL/TP thuần**, gồng 100% vị thế tới Take Profit (>= 2.0R, đã trừ đệm 0.25% trước cản). Co SL (+0.8R -> -0.3R) và khóa lãi (+1.4R -> +0.05R) đã TẮT mặc định (`ENABLE_BE_MANAGEMENT=true` để bật lại) vì backtest 2021-26 cho thấy chúng chỉ cắt lãi lệnh thắng: PF 1.17 -> 1.26, +28.5R -> +52.4R. Cơ chế trailing cũ (khóa +1.0R tại +1.5R) không còn là quy tắc.
 
 ---
 
 ### 5. CẤU TRÚC THƯ MỤC CHÍNH
+- `src/strategies/`: Các chiến lược tách module (`kane_strategy.js`, `zone_reaction.js`, `regime.js`, `quality_scorer.js`, `smc_fvg.js`, ...). Chiến lược thử nghiệm (macro range, breakout, trade flip, Wyckoff) nằm sau cờ `ENABLE_*` mặc định TẮT vì chưa đạt kiểm chứng.
+- `docs/strategies/RESEARCH_LOG.md`: nhật ký các thử nghiệm đã giữ/bác bỏ kèm số liệu. Đọc trước khi thử lại bất cứ ý tưởng nào.
 - `src/indicators.js`: Thư viện hàm toán học thuần túy (EMA, ATR, Fractals, Squeeze, FVG, `normalizeCandle`, `validateCandleSchema`).
 - `src/engine.js`: Lõi chiến lược Dr. Kane (KANE_THUAN_TREND, KANE_NGUOC_TREND, BTC Macro Shield, Position Sizing 1R).
 - `src/server.js`: Runtime Live Scanner kết nối OKX Public REST API, quản lý Paper Trading, bảo vệ vị thế và gửi Telegram.
@@ -68,3 +73,10 @@ Tài liệu này quy định các nguyên tắc thiết kế bất biến và k�
 - `scripts/check.mjs`: Bộ kiểm thử tự động (Unit Tests & Contract Tests).
 - `scripts/backtest.mjs`: Khung Walk-Forward Backtesting trên dữ liệu lịch sử.
 
+---
+
+### 6. QUY TRÌNH THAY ĐỔI CƠ CHẾ (EVIDENCE-DRIVEN)
+- **Cơ chế phải đổi khi có bằng chứng tốt hơn, và không được giữ chỉ vì "đã từng như vậy".** Mọi quy tắc giao dịch đều là giả thuyết có thể bị bác bỏ.
+- Mỗi thay đổi chiến lược/bộ lọc/quản lý lệnh phải: (1) đặt tiêu chí chấp nhận trước khi chạy (số lệnh tối thiểu, PF, số giai đoạn dương, không làm danh mục tệ đi); (2) đo bằng `backtest_1year` VÀ `backtest_multi_year` có phí 2 chiều; (3) có test đơn vị (viết trước, thấy đỏ, rồi mới code); (4) nằm sau cờ, bật mặc định chỉ khi đạt tiêu chí; (5) ghi kết quả (kể cả bác bỏ) vào `docs/strategies/RESEARCH_LOG.md`.
+- Cảnh giác khớp quá (overfit): đẹp trên 1 năm hoặc vài sóng chọn tay không đủ; cần ngoài mẫu (học giai đoạn trước, thử giai đoạn sau) và theo dõi paper trading trước khi tin.
+- Thử nghiệm đo khi còn cơ chế cũ có thể cần đo lại sau khi cơ chế khác đã đổi (ví dụ bác bỏ minRR/ngưỡng điểm được đo khi còn co SL/khóa lãi).

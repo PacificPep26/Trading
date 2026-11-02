@@ -1,88 +1,58 @@
 /**
  * ENGINE.JS
  * Lõi phân tích chiến lược định lượng Smart Money / Demand-Supply & Liquidity.
- * Hiện thực hóa 100% công thức VIP của Dr. Kane (Sonic R Fibonacci EMAs 34 & 89):
- * 1. KANE_THUAN_TREND (Đánh thuận xu hướng EMA 34/89 & Key Levels)
- * 2. KANE_NGUOC_TREND (Đánh ngược xu hướng khi giá dãn nở xa EMA 34, râu nến H4 >= 45% & RR tới EMA 34 >= 1.0)
+ * Hiện thực hóa 100% công thức VIP của Dr. Kane (Sonic R Fibonacci EMAs 34 & 89)
+ * kết hợp SMC Quét Thanh Khoản & Phục Kích Đón Đầu (Zone Reaction).
  * 
- * BẢO ĐẢM TÍNH TẤT ĐỊNH (PURE FUNCTIONS 100%) & CHỐNG LOOK-AHEAD BIAS.
+ * BẢO ĐẢM TÍNH TỰ ĐỊNH (PURE FUNCTIONS 100%) & CHỐNG LOOK-AHEAD BIAS.
  */
 
 import {
   calculateEMA,
   calculateATR,
   calculateSMA,
-  calculateTR,
-  calculateADX,
-  calculateATRCompression,
   analyzeCandle,
   isMarubozu,
   findFractalPivots,
   findFairValueGaps,
   classifyLiquidityTiers,
   detectVolumeAbsorption,
-  detectPreviousBarSweep,
   detectCandlePattern,
-  calculateVolumeProfile,
   findBreakerBlocks
 } from './indicators.js';
 
 import { BOT_CONFIG, DEFAULT_CONFIG } from './config.js';
-export { BOT_CONFIG, DEFAULT_CONFIG };
+import { detectMarketPhase, analyzeD1Macro, checkChopSleepMode, analyzeRecentMomentum, computeH4Freshness, isInTradingSession, computeStructTrend } from './strategies/regime.js';
+import { calculateSetupQualityScore } from './strategies/quality_scorer.js';
+import { generateKeyLevelRadar } from './strategies/radar.js';
+import { tryKaneLongSetup, tryKaneShortSetup } from './strategies/kane_strategy.js';
+import { tryZoneReactionSetup } from './strategies/zone_reaction.js';
+import { detectMacroRangeBox, evaluateMacroRangeFade, buildBoxAlert } from './strategies/macro_range.js';
+import { evaluateVolumeBreakout } from './strategies/breakout_strategy.js';
+import { evaluateWyckoffSpring, evaluateWyckoffBreakoutRetest } from './strategies/wyckoff_box.js';
+import { evaluateTradeFlipOpportunity, registerTakeProfitHit } from './strategies/trade_flip.js';
+import { calculatePositionSize } from './strategies/sizing.js';
+
+export {
+  BOT_CONFIG,
+  DEFAULT_CONFIG,
+  detectMarketPhase,
+  calculateSetupQualityScore,
+  generateKeyLevelRadar,
+  detectMacroRangeBox,
+  evaluateMacroRangeFade,
+  buildBoxAlert,
+  evaluateVolumeBreakout,
+  evaluateTradeFlipOpportunity,
+  registerTakeProfitHit,
+  calculatePositionSize
+};
 
 const H4_MS = 4 * 60 * 60 * 1000;
 const M15_MS = 15 * 60 * 1000;
 
 /**
- * Tính toán Position Sizing chuẩn 1R kèm Cổng Bảo Vệ Thanh Lý (Liquidation Guard)
- */
-export function calculatePositionSize(entry, stopLoss, riskUsd = 10, leverage = 10) {
-  const riskPerUnit = Math.abs(entry - stopLoss);
-  if (riskPerUnit <= 0) {
-    return { size: 0, notional: 0, margin: 0, riskPerUnit: 0, isBlocked: true, blockReason: 'INVALID_RISK_PER_UNIT' };
-  }
-
-  // LIQUIDATION GUARD (Kiểm tra khoảng cách an toàn trước mức thanh lý Isolated Margin)
-  // Mức thanh lý lý thuyết 10x là ~10.0%. Giới hạn khoảng cách SL không được vượt quá 70% mức thanh lý (7.0%).
-  const slDistanceRate = riskPerUnit / entry;
-  const maxSafeSlRate = (1 / leverage) * 0.70;
-  if (slDistanceRate >= maxSafeSlRate) {
-    return {
-      size: 0,
-      notional: 0,
-      margin: 0,
-      riskPerUnit,
-      slDistanceRate,
-      isBlocked: true,
-      blockReason: `LIQUIDATION_RISK: Khoảng cách SL (${(slDistanceRate * 100).toFixed(2)}%) quá gần mức thanh lý ${(100 / leverage).toFixed(1)}% (ngưỡng an toàn tối đa: ${(maxSafeSlRate * 100).toFixed(1)}%)`
-    };
-  }
-
-  const size = riskUsd / riskPerUnit;
-  const notional = size * entry;
-  const margin = notional / leverage;
-
-  return {
-    size,
-    notional,
-    margin,
-    riskPerUnit,
-    slDistanceRate,
-    isBlocked: false,
-    blockReason: null
-  };
-}
-
-/**
  * Bộ Chỉ Huy Đầu Tàu BTC (Locomotive Leader Engine)
- * Triết lý cốt lõi từ phản hồi thực tế:
- * "Đánh sai là do không theo đầu tàu! Thay vì phạt theo giờ đồng hồ cứng nhắc,
- * phải phạt và kiểm soát theo CẤU TRÚC ĐẦU TÀU (BTC)!"
- * 
- * - BTC là "Đầu Tàu" kéo toàn bộ các toa tàu (Altcoins SOL, LINK, NEAR, ETH).
- * - Khi Đầu Tàu BTC đang lao dốc (Dumping Waterfall): CẤM TUYỆT ĐỐI Long Altcoin!
- * - Khi Đầu Tàu BTC đang bơm dựng cột (Pumping Parabolic): CẤM TUYỆT ĐỐI Short Altcoin!
- * - Nhận diện nến rút râu đảo chiều của BTC (CHoCH / Rejection) để giải phóng án phạt cho Altcoin!
  */
 export function analyzeBtcLocomotive({ btcH4Candles = null, btcH1Candles = null }) {
   if (!btcH1Candles || btcH1Candles.length < 15) {
@@ -110,12 +80,11 @@ export function analyzeBtcLocomotive({ btcH4Candles = null, btcH1Candles = null 
     btcH4Phase = detectMarketPhase(btcH4Candles, ema34Arr, ema89Arr);
   }
 
-  // Nhận diện nến H1 của Đầu Tàu có xác nhận đảo chiều cấu trúc (Structural Reversal) hay không
   const h1Anatomy = analyzeCandle(lastH1);
   const hasBullishReversal = h1Anatomy.lowerWickRatio >= 0.35 && lastH1.close > lastH1.open;
   const hasBearishRejection = h1Anatomy.upperWickRatio >= 0.35 && lastH1.close < lastH1.open;
 
-  // 1. Đầu Tàu BTC đang Lao Dốc (Dumping Waterfall) -> Cấm Long Altcoins
+  // 1. Đầu Tàu BTC Đang Lao Dốc -> Cấm Long Altcoins
   if (isBearishMarubozu || (btcH4Phase === 'STRONG_DOWNTREND' && !hasBullishReversal)) {
     return {
       canLongAlts: false,
@@ -127,7 +96,7 @@ export function analyzeBtcLocomotive({ btcH4Candles = null, btcH1Candles = null 
     };
   }
 
-  // 2. Đầu Tàu BTC đang Bơm Dốc (Pumping Parabolic) -> Cấm Short Altcoins
+  // 2. Đầu Tàu BTC Đang Bơm Dốc -> Cấm Short Altcoins
   if (isBullishMarubozu || (btcH4Phase === 'STRONG_UPTREND' && !hasBearishRejection)) {
     return {
       canLongAlts: true,
@@ -150,55 +119,49 @@ export function analyzeBtcLocomotive({ btcH4Candles = null, btcH1Candles = null 
 }
 
 /**
- * Kiểm tra Khiên bảo vệ BTC Macro 1H (Giữ tương thích ngược)
+ * Kiểm tra Khiên bảo vệ BTC Macro 1H
  */
 export function checkBtcMacroShield(btcH1Candles) {
-  const loco = analyzeBtcLocomotive({ btcH1Candles });
-  return {
-    canLong: loco.canLongAlts,
-    canShort: loco.canShortAlts,
-    reason: loco.reason
-  };
+  if (!btcH1Candles || btcH1Candles.length < 15) {
+    return { canLong: true, canShort: true, reason: null };
+  }
+  const atrs = calculateATR(btcH1Candles, 14);
+  const lastH1Idx = btcH1Candles.length - 1;
+  const lastH1 = btcH1Candles[lastH1Idx];
+  const lastAtr = atrs[lastH1Idx] || (lastH1.close * 0.005);
+  const { isBullishMarubozu, isBearishMarubozu } = isMarubozu(lastH1, lastAtr, 0.8, 0.65);
+
+  if (isBearishMarubozu) {
+    return {
+      canLong: false,
+      canShort: true,
+      reason: 'BTC_MACRO_BEARISH_DUMP: BTC 1H vừa đóng nến Marubozu xả đỏ lực lớn, chặn mở Long Altcoin'
+    };
+  }
+  if (isBullishMarubozu) {
+    return {
+      canLong: true,
+      canShort: false,
+      reason: 'BTC_MACRO_BULLISH_PUMP: BTC 1H vừa đóng nến Marubozu xanh bơm dốc đứng, chặn mở Short Altcoin'
+    };
+  }
+  return { canLong: true, canShort: true, reason: null };
 }
 
 /**
- * Nhận diện Giai đoạn Thị trường (Market Regime / Phase Classifier)
- * Phục vụ bài học cốt lõi: Phải xem nến đánh theo từng giai đoạn, không dùng rập khuôn:
- * - STRONG_UPTREND: EMA34 > EMA89 dốc mạnh (Spread >= 0.8% và đang mở rộng), nến bám trên EMA34 -> CẤM SHORT CHẶN XE LỬA
- * - STRONG_DOWNTREND: EMA34 < EMA89 dốc mạnh (Spread <= -0.8% và đang mở rộng), nến bị đè dưới EMA34 -> CẤM LONG BẮT DAO RƠI
- * - RANGING: Đi ngang có cấu trúc biên độ rõ ràng -> Thích hợp đón đầu tại 2 đầu biên Tier 2 Key Levels
+ * Master Evaluator - Đánh giá Thị trường theo chuẩn công thức VIP Dr. Kane H4/M15 & SMC
  */
-export function detectMarketPhase(candlesH4, ema34Arr, ema89Arr) {
-  if (!candlesH4 || candlesH4.length < 10) return 'RANGING';
-  const lastIdx = candlesH4.length - 1;
-  const e34 = ema34Arr[lastIdx];
-  const e89 = ema89Arr[lastIdx];
-  const prevE34 = ema34Arr[Math.max(0, lastIdx - 3)] || e34;
-  const prevE89 = ema89Arr[Math.max(0, lastIdx - 3)] || e89;
-
-  const curSpreadPct = (e34 - e89) / e89 * 100;
-  const prevSpreadPct = (prevE34 - prevE89) / prevE89 * 100;
-  const curPrice = candlesH4[lastIdx].close;
-
-  // 1. Xu hướng Tăng Dốc Mạnh (Strong Uptrend)
-  if (curSpreadPct >= 0.8 && curSpreadPct >= (prevSpreadPct - 0.05) && curPrice >= e34 * 0.998) {
-    return 'STRONG_UPTREND';
-  }
-
-  // 2. Xu hướng Giảm Dốc Đứng (Strong Downtrend / Waterfall)
-  if (curSpreadPct <= -0.8 && curSpreadPct <= (prevSpreadPct + 0.05) && curPrice <= e34 * 1.002) {
-    return 'STRONG_DOWNTREND';
-  }
-
-  return 'RANGING';
-}
-
-/**
- * Master Evaluator - Đánh giá Thị trường theo chuẩn công thức VIP Dr. Kane H4/M15
- * @param {object} params
- * @returns {object|null}
- */
-export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candlesD1 = null, btcH1Candles = null, btcH4Candles = null, config = DEFAULT_CONFIG }) {
+export function evaluateMarket({
+  symbol,
+  candlesH4,
+  candlesH1,
+  candlesM15,
+  candlesD1 = null,
+  candlesW1 = null,
+  btcH1Candles = null,
+  btcH4Candles = null,
+  config = DEFAULT_CONFIG
+}) {
   if (!candlesH4 || candlesH4.length < 90 || !candlesH1 || candlesH1.length < 15 || !candlesM15 || candlesM15.length < 5) {
     return null;
   }
@@ -207,89 +170,38 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   const prevM15 = candlesM15[candlesM15.length - 2];
   const curPrice = currentM15.close;
 
-  // LỌC GIÁ TỐI THIỂU: Bỏ qua tuyệt đối các coin 0.xx (giá < minCoinPrice, mặc định 1.0 USDT)
+  // Lọc giá tối thiểu (< 1.0 USDT)
   if (config.minCoinPrice && curPrice < config.minCoinPrice) {
     return null;
   }
 
-  const lastH4 = candlesH4[candlesH4.length - 1];
-  const lastH4CloseTime = lastH4.ts + H4_MS;
-  const curM15CloseTime = currentM15.ts + M15_MS;
-
-  // QUY TẮC ĐỘ TƯƠI MỚI (FRESHNESS):
-  // barsSinceH4Close: 0 đến 4 là ngay sau khi H4 đóng nến (chạy chiến lược H4 truyền thống)
-  // barsSinceH4Close > 4 là giai đoạn trong phiên nến H4 đang chạy (chạy chiến lược Đón Đầu Zone Reaction)
-  const barsSinceH4Close = Math.round((curM15CloseTime - lastH4CloseTime) / M15_MS);
-  if (barsSinceH4Close < 0) {
+  if (!isInTradingSession(currentM15.ts, config.sessionStartHourUtc ?? 0, config.sessionEndHourUtc ?? 24)) {
     return null;
   }
-  const freshH4Bars = config.freshH4Bars !== undefined ? config.freshH4Bars : 4;
-  const isFreshH4 = barsSinceH4Close <= freshH4Bars;
 
-  // 1. Chỉ báo Kane VIP: EMA 34 & EMA 89 trên khung H4
+  const lastH4 = candlesH4[candlesH4.length - 1];
+  const isFreshH4 = computeH4Freshness(currentM15.ts + M15_MS, lastH4.ts + H4_MS, config.freshH4Bars ?? 8).isFresh;
+
+  // 1. Chỉ báo Kane VIP: EMA 34 & EMA 89 trên H4
   const closesH4 = candlesH4.map(c => c.close);
   const ema34Arr = calculateEMA(closesH4, 34);
   const ema89Arr = calculateEMA(closesH4, 89);
   const ema34 = ema34Arr[ema34Arr.length - 1];
   const ema89 = ema89Arr[ema89Arr.length - 1];
-
   if (!ema34 || !ema89) return null;
 
-  // Nhận diện Giai đoạn Thị trường (Market Regime): STRONG_UPTREND, STRONG_DOWNTREND, RANGING
   const marketPhase = detectMarketPhase(candlesH4, ema34Arr, ema89Arr);
+  const { d1Phase, natrD1 } = analyzeD1Macro(candlesD1);
 
-  // GIAI ĐOẠN THỊ TRƯỜNG KHUNG LỚN (D1): phát hiện qua phân tích thực tế — bộ lọc
-  // marketPhase theo H4 ở trên không thấy được xu hướng giảm/tăng dốc đứng đang
-  // diễn ra ở khung Ngày (ví dụ H4 báo RANGING cục bộ trong khi D1 đang downtrend
-  // mạnh xuyên suốt nhiều ngày), khiến SMC_SWEEP_REVERSAL_LONG cứ bắt đáy giữa
-  // một downtrend D1 thật và thua liên tục (-14.90R/27 lệnh riêng tổ hợp này khi
-  // backtest 1 năm). Tùy chọn (candlesD1 có thể null nếu caller chưa truyền vào,
-  // giữ tương thích ngược hoàn toàn).
-  let d1Phase = 'RANGING';
-  let natrD1 = 0.05;
-  if (candlesD1 && candlesD1.length >= 90) {
-    const closesD1 = candlesD1.map(c => c.close);
-    const ema34D1Arr = calculateEMA(closesD1, 34);
-    const ema89D1Arr = calculateEMA(closesD1, 89);
-    d1Phase = detectMarketPhase(candlesD1, ema34D1Arr, ema89D1Arr);
-
-    if (candlesD1.length >= 14) {
-      const atrD1Arr = calculateATR(candlesD1, 14);
-      const lastAtr = atrD1Arr[atrD1Arr.length - 1];
-      const lastClose = closesD1[closesD1.length - 1];
-      if (lastAtr && lastClose > 0) {
-        natrD1 = lastAtr / lastClose;
-      }
-    }
-  }
-
-  // CHẾ ĐỘ BIẾN ĐỘNG NÉN D1 (DYNAMIC NATR REGIME - ĐỀ XUẤT 4.2):
-  // Trong mùa đông thanh khoản 2023, NATR D1 giảm sâu (< 3.0%), breakout H4 hầu hết là bẫy.
   const minD1NATR = config.minD1NATR !== undefined ? config.minD1NATR : 0.030;
   const isLowVolD1 = Boolean(config.enableDynamicNatr && natrD1 < minD1NATR);
 
-  // CHỈ BÁO BIẾN ĐỘNG NHANH (RECENT MOMENTUM): detectMarketPhase dùng EMA34/89
-  // nên phản ứng CHẬM với các cú trượt giá nhanh (ví dụ giảm 6% chỉ trong ~4 ngày)
-  // -> EMA chưa kịp doãng ra đủ để báo STRONG_DOWNTREND, khiến bộ lọc "cấm bắt dao
-  // rơi" không kích hoạt đúng lúc. Bổ sung % thay đổi giá trong N nến H4 gần nhất
-  // để bắt được đúng các cú trượt nhanh mà EMA còn đang "RANGING".
+  // Đà biến động gần
   const momentumLookbackBars = config.momentumLookbackBars || 6;
   const momentumThresholdPct = config.momentumThresholdPct || 4;
-  let recentMovePct = 0;
-  if (candlesH4.length > momentumLookbackBars) {
-    const refClose = candlesH4[candlesH4.length - 1 - momentumLookbackBars].close;
-    recentMovePct = (lastH4.close - refClose) / refClose * 100;
-  }
-  const isActiveDownMove = recentMovePct <= -momentumThresholdPct;
-  const isActiveUpMove = recentMovePct >= momentumThresholdPct;
+  const { isActiveDownMove, isActiveUpMove } = analyzeRecentMomentum(candlesH4, momentumLookbackBars, momentumThresholdPct);
 
-  // XÁC NHẬN MẪU HÌNH NẾN + KHỐI LƯỢNG (Price Action Confirmation) tại nến
-  // M15 kích hoạt entry: mẫu hình nến phản ánh lực mua/bán thật tại thời
-  // điểm đó, nhưng CHỈ đáng tin khi có khối lượng thật đứng sau (không phải
-  // hình dạng suông do nhiễu giá) - đúng nguyên lý "tôn trọng chỉ báo, đi
-  // ngược chỉ báo đông người tin thì rủi ro cao". Dùng làm điều kiện bổ sung
-  // (AND) cho M15 trigger của Kane Long/Short khi config.requirePricePattern
-  // bật (mặc định TẮT, giữ hành vi cũ, phải backtest trước khi bật mặc định).
+  // Price Action Pattern M15
   let hasBullishPattern = true;
   let hasBearishPattern = true;
   if (config.requirePricePattern && candlesM15 && candlesM15.length >= 20) {
@@ -303,64 +215,19 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
     hasBearishPattern = bearishMatch && hasM15VolumeConfirm;
   }
 
-  // BỘ LỌC CHẾ ĐỘ THỊ TRƯỜNG V3.0 (H1 ADX & DYNAMIC ATR COMPRESSION)
-  // Triệt tiêu tử huyệt Sideway / Summer Chop làm thua lỗ các tháng mùa hè
-  // CHỈ chặn Kane Long/Short (trend-following) bằng cờ chopBlockedSignal, KHÔNG
-  // return sớm khỏi evaluateMarket - để tryZoneReactionSetup() (mean-reversion,
-  // đón đầu tại cản/hỗ trợ Tier-2, đúng bản chất lúc thị trường đi ngang) vẫn
-  // được quyền chạy. Đã backtest xác nhận an toàn (0 thay đổi kết quả, Zone
-  // Reaction chưa từng khớp đủ điều kiện đúng lúc chop trong dữ liệu đã test),
-  // giữ lại vì đúng kiến trúc thiết kế ban đầu (review kỹ thuật phát hiện).
-  let chopBlockedSignal = null;
-  if (candlesH1 && candlesH1.length >= 30 && config.regime?.enableChopSleepMode !== false) {
-    const minADX = config.minH1ADX || (config.regime && config.regime.minH1ADX) || 20;
-    const adxSeries = calculateADX(candlesH1, 14);
-    const curADX = adxSeries && adxSeries.length > 0 ? adxSeries[adxSeries.length - 1].adx : null;
-    if (curADX !== null && curADX <= minADX) {
-      chopBlockedSignal = {
-        isBlocked: true,
-        blockReason: `CHOP_SLEEP_MODE: H1 ADX (${curADX.toFixed(1)}) <= ${minADX} (Thị trường đi ngang -> Chỉ Zone Reaction còn hoạt động)`,
-        symbol
-      };
-    }
+  // Chop Sleep Mode
+  const chopBlockedSignal = checkChopSleepMode(candlesH1, config, symbol);
 
-    const minAtrRatio = config.minAtrCompressionRatio || (config.regime && config.regime.minAtrCompressionRatio) || 0.70;
-    const atrRatio = calculateATRCompression(candlesH1, 14, 50);
-    if (!chopBlockedSignal && atrRatio !== null && atrRatio < minAtrRatio) {
-      chopBlockedSignal = {
-        isBlocked: true,
-        blockReason: `VOLATILITY_COMPRESSED: Tỷ số nén ATR (${atrRatio.toFixed(2)}) < ${minAtrRatio} (Biến động co thắt -> Chỉ Zone Reaction còn hoạt động)`,
-        symbol
-      };
-    }
-  }
-
-  // Xu hướng theo Kane EMA 34 & 89
   const isBullTrend = ema34 >= ema89;
   const isBearTrend = ema34 < ema89;
 
-  // Lọc Fractal Key Levels H4 (Đỉnh Kháng cự & Đáy Hỗ trợ)
+  // Lọc Fractal Key Levels H4
   const pivots = findFractalPivots(candlesH4, 2, 2);
-  const resistances = pivots
-    .filter(p => p.type === 'HIGH' && p.price > curPrice)
-    .map(p => p.price);
+  const resistances = pivots.filter(p => p.type === 'HIGH' && p.price > curPrice).map(p => p.price);
+  const supports = pivots.filter(p => p.type === 'LOW' && p.price < curPrice).map(p => p.price);
 
-  const supports = pivots
-    .filter(p => p.type === 'LOW' && p.price < curPrice)
-    .map(p => p.price);
+  // prevH4 chỉ là nến liền kề con, không đưa vào danh sách cản chính để tránh nghẽn mục tiêu Take Profit
 
-  // Bổ sung các Cản Đỉnh/Đáy gần nhất (nến liền kề prevH4 & Tier 2 Major Levels) để không bao giờ bị mù cản vừa tạo
-  const prevH4 = candlesH4[candlesH4.length - 2];
-  if (prevH4) {
-    if (prevH4.high > curPrice && !resistances.some(r => Math.abs(r - prevH4.high) / r < 0.003)) {
-      resistances.push(prevH4.high);
-    }
-    if (prevH4.low < curPrice && !supports.some(s => Math.abs(s - prevH4.low) / s < 0.003)) {
-      supports.push(prevH4.low);
-    }
-  }
-
-  // Phân cấp Thanh khoản 2 Tầng (Smart Money Inducement vs Major Key Level)
   const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
 
   if (liquidityTiers.tier2MajorHigh && liquidityTiers.tier2MajorHigh > curPrice && !resistances.some(r => Math.abs(r - liquidityTiers.tier2MajorHigh) / r < 0.003)) {
@@ -370,20 +237,48 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
     supports.push(liquidityTiers.tier2MajorLow);
   }
 
-  // Bổ sung các vùng Fair Value Gap (FVG) chưa được lấp (Unmitigated) làm cản SMC đón đầu
+  // FVG H1
   if (candlesH1 && candlesH1.length >= 5) {
     const fvgsH1 = findFairValueGaps(candlesH1);
-    const unmitigatedBullishFvg = fvgsH1.filter(f => f.type === 'BULLISH' && !f.isMitigated && f.top < curPrice);
-    const unmitigatedBearishFvg = fvgsH1.filter(f => f.type === 'BEARISH' && !f.isMitigated && f.bottom > curPrice);
+    fvgsH1.filter(f => f.type === 'BULLISH' && !f.isMitigated && f.top < curPrice)
+      .forEach(f => { if (!supports.some(s => Math.abs(s - f.top) / s < 0.003)) supports.push(f.top); });
+    fvgsH1.filter(f => f.type === 'BEARISH' && !f.isMitigated && f.bottom > curPrice)
+      .forEach(f => { if (!resistances.some(r => Math.abs(r - f.bottom) / r < 0.003)) resistances.push(f.bottom); });
+  }
 
-    for (const f of unmitigatedBullishFvg) {
-      if (!supports.some(s => Math.abs(s - f.top) / s < 0.003)) {
-        supports.push(f.top);
+  // Flip Levels
+  if (config.useFlipLevels) {
+    const pL = config.breakerPivotL || 2;
+    const pR = config.breakerPivotR || 2;
+    const flipZones = findBreakerBlocks(candlesH4, pL, pR).filter(b => !b.isMitigated);
+    for (const b of flipZones) {
+      if (b.type === 'BEARISH' && b.top > curPrice && !resistances.some(r => Math.abs(r - b.top) / r < 0.003)) {
+        resistances.push(b.top);
+      }
+      if (b.type === 'BULLISH' && b.bottom < curPrice && !supports.some(s => Math.abs(s - b.bottom) / s < 0.003)) {
+        supports.push(b.bottom);
       }
     }
-    for (const f of unmitigatedBearishFvg) {
-      if (!resistances.some(r => Math.abs(r - f.bottom) / r < 0.003)) {
-        resistances.push(f.bottom);
+  }
+
+  // D1 Macro Key Levels
+  if (config.useD1MacroLevels && candlesD1 && candlesD1.length >= 10) {
+    const d1Pivots = findFractalPivots(candlesD1, 2, 2);
+    const lowestH4Sup = supports.length > 0 ? Math.min(...supports) : Infinity;
+    const highestH4Res = resistances.length > 0 ? Math.max(...resistances) : -Infinity;
+
+    for (const p of d1Pivots) {
+      if (p.type === 'HIGH' && p.price > curPrice) {
+        const isEligible = config.d1MacroMode === 'OUT_OF_BOUNDS_ONLY' ? p.price > highestH4Res : true;
+        if (isEligible && !resistances.some(r => Math.abs(r - p.price) / r < 0.003)) {
+          resistances.push(p.price);
+        }
+      }
+      if (p.type === 'LOW' && p.price < curPrice) {
+        const isEligible = config.d1MacroMode === 'OUT_OF_BOUNDS_ONLY' ? p.price < lowestH4Sup : true;
+        if (isEligible && !supports.some(s => Math.abs(s - p.price) / s < 0.003)) {
+          supports.push(p.price);
+        }
       }
     }
   }
@@ -395,11 +290,10 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
   const atrH1 = atrsH1[atrsH1.length - 1] || (curPrice * 0.005);
   const h4Anatomy = analyzeCandle(lastH4);
 
-  // Phân tích Khối Lượng Hấp Thụ VSA (Volume Absorption)
   const volAbsorptionH4 = detectVolumeAbsorption(candlesH4, candlesH4.length - 1);
   const volAbsorptionM15 = detectVolumeAbsorption(candlesM15, candlesM15.length - 1);
 
-  // Bộ Chỉ Huy Đầu Tàu BTC (Locomotive Leader Check)
+  // Đầu Tàu BTC
   const isAltcoin = !symbol.includes('BTC');
   const btcLoco = analyzeBtcLocomotive({ btcH4Candles, btcH1Candles });
   const btcShield = {
@@ -407,673 +301,163 @@ export function evaluateMarket({ symbol, candlesH4, candlesH1, candlesM15, candl
     canShort: isAltcoin ? btcLoco.canShortAlts : true,
     reason: btcLoco.reason
   };
-  let blockedSignal = null;
 
-  // =========================================================================
-  // SETUP 1: KANE LONG (CHỈ CHẠY KHI H4 VỪA ĐÓNG NẾN FRESH <= 4 BARS)
-  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
-  // =========================================================================
-  function tryKaneLongSetup() {
-  if (chopBlockedSignal) return null;
-  if (!isFreshH4) return null;
-  for (const sup of supports) {
-    if (lastH4.low < sup) {
-      // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
-      // Nếu đang trong bão giảm dốc đứng một chiều (STRONG_DOWNTREND), CẤM Long bắt đáy dao rơi!
-      // Bổ sung isActiveDownMove: bắt cả trường hợp đang trượt nhanh mà EMA34/89 (chậm)
-      // chưa kịp báo STRONG_DOWNTREND (ví dụ rớt 6% chỉ trong ~4 ngày).
-      // Bổ sung d1Phase: H4 có thể báo RANGING cục bộ trong khi khung Ngày (D1)
-      // đang downtrend mạnh xuyên suốt -> vẫn phải cấm bắt đáy theo bức tranh lớn.
-      if (marketPhase === 'STRONG_DOWNTREND' || isActiveDownMove || d1Phase === 'STRONG_DOWNTREND') {
-        continue;
-      }
+  const setupParams = {
+    symbol,
+    candlesH4,
+    candlesH1,
+    candlesM15,
+    currentM15,
+    prevM15,
+    lastH4,
+    supports,
+    resistances,
+    liquidityTiers,
+    ema34,
+    ema89,
+    atrH1,
+    h4Anatomy,
+    marketPhase,
+    d1Phase,
+    isBullTrend,
+    isBearTrend,
+    isLowVolD1,
+    isActiveDownMove,
+    isActiveUpMove,
+    hasBullishPattern,
+    hasBearishPattern,
+    btcShield,
+    config: {
+      ...config,
+      isBullTrend,
+      isBearTrend,
+      marketPhase
+    },
+    volAbsorptionH4,
+    volAbsorptionM15,
+    chopBlockedSignal,
+    isFreshH4
+  };
 
-      // SMC Inducement Filter: Bỏ qua bắt đáy nếu đang nén tại cản đáy con (Equal Lows) chưa được quét
-      if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_LOW') {
-        const isNearInducement = liquidityTiers.tier1Lows.some(tl => Math.abs(sup - tl.avgPrice) / sup <= 0.01);
-        if (isNearInducement && h4Anatomy.lowerWickRatio < 0.45) {
-          continue; // Tránh bẫy thanh khoản đáy con
-        }
-      }
-
-      const isStrongSweep = h4Anatomy.lowerWickRatio >= 0.45;
-      const isNormalSweep = h4Anatomy.lowerWickRatio >= (config.wickRatioThreshold || 0.35) && lastH4.close >= sup * 0.998;
-      const prevH4 = candlesH4[candlesH4.length - 2];
-      const isEngulfing = prevH4 && lastH4.close > lastH4.open && lastH4.close >= prevH4.open;
-      const isSmcSweepLong = liquidityTiers.sweepState === 'BULLISH_SWEEP_CONFIRMED';
-
-      let canLong = false;
-      let isNgocTrend = false;
-
-      if (isBullTrend) {
-        if (isLowVolD1) {
-          canLong = false;
-        } else {
-          canLong = isNormalSweep || isEngulfing || isSmcSweepLong;
-        }
-      } else {
-        const distBelowEma34 = (ema34 - curPrice) / curPrice;
-        const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || isStrongSweep || isSmcSweepLong;
-        if ((distBelowEma34 >= 0.030 && (isStrongSweep || isEngulfing)) || isSmcSweepLong || isAtMajorSupport) {
-          canLong = true;
-          isNgocTrend = !isSmcSweepLong;
-        }
-      }
-
-      if (canLong) {
-        // Điều kiện xác nhận M15: Nến M15 đóng xanh và phá đỉnh nến trước
-        const isM15Green = currentM15.close > currentM15.open;
-        const isM15Breakout = currentM15.close > prevM15.high;
-
-        if (isM15Green && isM15Breakout && hasBullishPattern) {
-          const entry = currentM15.close;
-
-          // QUY TẮC CHỐNG LONG ĐUỔI KHI TĂNG KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
-          // Để Long, giá phải nằm ở nửa dưới Discount Zone (entry <= h4Mid * 1.002)
-          // HOẶC các nến M15 gần đây đã có nhịp thoái lui xuống test vùng 50% nến H4.
-          const h4Mid = (lastH4.high + lastH4.low) / 2;
-          const recentM15Slice = candlesM15.slice(-8);
-          const recentLowM15 = Math.min(...recentM15Slice.map(c => c.low));
-          const hasValidLongPullback = entry <= (h4Mid * 1.002) || recentLowM15 <= (h4Mid * 1.002);
-          if (!hasValidLongPullback) {
-            continue; // Bỏ qua pha tăng kiệt sức lết đỉnh (Chống Long đuổi ở đỉnh)!
-          }
-
-          const stopLoss = lastH4.low - (config.atrBufferMultiplier * atrH1);
-
-          // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đáy cản kỹ thuật
-          const slDistanceRate = Math.abs(entry - stopLoss) / entry;
-          if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
-            continue;
-          }
-
-          // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
-          if (isNgocTrend) {
-            const rrToEma34 = (ema34 - entry) / (entry - stopLoss);
-            if (rrToEma34 < 1.0) continue;
-          }
-
-          // Tìm Kháng cự đối diện đạt R:R >= minRR
-          const targetRes = resistances.find(r => (r - entry) / (entry - stopLoss) >= config.minRR);
-
-          if (targetRes) {
-            const rr = (targetRes - entry) / (entry - stopLoss);
-            if (!btcShield.canLong) {
-              blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'LONG' };
-              continue;
-            }
-
-            if (isNgocTrend) {
-              // Method Playbook: Cấm Kane Ngược Trend (PF 0.00, bắt dao rơi không cản).
-              // Mean-reversion chỉ được phép khi có cấu trúc SMC Sweep Reversal hoặc Zone Reaction tại Cản Tier 2.
-              continue;
-            }
-
-            const stratName = isSmcSweepLong ? 'SMC_SWEEP_REVERSAL_LONG' : 'KANE_THUAN_TREND_LONG';
-            const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-            // CHỈ trích dẫn VSA khi đúng chiều lệnh (BULLISH cho Long) - trước đây chỉ
-            // check isAbsorption bỏ qua type, có thể in nhầm VSA BEARISH (râu trên,
-            // nghĩa là lực mua bị chặn lại - tín hiệu đảo chiều XUỐNG) vào lý do 1
-            // lệnh LONG, gây mâu thuẫn khó hiểu trong tin nhắn Telegram.
-            const vsaNote = (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BULLISH') ? ` | VSA: ${volAbsorptionH4.details}` : ((volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') ? ` | VSA: ${volAbsorptionM15.details}` : '');
-            return {
-              strategy: stratName,
-              direction: 'LONG',
-              symbol,
-              entry,
-              stopLoss,
-              takeProfit: targetRes,
-              riskReward: parseFloat(rr.toFixed(2)),
-              triggerTime: currentM15.ts,
-              sizing,
-              reason: `${stratName}: H4 swept Support ${sup} (Râu ${(h4Anatomy.lowerWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bullish push${vsaNote}`
-            };
-          }
-        }
-      }
-    }
-  }
-  return null;
-  }
-
-  // =========================================================================
-  // SETUP 2: KANE SHORT (Kèo ETH & LINK H4 của Kane)
-  // - Thuận trend Bear (EMA34 < EMA89): Test Kháng cự & EMA34/89
-  // - Ngược trend Bull (EMA34 >= EMA89): CÔNG THỨC KANE: CHỈ KHI GIÁ CÁCH XA EMA34 (>= 3.0%),
-  //   Râu trên H4 >= 45% & Khoảng cách về EMA 34 phải cho RR >= 1.0!
-  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
-  // =========================================================================
-  function tryKaneShortSetup() {
-  if (chopBlockedSignal) return null;
-  if (!isFreshH4) return null;
-  for (const res of resistances) {
-    const testedRes = config.strictShortSweep ? lastH4.high > res : (Math.abs(lastH4.high - res) / res <= 0.008 || lastH4.high > res);
-    if (testedRes) {
-      // ĐÁNH THEO GIAI ĐOẠN (REGIME FILTER):
-      // Nếu đang trong bão tăng dốc mạnh một chiều (STRONG_UPTREND), CẤM Short cản tàu!
-      // Bổ sung isActiveUpMove: bắt cả trường hợp đang bơm nhanh mà EMA34/89 (chậm)
-      // chưa kịp báo STRONG_UPTREND.
-      // Bổ sung d1Phase: H4 có thể báo RANGING cục bộ trong khi khung Ngày (D1)
-      // đang uptrend mạnh xuyên suốt -> vẫn phải cấm cản tàu theo bức tranh lớn.
-      if (marketPhase === 'STRONG_UPTREND' || isActiveUpMove || d1Phase === 'STRONG_UPTREND') {
-        continue;
-      }
-
-      // SMC Inducement Filter: Bỏ qua bắt đỉnh nếu đang nén tại cản đỉnh con (Equal Highs) chưa được quét
-      // (Bảo vệ tài khoản tuyệt đối trước cú bơm quét SL lúc 19h như ngày 21/10)
-      if (liquidityTiers.isInducementTrapRisk && liquidityTiers.sweepState === 'INDUCEMENT_TRAP_HIGH') {
-        const isNearInducement = liquidityTiers.tier1Highs.some(th => Math.abs(res - th.avgPrice) / res <= 0.01);
-        if (isNearInducement && h4Anatomy.upperWickRatio < 0.45) {
-          continue; // Bỏ qua bẫy cản con!
-        }
-      }
-
-      const isStrongRejection = h4Anatomy.upperWickRatio >= 0.45;
-      const isNormalRejection = h4Anatomy.upperWickRatio >= (config.wickRatioThreshold || 0.35);
-      const isSmcSweepShort = liquidityTiers.sweepState === 'BEARISH_SWEEP_CONFIRMED';
-
-      let canShort = false;
-      let isNgocTrend = false;
-
-      if (isBearTrend) {
-        if (isLowVolD1) {
-          canShort = false;
-        } else {
-          canShort = isNormalRejection || isSmcSweepShort;
-        }
-      } else {
-        const distAboveEma34 = (curPrice - ema34) / ema34;
-        if ((distAboveEma34 >= 0.030 && isStrongRejection) || isSmcSweepShort) {
-          canShort = true;
-          isNgocTrend = !isSmcSweepShort;
-        }
-      }
-
-      if (canShort) {
-        // Điều kiện xác nhận M15: Nến M15 đóng đỏ gãy đáy nến trước
-        const isM15Red = currentM15.close < currentM15.open;
-        const isM15Breakdown = currentM15.close < prevM15.low;
-
-        if (isM15Red && isM15Breakdown && hasBearishPattern) {
-          const entry = currentM15.close;
-
-          // QUY TẮC CHỐNG SHORT ĐUỔI KHI XẢ KIỆT SỨC (PULLBACK / RETRACEMENT RULE):
-          // Để Short, giá phải nằm ở nửa trên Premium Zone (entry >= h4Mid * 0.998)
-          // HOẶC các nến M15 gần đây đã có nhịp hồi lên test tối thiểu vùng 50% nến H4.
-          const h4Mid = (lastH4.high + lastH4.low) / 2;
-          const recentM15Slice = candlesM15.slice(-8);
-          const recentHighM15 = Math.max(...recentM15Slice.map(c => c.high));
-          const hasValidShortPullback = entry >= (h4Mid * 0.998) || recentHighM15 >= (h4Mid * 0.998);
-          if (!hasValidShortPullback) {
-            continue; // Bỏ qua pha xả kiệt sức lết đáy (Chống Short đuổi ở đáy)!
-          }
-
-          // QUY TẮC CHỐNG BÁN ĐUỔI TẠI ĐÁY HỖ TRỢ LỚN (ANTI-SHORT AT MAJOR TIER 2 SUPPORT):
-          // Nếu giá hiện tại đang áp sát Hỗ trợ lớn cấu trúc Tier 2 trong vòng 0.8%, TUYỆT ĐỐI KHÔNG SHORT!
-          const majorLow = liquidityTiers.tier2MajorLow;
-          if (majorLow && curPrice <= majorLow * 1.008) {
-            continue; // Không bán tháo trên đầu hỗ trợ cứng!
-          }
-
-          const stopLoss = lastH4.high + (config.atrBufferMultiplier * atrH1);
-
-          // SMC No-Chasing Rule: Không vào nếu giá đã chạy quá xa đỉnh cản kỹ thuật
-          const slDistanceRate = Math.abs(entry - stopLoss) / entry;
-          if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
-            continue;
-          }
-
-          // Kane Rule: Đánh ngược trend thì khoảng cách tới EMA 34 phải đạt tối thiểu 1R
-          if (isNgocTrend) {
-            const rrToEma34 = (entry - ema34) / (stopLoss - entry);
-            if (rrToEma34 < 1.0) continue;
-          }
-
-          // Tìm Hỗ trợ đối diện đạt R:R >= minRR
-          const targetSup = supports.find(s => (entry - s) / (stopLoss - entry) >= config.minRR);
-
-          if (targetSup) {
-            const rr = (entry - targetSup) / (stopLoss - entry);
-            if (!btcShield.canShort) {
-              blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'SHORT' };
-              continue;
-            }
-
-            if (isNgocTrend) {
-              // Method Playbook: Cấm Kane Ngược Trend (PF 0.00, cản tàu không cản lớn).
-              continue;
-            }
-
-            const stratName = isSmcSweepShort ? 'SMC_SWEEP_REVERSAL_SHORT' : 'KANE_THUAN_TREND_SHORT';
-            const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-            // CHỈ trích dẫn VSA khi đúng chiều lệnh (BEARISH cho Short) - xem comment
-            // tương tự ở nhánh Kane Long phía trên.
-            const vsaNote = (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BEARISH') ? ` | VSA: ${volAbsorptionH4.details}` : ((volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') ? ` | VSA: ${volAbsorptionM15.details}` : '');
-            return {
-              strategy: stratName,
-              direction: 'SHORT',
-              symbol,
-              entry,
-              stopLoss,
-              takeProfit: targetSup,
-              riskReward: parseFloat(rr.toFixed(2)),
-              triggerTime: currentM15.ts,
-              sizing,
-              reason: `${stratName}: H4 tested Res ${res} (Râu trên ${(h4Anatomy.upperWickRatio * 100).toFixed(1)}%), EMA34=${ema34.toFixed(2)}, M15 Bearish drop${vsaNote}`
-            };
-          }
-        }
-      }
-    }
-  }
-  return null;
-  }
-
-  // =========================================================================
-  // SETUP 3: SMC ZONE REACTION (VÀO LỆNH ĐÓN ĐẦU TẠI CẢN & HỖ TRỢ LỚN THEO M15)
-  // Thực hiện đúng triết lý: "Lập kịch bản trước các vùng cản/hỗ trợ lớn (Tier 2 / Đỉnh đáy nến H4 trước),
-  // khi giá tới đó xem M15 phản ứng sao rồi vào lệnh đón đầu tại đỉnh/đáy,
-  // không ngồi chờ nến 4H đóng để rồi dí theo đuổi giá!"
-  //
-  // NGUYÊN TẮC THỂ CHẾ (INSTITUTIONAL RULE):
-  // - BTC & ETH: Là 2 coin dẫn dắt thanh khoản lớn nhất, vùng cản Tier 2 giữ rất chuẩn.
-  // - Altcoin (SOL, LINK, NEAR): Rất dễ bị kéo xuyên cản theo quán tính BTC,
-  //   do đó đối với Altcoin BẮT BUỘC PHẢI CÓ VOLUME ABSORPTION (VSA Climax) mới được bắt đỉnh/đáy!
-  // Tách thành closure nội bộ để dễ đọc, logic bên trong giữ nguyên 100%.
-  // =========================================================================
-  function tryZoneReactionSetup() {
-  const isLeader = symbol.includes('BTC') || symbol.includes('ETH');
-  const m15Anatomy = analyzeCandle(currentM15);
-
-  const majorResistances = [];
-  if (liquidityTiers.tier2MajorHigh && liquidityTiers.tier2MajorHigh > curPrice) {
-    majorResistances.push(liquidityTiers.tier2MajorHigh);
-  }
-
-  const majorSupports = [];
-  if (liquidityTiers.tier2MajorLow && liquidityTiers.tier2MajorLow < curPrice) {
-    majorSupports.push(liquidityTiers.tier2MajorLow);
-  }
-
-  // VOLUME PROFILE VAH/VAL (mặc định TẮT - config.useVolumeProfile):
-  // V1: Thêm cản mới vô điều kiện (config.volumeProfileMode === 'ALWAYS')
-  // V2: CHỈ bổ sung cản VAH/VAL khi d1Phase === 'RANGING' (mặc định)
-  if (config.useVolumeProfile) {
-    const shouldAddVP = config.volumeProfileMode === 'ALWAYS' || d1Phase === 'RANGING';
-    if (shouldAddVP) {
-      const lookback = config.volumeProfileLookback || 50;
-      const numBins = config.volumeProfileNumBins || 24;
-      const vaPct = config.volumeProfileValueAreaPct !== undefined ? config.volumeProfileValueAreaPct : 0.70;
-      const vp = calculateVolumeProfile(candlesH4, lookback, numBins, vaPct);
-      if (vp && vp.vah && vp.vah > curPrice) majorResistances.push(vp.vah);
-      if (vp && vp.val && vp.val < curPrice) majorSupports.push(vp.val);
-    }
-  }
-
-  // ICT BREAKER BLOCK RETEST (mặc định TẮT - config.useBreakerBlocks):
-  // V1: Thêm breaker làm cản độc lập (config.breakerBlockMode === 'ADD_ZONES')
-  // V2: Dùng breaker làm BỘ LỌC XÁC NHẬN THÊM (AND) cho cản Tier 2 (mặc định)
-  let breakerZones = null;
-  if (config.useBreakerBlocks) {
-    const pL = config.breakerPivotL || 2;
-    const pR = config.breakerPivotR || 2;
-    breakerZones = findBreakerBlocks(candlesH4, pL, pR).filter(b => !b.isMitigated);
-    if (config.breakerBlockMode === 'ADD_ZONES') {
-      for (const b of breakerZones) {
-        if (b.type === 'BEARISH' && b.top > curPrice) majorResistances.push(b.top);
-        if (b.type === 'BULLISH' && b.bottom < curPrice) majorSupports.push(b.bottom);
-      }
-    } else {
-      const inBreakerZone = (price, type) => breakerZones.some(b => b.type === type && price >= b.bottom && price <= b.top);
-      for (let i = majorResistances.length - 1; i >= 0; i--) {
-        if (!inBreakerZone(majorResistances[i], 'BEARISH')) majorResistances.splice(i, 1);
-      }
-      for (let i = majorSupports.length - 1; i >= 0; i--) {
-        if (!inBreakerZone(majorSupports[i], 'BULLISH')) majorSupports.splice(i, 1);
-      }
-    }
-  }
-
-  // 1. Zone Reaction Short tại Vùng Kháng cự Lớn
-  if (marketPhase !== 'STRONG_UPTREND') {
-    for (const res of majorResistances) {
-    const testedRes = currentM15.high >= (res * 0.998) || prevM15.high >= (res * 0.998);
-    if (testedRes) {
-      // Yêu cầu: Với BTC/ETH cần râu trên >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
-      // SỬA LỖI (28/10/2026, phát hiện qua tin nhắn "lý do lạ lạ"): trước đây chỉ
-      // check isAbsorption, chấp nhận CẢ VSA BULLISH (lực bán bị hấp thụ - tín
-      // hiệu đảo chiều LÊN) làm điều kiện vào Short - vô lý về logic. Giờ bắt
-      // buộc đúng type BEARISH (lực mua bị chặn lại - tín hiệu đảo chiều XUỐNG).
-      const hasVsaRejection = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') || (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BEARISH') || (isLeader && m15Anatomy.upperWickRatio >= 0.45);
-      const isM15Reversal = currentM15.close < currentM15.open && currentM15.close < prevM15.low;
-
-      if (hasVsaRejection && isM15Reversal) {
-        // Nếu ngược trend tăng thì bắt buộc giá phải dãn nở xa EMA34 >= 2.0%
-        if (isBullTrend) {
-          const distAboveEma34 = (curPrice - ema34) / ema34;
-          if (distAboveEma34 < 0.020 && !(volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH')) continue;
-        }
-
-        const entry = currentM15.close;
-        const stopLoss = Math.max(currentM15.high, prevM15.high) + (config.atrBufferMultiplier * atrH1);
-
-        const slDistanceRate = Math.abs(entry - stopLoss) / entry;
-        if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
-          continue;
-        }
-
-        const targetSup = supports.find(s => (entry - s) / (stopLoss - entry) >= config.minRR);
-        if (targetSup) {
-          const rr = (entry - targetSup) / (stopLoss - entry);
-          if (!btcShield.canShort) {
-            blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'SHORT' };
-            continue;
-          }
-
-          const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-          const vsaNote = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BEARISH') ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
-          return {
-            strategy: 'SMC_ZONE_REACTION_SHORT',
-            direction: 'SHORT',
-            symbol,
-            entry,
-            stopLoss,
-            takeProfit: targetSup,
-            riskReward: parseFloat(rr.toFixed(2)),
-            triggerTime: currentM15.ts,
-            sizing,
-            reason: `SMC_ZONE_REACTION_SHORT: Đón đầu tại Cản ${res} (M15 Râu trên ${(m15Anatomy.upperWickRatio * 100).toFixed(1)}%), SL sát đỉnh râu${vsaNote}`
-          };
-        }
-      }
-    }
-  }
-  } // Đóng if (marketPhase !== 'STRONG_UPTREND')
-
-  // 2. Zone Reaction Long tại Vùng Hỗ trợ Lớn
-  if (marketPhase !== 'STRONG_DOWNTREND') {
-    for (const sup of majorSupports) {
-    const testedSup = currentM15.low <= (sup * 1.002) || prevM15.low <= (sup * 1.002);
-    if (testedSup) {
-      // Yêu cầu: Với BTC/ETH cần râu dưới >= 40% hoặc M15 đảo chiều. Với Altcoin bắt buộc phải có VSA Climax!
-      // SỬA LỖI tương tự nhánh Short phía trên: bắt buộc đúng type BULLISH.
-      const hasVsaRejection = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') || (volAbsorptionH4.isAbsorption && volAbsorptionH4.type === 'BULLISH') || (isLeader && m15Anatomy.lowerWickRatio >= 0.45);
-      const isM15Reversal = currentM15.close > currentM15.open && currentM15.close > prevM15.high;
-
-      if (hasVsaRejection && isM15Reversal) {
-        // Nếu đang ở Hỗ trợ Lớn (Tier 2 Major Low hoặc râu rút chân M15 >= 40%) thì cho phép Long đón đáy!
-        const isAtMajorSupport = (liquidityTiers.tier2MajorLow && Math.abs(curPrice - liquidityTiers.tier2MajorLow) / curPrice <= 0.015) || m15Anatomy.lowerWickRatio >= 0.40;
-        if (isBearTrend && !isAtMajorSupport) {
-          const distBelowEma34 = (ema34 - curPrice) / curPrice;
-          if (distBelowEma34 < 0.020 && !(volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH')) continue;
-        }
-
-        const entry = currentM15.close;
-        const stopLoss = Math.min(currentM15.low, prevM15.low) - (config.atrBufferMultiplier * atrH1);
-
-        const slDistanceRate = Math.abs(entry - stopLoss) / entry;
-        if (config.maxSlDistanceRate && slDistanceRate > config.maxSlDistanceRate) {
-          continue;
-        }
-
-        const targetRes = resistances.find(r => (r - entry) / (entry - stopLoss) >= config.minRR);
-        if (targetRes) {
-          const rr = (targetRes - entry) / (entry - stopLoss);
-          if (!btcShield.canLong) {
-            blockedSignal = { isBlocked: true, blockReason: btcShield.reason, symbol, direction: 'LONG' };
-            continue;
-          }
-
-          const sizing = calculatePositionSize(entry, stopLoss, config.riskUsd, config.leverage);
-          const vsaNote = (volAbsorptionM15.isAbsorption && volAbsorptionM15.type === 'BULLISH') ? ` | VSA M15: ${volAbsorptionM15.details}` : '';
-          return {
-            strategy: 'SMC_ZONE_REACTION_LONG',
-            direction: 'LONG',
-            symbol,
-            entry,
-            stopLoss,
-            takeProfit: targetRes,
-            riskReward: parseFloat(rr.toFixed(2)),
-            triggerTime: currentM15.ts,
-            sizing,
-            reason: `SMC_ZONE_REACTION_LONG: Đón đầu tại Hỗ trợ ${sup} (M15 Râu dưới ${(m15Anatomy.lowerWickRatio * 100).toFixed(1)}%), SL sát đáy râu${vsaNote}`
-          };
-        }
-      }
-    }
-  }
-  } // Đóng if (marketPhase !== 'STRONG_DOWNTREND')
-
-  return null;
-  }
-
-  // Thực thi 3 setup theo đúng thứ tự ưu tiên như trước khi tách hàm:
-  // Kane Long -> Kane Short -> SMC Zone Reaction. blockedSignal được các
-  // closure trên mutate trực tiếp qua scope chung, trả về cuối cùng nếu
-  // không có setup nào khớp.
   const formatFinalSignal = (sig) => {
     if (!sig || sig.isBlocked) return sig;
+    if (config.enableTrendAlignFilter) {
+      const trend = computeStructTrend(candlesH4.slice(-250));
+      if ((sig.direction === 'LONG' && trend < 0) || (sig.direction === 'SHORT' && trend > 0)) {
+        return { isBlocked: true, blockReason: `TREND_ALIGN: ${sig.direction} ngược cấu trúc BOS H4 (${trend > 0 ? 'tăng' : 'giảm'})`, symbol, direction: sig.direction };
+      }
+    }
+    // Flip/MacroRange/Breakout không tự tính sizing và không biết khiên BTC -> áp tại đây
+    const shieldOk = sig.direction === 'LONG' ? btcShield.canLong : btcShield.canShort;
+    if (!shieldOk) {
+      return { isBlocked: true, blockReason: btcShield.reason, symbol, direction: sig.direction };
+    }
+    const sizing = sig.sizing || calculatePositionSize(sig.entry, sig.stopLoss, config.riskUsd, config.leverage);
+    if (sizing.isBlocked) {
+      return { isBlocked: true, blockReason: sizing.blockReason, symbol, direction: sig.direction };
+    }
     return {
       ...sig,
+      sizing,
       marketPhase,
       d1Phase,
       natrD1: parseFloat((natrD1 * 100).toFixed(2)),
       isLowVolD1,
-      customBeTriggerR: isLowVolD1 ? 1.0 : (config.beTriggerR || 1.4)
+      customBeTriggerR: isLowVolD1 ? 1.0 : (config.beTriggerR || 1.2)
     };
   };
 
-  // METHOD PLAYBOOK ROUTING:
-  // Nếu thị trường đang Đi Ngang (RANGING cả H4 & D1): Ưu tiên Zone Reaction tại 2 biên Tier 2
-  if (marketPhase === 'RANGING' && d1Phase === 'RANGING') {
-    const zoneReactionSignal = tryZoneReactionSetup();
-    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
-
-    const kaneLongSignal = tryKaneLongSetup();
-    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
-
-    const kaneShortSignal = tryKaneShortSetup();
-    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
-  } else {
-    const kaneLongSignal = tryKaneLongSetup();
-    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
-
-    const kaneShortSignal = tryKaneShortSetup();
-    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
-
-    const zoneReactionSignal = tryZoneReactionSetup();
-    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
-  }
-
-  // Không setup nào khớp: ưu tiên lý do Khiên BTC Macro nếu có, rồi tới lý do
-  // Chop Sleep Mode để log minh bạch lý do đứng ngoài.
-  return blockedSignal || chopBlockedSignal;
-}
-
-/**
- * Lập Bản Đồ Cản "Canh Trước" (Pre-Planned Key Level Radar)
- * Cho phép Pro Trader và Bot biết trước vùng phục kích trước khi giá tới nơi!
- * @param {object} params
- * @returns {object|null}
- */
-export function generateKeyLevelRadar({ symbol, candlesH4, curPrice, candlesH1 = null }) {
-  if (!candlesH4 || candlesH4.length < 15) return null;
-
-  const closesH4 = candlesH4.map(c => c.close);
-  const ema34Arr = calculateEMA(closesH4, 34);
-  const ema89Arr = calculateEMA(closesH4, 89);
-  const ema34 = ema34Arr[ema34Arr.length - 1] || curPrice;
-  const ema89 = ema89Arr[ema89Arr.length - 1] || curPrice;
-  const liquidityTiers = classifyLiquidityTiers(candlesH4, curPrice);
-
-  const pivots = findFractalPivots(candlesH4, 2, 2);
-  const prevH4 = candlesH4[candlesH4.length - 1];
-
-  const candidateResistances = pivots.filter(p => p.type === 'HIGH').map(p => p.price);
-  if (prevH4) candidateResistances.push(prevH4.high);
-  if (liquidityTiers.tier2MajorHigh) candidateResistances.push(liquidityTiers.tier2MajorHigh);
-
-  const candidateSupports = pivots.filter(p => p.type === 'LOW').map(p => p.price);
-  if (prevH4) candidateSupports.push(prevH4.low);
-  if (liquidityTiers.tier2MajorLow) candidateSupports.push(liquidityTiers.tier2MajorLow);
-
-  // Bổ sung các vùng Fair Value Gap (FVG) chưa lấp vào kịch bản đón đầu
-  const targetCandlesForFvg = (candlesH1 && candlesH1.length >= 5) ? candlesH1 : candlesH4;
-  if (targetCandlesForFvg && targetCandlesForFvg.length >= 5) {
-    const fvgs = findFairValueGaps(targetCandlesForFvg);
-    fvgs.filter(f => f.type === 'BULLISH' && !f.isMitigated && f.top < curPrice).forEach(f => candidateSupports.push(f.top));
-    fvgs.filter(f => f.type === 'BEARISH' && !f.isMitigated && f.bottom > curPrice).forEach(f => candidateResistances.push(f.bottom));
-  }
-
-  const nearestRes = candidateResistances
-    .filter(r => r > curPrice)
-    .sort((a, b) => a - b)[0] || null;
-
-  const nearestSup = candidateSupports
-    .filter(s => s < curPrice)
-    .sort((a, b) => b - a)[0] || null;
-
-  const distToResPct = nearestRes ? ((nearestRes - curPrice) / curPrice) * 100 : null;
-  const distToSupPct = nearestSup ? ((curPrice - nearestSup) / curPrice) * 100 : null;
-
-  let radarStatus = 'NEUTRAL';
-  let scenario = 'Chờ cấu trúc tiếp tục phát triển';
-
-  if (nearestRes && distToResPct <= 1.0) {
-    radarStatus = 'APPROACHING_RESISTANCE';
-    scenario = `🎯 CẢNH BÁO CANH SHORT: Giá đang áp sát Cản ${nearestRes} (cách ${distToResPct.toFixed(2)}%). Kịch bản: Canh nến M15 thọc qua ${nearestRes} và rút râu xả kèm Volume Absorption để Short đón đỉnh!`;
-  } else if (nearestSup && distToSupPct <= 1.0) {
-    radarStatus = 'APPROACHING_SUPPORT';
-    scenario = `🎯 CẢNH BÁO CANH LONG: Giá đang áp sát Hỗ trợ ${nearestSup} (cách ${distToSupPct.toFixed(2)}%). Kịch bản: Canh nến M15 nhúng qua ${nearestSup} và rút chân mạnh kèm Volume Absorption để Long bắt đáy!`;
-  }
-
-  return {
+  // ==============================================================
+  // 1. ƯU TIÊN CAO NHẤT: TRADE FLIP (Chốt Long xong rình Short tại cản)
+  // ==============================================================
+  const flipSignal = !config.enableTradeFlip ? null : evaluateTradeFlipOpportunity({
     symbol,
-    curPrice,
-    trendH4: ema34 >= ema89 ? 'BULL' : 'BEAR',
-    ema34: parseFloat(ema34.toFixed(2)),
-    ema89: parseFloat(ema89.toFixed(2)),
-    nearestRes,
-    distToResPct: distToResPct !== null ? parseFloat(distToResPct.toFixed(2)) : null,
-    nearestSup,
-    distToSupPct: distToSupPct !== null ? parseFloat(distToSupPct.toFixed(2)) : null,
-    tier1InducementHighs: liquidityTiers.tier1Highs,
-    tier1InducementLows: liquidityTiers.tier1Lows,
-    tier2MajorHigh: liquidityTiers.tier2MajorHigh,
-    tier2MajorLow: liquidityTiers.tier2MajorLow,
-    sweepState: liquidityTiers.sweepState,
-    radarStatus,
-    scenario
-  };
-}
-
-/**
- * Chấm điểm chất lượng Setup & Sức mạnh tương đối (Relative Strength Scorer)
- * Thang điểm 0 - 100 điểm:
- * 1. Wick Purity (Độ dài râu nến M15/H4): tối đa 25 điểm
- * 2. VSA Climax Absorption (Khối lượng hấp thụ): tối đa 25 điểm
- * 3. SMC Key Level & Mitigation (Vùng cản Tier 2 / FVG / OB): tối đa 25 điểm
- * 4. Relative Strength vs BTC (Sức mạnh so với đầu tàu BTC): tối đa 25 điểm
- */
-export function calculateSetupQualityScore({ signal, candlesH4, candlesH1, candlesM15, btcH1Candles = null }) {
-  let score = 0;
-  const reasons = [];
-
-  const lastM15 = candlesM15 && candlesM15.length > 0 ? candlesM15[candlesM15.length - 1] : null;
-  const lastH4 = candlesH4 && candlesH4.length > 0 ? candlesH4[candlesH4.length - 1] : null;
-  const anatomyM15 = lastM15 ? analyzeCandle(lastM15) : { lowerWickRatio: 0, upperWickRatio: 0 };
-  const anatomyH4 = lastH4 ? analyzeCandle(lastH4) : { lowerWickRatio: 0, upperWickRatio: 0 };
-  const isLong = signal ? signal.direction === 'LONG' : true;
-
-  // 1. ĐỘ SẠCH VÀ CHIỀU DÀI RÂU NẾN (WICK PURITY) - Tối đa 25đ
-  const wickRatio = isLong 
-    ? Math.max(anatomyM15.lowerWickRatio, anatomyH4.lowerWickRatio)
-    : Math.max(anatomyM15.upperWickRatio, anatomyH4.upperWickRatio);
-
-  if (wickRatio >= 0.50) {
-    score += 25;
-    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Xuất sắc)`);
-  } else if (wickRatio >= 0.40) {
-    score += 20;
-    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Tốt)`);
-  } else if (wickRatio >= 0.30) {
-    score += 15;
-    reasons.push(`Râu nến ${(wickRatio * 100).toFixed(0)}% (Chuẩn)`);
-  }
-
-  // 2. KHỐI LƯỢNG HẤP THỤ VSA (VOLUME CLIMAX ABSORPTION) - Tối đa 25đ
-  const volM15 = (candlesM15 && candlesM15.length > 0) ? detectVolumeAbsorption(candlesM15, candlesM15.length - 1) : { isAbsorption: false };
-  const volH4 = (candlesH4 && candlesH4.length > 0) ? detectVolumeAbsorption(candlesH4, candlesH4.length - 1) : { isAbsorption: false };
-  if (volM15.isAbsorption || volH4.isAbsorption) {
-    score += 25;
-    reasons.push('VSA Climax Absorption');
-  } else if (candlesM15 && candlesM15.length >= 20) {
-    const vols = candlesM15.map(c => c.vol);
-    const avgVol = vols.slice(-20).reduce((a, b) => a + b, 0) / 20 || 1;
-    const volRatio = (vols[vols.length - 1] || 1) / avgVol;
-    if (volRatio >= 1.5) {
-      score += 15;
-      reasons.push(`Vol M15 ${volRatio.toFixed(1)}x SMA20`);
-    } else if (volRatio >= 1.0) {
-      score += 10;
+    candles15m: candlesM15,
+    candlesH1,
+    atrH1,
+    config: {
+      ...config,
+      isBullTrend,
+      isBearTrend,
+      marketPhase
     }
+  });
+  if (flipSignal) return formatFinalSignal(flipSignal);
+
+  // ==============================================================
+  // 2. PHẢN ỨNG BIÊN HỘP VĨ MÔ 300 NẾN (MACRO RANGE FADE)
+  // Quét chiếc hộp đa tháng: Short tại Range High (95-97$), Long tại Range Low (74-76$)
+  // ==============================================================
+  const macroRange = detectMacroRangeBox(candlesH4, candlesD1, 300);
+  if (macroRange && macroRange.isEstablishedRange) {
+    const rangeFadeSignal = evaluateMacroRangeFade({
+      symbol,
+      candlesH4,
+      candlesH1,
+      candlesM15,
+      macroRange,
+      atrH1,
+      config: {
+      ...config,
+      isBullTrend,
+      isBearTrend,
+      marketPhase
+    }
+    });
+    if (rangeFadeSignal && (rangeFadeSignal.direction === 'SHORT' ? config.enableMacroRangeShort : config.enableMacroRangeLong)) return formatFinalSignal(rangeFadeSignal);
   }
 
-  // 3. CẤP ĐỘ CẢN SMC & FVG (KEY LEVEL & MITIGATION) - Tối đa 25đ
-  const sigReason = signal ? (signal.reason || '') : '';
-  const sigStrat = signal ? (signal.strategy || '') : '';
-  if (sigReason.includes('Major') || sigStrat.includes('ZONE_REACTION')) {
-    score += 25;
-    reasons.push('Cản Lớn Tier 2');
-  } else if (sigReason.includes('FVG') || sigReason.includes('Order Block')) {
-    score += 25;
-    reasons.push('Retest FVG/OB');
-  } else if (sigReason.includes('swept Support') || sigReason.includes('swept Resistance')) {
-    score += 20;
-    reasons.push('Liquidity Sweep');
+  // ==============================================================
+  // 3. SÓNG BÙNG NỔ PHÁ HỘP TÍCH LŨY (M15 VOLUME BREAKOUT)
+  // Nổ volume cá mập >= 2.0x -> Vào ngay chân sóng (81.5$), không chờ nến H4
+  // ==============================================================
+  const breakoutSignal = !config.enableBreakoutStrategy ? null : evaluateVolumeBreakout({
+    symbol,
+    candles15m: candlesM15,
+    candlesH1,
+    candlesH4,
+    atrH1,
+    resistances,
+    supports,
+    config: {
+      ...config,
+      isBullTrend,
+      isBearTrend,
+      marketPhase
+    }
+  });
+  if (breakoutSignal) return formatFinalSignal(breakoutSignal);
+
+  // ==============================================================
+  // 4. CHIẾN LƯỢC THEO CẤU TRÚC: KANE SONIC R & SMC ZONE REACTION
+  // ==============================================================
+  if (marketPhase === 'RANGING' && d1Phase === 'RANGING') {
+    const zoneReactionSignal = tryZoneReactionSetup(setupParams);
+    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
+
+    const kaneLongSignal = tryKaneLongSetup(setupParams);
+    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
+
+    const kaneShortSignal = tryKaneShortSetup(setupParams);
+    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
   } else {
-    score += 10;
+    const kaneLongSignal = tryKaneLongSetup(setupParams);
+    if (kaneLongSignal) return formatFinalSignal(kaneLongSignal);
+
+    const kaneShortSignal = tryKaneShortSetup(setupParams);
+    if (kaneShortSignal) return formatFinalSignal(kaneShortSignal);
+
+    const zoneReactionSignal = tryZoneReactionSetup(setupParams);
+    if (zoneReactionSignal) return formatFinalSignal(zoneReactionSignal);
   }
 
-  // 4. SỨC MẠNH TƯƠNG ĐỐI SO VỚI ĐẦU TÀU BTC (RELATIVE STRENGTH) - Tối đa 25đ
-  // Phase C "12H Structural RS" (đo 12 nến H1) GATED sau BOT_CONFIG.enable12hRS
-  // (mặc định TẮT, chưa test OOS). Mặc định dùng RS baseline (1 nến H1) đã validate.
-  if (BOT_CONFIG.enable12hRS && btcH1Candles && btcH1Candles.length >= 3 && candlesH1 && candlesH1.length >= 3) {
-    const lookback = Math.min(12, Math.min(btcH1Candles.length - 1, candlesH1.length - 1));
-    const curBtc = btcH1Candles[btcH1Candles.length - 1].close;
-    const refBtc = btcH1Candles[btcH1Candles.length - 1 - lookback].close;
-    const btcPct = refBtc > 0 ? (curBtc - refBtc) / refBtc : 0;
-    const curCoin = candlesH1[candlesH1.length - 1].close;
-    const refCoin = candlesH1[candlesH1.length - 1 - lookback].close;
-    const coinPct = refCoin > 0 ? (curCoin - refCoin) / refCoin : 0;
-    const rsSpread = coinPct - btcPct;
-    if (isLong) {
-      if (rsSpread >= 0.005) { score += 25; reasons.push(`Khỏe hơn BTC 12H (+${(rsSpread * 100).toFixed(1)}%)`); }
-      else if (coinPct > -0.01 || rsSpread >= -0.02) { score += 15; reasons.push('Đồng pha/thoái lui lành mạnh'); }
-      else { score += 10; }
-    } else {
-      if (rsSpread <= -0.005) { score += 25; reasons.push(`Yếu hơn BTC 12H (${(rsSpread * 100).toFixed(1)}%)`); }
-      else if (coinPct < 0.01 || rsSpread <= 0.02) { score += 15; reasons.push('Đồng pha/hồi phục lành mạnh'); }
-      else { score += 10; }
-    }
-  } else if (btcH1Candles && btcH1Candles.length >= 2 && candlesH1 && candlesH1.length >= 2) {
-    const btcPct = (btcH1Candles[btcH1Candles.length - 1].close - btcH1Candles[btcH1Candles.length - 2].close) / btcH1Candles[btcH1Candles.length - 2].close;
-    const coinPct = (candlesH1[candlesH1.length - 1].close - candlesH1[candlesH1.length - 2].close) / candlesH1[candlesH1.length - 2].close;
-    if (isLong) {
-      if (coinPct > btcPct + 0.003) { score += 25; reasons.push('Khỏe hơn BTC (RS Outperforming)'); }
-      else if (coinPct > 0) { score += 15; }
-    } else {
-      if (coinPct < btcPct - 0.003) { score += 25; reasons.push('Yếu hơn BTC (RS Underperforming)'); }
-      else if (coinPct < 0) { score += 15; }
-    }
-  } else {
-    score += 15;
+  // 5. HỘP WYCKOFF (xét SAU Kane/Zone để không chiếm chỗ lõi cũ). Bỏ qua chop-sleep vì hộp vốn là vùng đi ngang.
+  if ((config.enableWyckoffSpring || config.enableWyckoffBreakout) && macroRange && macroRange.isEstablishedRange) {
+    const wyParams = { symbol, candlesH1, candlesM15, macroRange, atrH1, d1Phase, config };
+    const wy = (config.enableWyckoffSpring && evaluateWyckoffSpring(wyParams))
+      || (config.enableWyckoffBreakout && evaluateWyckoffBreakoutRetest(wyParams));
+    if (wy) return formatFinalSignal(wy);
   }
 
-  return {
-    score: Math.min(100, score),
-    reasons
-  };
+  return chopBlockedSignal;
 }
-
-

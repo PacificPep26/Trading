@@ -9,10 +9,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle } from './indicators.js';
-import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize, generateKeyLevelRadar } from './engine.js';
+import { latestSmcFvgSignal } from './strategies/smc_fvg.js';
+import { persistentMap } from './alert_state.js';
+import { startStateApi, readHistory } from './state_api.js';
+import { getMacroContext } from './market_history.js';
+import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize, generateKeyLevelRadar, registerTakeProfitHit, detectMacroRangeBox, buildBoxAlert } from './engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG, getEffectiveConfig } from './config.js';
 import {
   notifyNewSignal,
+  notifyEarlySignal,
+  notifyPendingCancelled,
   notifyBreakevenTriggered,
   notifyTakeProfit,
   notifyStopLoss,
@@ -69,9 +75,14 @@ let pendingSignals = [];
 
 // Trạng thái radar "canh trước" đã bắn Telegram gần nhất theo từng coin
 // (chống spam: chỉ bắn lại khi đổi trạng thái/level hoặc quá cooldown 4h).
-const radarAlertState = new Map();
+const alertPersist = !(process.argv.includes('--single-run') || process.argv.includes('--dry-run') || process.env.TELEGRAM_DRY_RUN === '1');
+const ALERT_DIR = process.env.ALERT_STATE_DIR || 'data/alerts'; // trên Railway trỏ vào volume /data để không mất cooldown khi deploy
+const radarAlertState = persistentMap(`${ALERT_DIR}/radar.json`, alertPersist);
+const boxAlertState = persistentMap(`${ALERT_DIR}/box.json`, alertPersist);
+const smcFvgAlertState = persistentMap(`${ALERT_DIR}/smc_fvg.json`, alertPersist);
+let boxDigest = []; // cảnh báo biên hộp gom trong một lượt quét, gửi 1 tin ở cuối
 // Chống spam cảnh báo BÙNG NỔ (volume đột biến) theo từng coin.
-const breakoutAlertState = new Map();
+const breakoutAlertState = persistentMap(`${ALERT_DIR}/breakout.json`, alertPersist);
 
 function loadPendingSignals() {
   if (fs.existsSync(PENDING_SIGNALS_FILE)) {
@@ -241,18 +252,24 @@ export function isWeeklyCircuitBreakerActive(nowMs = Date.now(), maxLossR = CONF
  * @param {number} limit - Số nến
  * @returns {Promise<Array>}
  */
-export async function fetchOkxCandles(instId, bar = '4H', limit = 100) {
+export async function fetchOkxCandles(instId, bar = '4H', limit = 300) {
   const url = `${CONFIG.okxBaseUrl}/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${limit}`;
-  try {
-    const res = await fetch(url);
-    const json = await res.json();
-    if (!json.data || !Array.isArray(json.data)) return [];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!json.data || !Array.isArray(json.data)) return [];
 
-    return json.data.map(normalizeCandle).reverse(); // Đảo lại theo thứ tự thời gian tăng dần (cũ -> mới)
-  } catch (err) {
-    console.error(`[API] Lỗi fetch nến ${instId} (${bar}):`, err.message);
-    return [];
+      return json.data.map(normalizeCandle).reverse(); // Đảo lại theo thứ tự thời gian tăng dần (cũ -> mới)
+    } catch (err) {
+      if (attempt === 2) {
+        console.error(`[API] Lỗi fetch nến ${instId} (${bar}):`, err.message);
+        return [];
+      }
+      await new Promise(r => setTimeout(r, 120 * (attempt + 1)));
+    }
   }
+  return [];
 }
 
 /**
@@ -323,7 +340,18 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     ? (isLong ? (favorablePrice - pos.entry) : (pos.entry - favorablePrice)) / riskDist
     : 0;
 
-  const beTriggerR = pos.customBeTriggerR || CONFIG.beTriggerR;
+  // DỜI HÒA VỐN 2 TẦNG (DYNAMIC 2-TIER BREAKEVEN)
+  const step1TriggerR = CONFIG.beStep1TriggerR || 0.8;
+  if (!pos.tier1Reduced && curMaxR >= step1TriggerR) {
+    pos.tier1Reduced = true;
+    const reduceLossR = Math.abs(CONFIG.beStep1ReduceLossR || 0.3);
+    const newSL = isLong ? pos.entry - (reduceLossR * riskDist) : pos.entry + (reduceLossR * riskDist);
+    pos.stopLoss = parseFloat(newSL.toFixed(4));
+    console.log(`[RISK REDUCED] ${pos.symbol} đạt +${curMaxR.toFixed(2)}R -> Co SL về -0.3R: ${pos.stopLoss}`);
+    savePositions();
+  }
+
+  const beTriggerR = pos.customBeTriggerR || CONFIG.beTriggerR || 1.2;
   if (!pos.isProfitLocked && curMaxR >= beTriggerR) {
     pos.isProfitLocked = true;
     pos.isBreakevenMoved = true;
@@ -361,11 +389,11 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     if (process.env.ENABLE_PENALTY_SYSTEM === 'true' && !pos.isProfitLocked) {
       try {
         const [h4, h1, m15, bH4, bH1] = await Promise.all([
-          fetchOkxCandles(pos.instId, '4H', 25),
-          fetchOkxCandles(pos.instId, '1H', 15),
-          fetchOkxCandles(pos.instId, '15m', 20),
-          fetchOkxCandles('BTC-USDT-SWAP', '4H', 35),
-          fetchOkxCandles('BTC-USDT-SWAP', '1H', 20)
+          fetchOkxCandles(pos.instId, '4H', 300),
+          fetchOkxCandles(pos.instId, '1H', 300),
+          fetchOkxCandles(pos.instId, '15m', 300),
+          fetchOkxCandles('BTC-USDT-SWAP', '4H', 300),
+          fetchOkxCandles('BTC-USDT-SWAP', '1H', 300)
         ]);
         const mistake = inspectTradeMistake({
           pos,
@@ -400,6 +428,7 @@ export async function updateOpenPositions(instId, candleOrPrice) {
     console.log(`[TAKE PROFIT] ${pos.symbol} 100% closed at ${pos.takeProfit} (+${finalR.toFixed(2)}R, Net: $${netPnl.toFixed(2)})`);
     logClosedTrade(pos, 'TP', pos.takeProfit, finalR, netPnl);
     rewardWinAndClearPenalty(pos.symbol);
+    registerTakeProfitHit(pos.symbol, pos.direction, pos.takeProfit, Date.now());
     await notifyTakeProfit(pos, pos.takeProfit, finalR, netPnl);
     activePositions.splice(posIndex, 1);
     savePositions();
@@ -483,11 +512,12 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
       // Tải nến H4 (lấy đủ 100 nến để tính EMA 34 & 89 chuẩn xác), H1, M15, D1
       // (D1 dùng để nhận diện giai đoạn khung Ngày -> cấm bắt đáy/cản tàu ngược
       // hướng D1 ngay cả khi H4 còn báo RANGING cục bộ, xem docs/REGIME_ADAPTIVE_PLAN.md)
-      const [candlesH4, candlesH1, candlesM15, candlesD1] = await Promise.all([
-        fetchOkxCandles(instId, '4H', 100),
-        fetchOkxCandles(instId, '1H', 30),
-        fetchOkxCandles(instId, '15m', 30),
-        fetchOkxCandles(instId, '1Dutc', 100)
+      const [candlesH4, candlesH1, candlesM15, candlesD1, candlesW1] = await Promise.all([
+        fetchOkxCandles(instId, '4H', 300),
+        fetchOkxCandles(instId, '1H', 300),
+        fetchOkxCandles(instId, '15m', 300),
+        fetchOkxCandles(instId, '1Dutc', 300),
+        fetchOkxCandles(instId, '1W', 100)
       ]);
 
       if (candlesH4.length < 20 || candlesH1.length < 15 || candlesM15.length < 10) {
@@ -524,6 +554,7 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         candlesH1: closedH1,
         candlesM15: closedM15,
         candlesD1: closedD1,
+        candlesW1,
         btcH1Candles: btcH1,
         btcH4Candles: btcH4,
         config: coinConfig
@@ -569,10 +600,9 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         console.log(`[SIGNAL BLOCKED] ${signal.symbol}: ${signal.blockReason}`);
       }
 
-      // AUTO-RADAR "CANH TRƯỚC": bắn Telegram khi giá áp sát cản/hỗ trợ (giống
-      // Kane lên kịch bản), KHÔNG mở lệnh - chỉ cảnh báo đón đầu. Chống spam:
-      // chỉ bắn khi trạng thái/level đổi, hoặc đã quá 4h kể từ lần bắn trước.
-      if (process.env.ENABLE_RADAR_ALERTS !== 'false') {
+      // AUTO-RADAR "CANH TRƯỚC": Chỉ gửi khi người dùng chủ động cấu hình ENABLE_RADAR_ALERTS=true.
+      // Mặc định TẮT trong chu kỳ quét để chống spam (người dùng xem radar bất kỳ lúc nào bằng lệnh /radar trong chat bot).
+      if (process.env.ENABLE_RADAR_ALERTS === 'true') {
         try {
           const radar = generateKeyLevelRadar({ symbol, candlesH4: closedH4, curPrice: currentPrice, candlesH1: closedH1 });
           if (radar && radar.radarStatus !== 'NEUTRAL' && radar.scenario) {
@@ -580,7 +610,7 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
             const key = symbol;
             const prev = radarAlertState.get(key);
             const changed = !prev || prev.status !== radar.radarStatus || prev.level !== level;
-            const cooledDown = !prev || (Date.now() - prev.ts) > 4 * 60 * 60 * 1000;
+            const cooledDown = !prev || (Date.now() - prev.ts) > 8 * 60 * 60 * 1000; // Cooldown 8 tiếng chống spam
             if (changed || cooledDown) {
               radarAlertState.set(key, { status: radar.radarStatus, level, ts: Date.now() });
               const { sendTelegramMessage } = await import('./telegram.js');
@@ -592,10 +622,43 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
         }
       }
 
-      // CẢNH BÁO BÙNG NỔ: nến H1 vừa đóng có volume đột biến (>=2.5x TB20) + thân
-      // mạnh (>=1%) -> báo Telegram để NGƯỜI tự nhìn. KHÔNG tự vào lệnh (backtest
-      // chứng minh đu momentum/volume breakout lỗ nặng). Cooldown 2h/coin.
-      if (process.env.ENABLE_BREAKOUT_ALERTS !== 'false') {
+      // CẢNH BÁO BIÊN HỘP VĨ MÔ: Chỉ gửi khi người dùng chủ động cấu hình ENABLE_BOX_ALERTS=true
+      if (process.env.ENABLE_BOX_ALERTS === 'true') {
+        try {
+          const alert = buildBoxAlert(symbol, detectMacroRangeBox(closedH4, closedD1, 300), currentPrice);
+          if (alert) {
+            const key = `${symbol}:${alert.zone}`;
+            const prevTs = boxAlertState.get(key);
+            const cooldownMs = parseFloat(process.env.BOX_ALERT_COOLDOWN_HOURS || '24') * 3600 * 1000; // cooldown mỗi vùng
+            if (!prevTs || (Date.now() - prevTs) > cooldownMs) {
+              boxAlertState.set(key, Date.now());
+              boxDigest.push({ symbol, alert }); // gom lại, gửi một tin ở cuối lượt quét
+            }
+          }
+        } catch (e) {
+          console.error(`[BOX ALERT] Lỗi ${symbol}:`, e.message);
+        }
+      }
+
+      // CẢNH BÁO SMC FVG (video): chỉ gửi khi ENABLE_SMC_FVG_ALERTS=true. Mỗi nến chạm FVG chỉ báo 1 lần.
+      if (process.env.ENABLE_SMC_FVG_ALERTS === 'true') {
+        try {
+          const sig = latestSmcFvgSignal(closedM15);
+          if (sig) {
+            const key = `${symbol}:${sig.direction}`;
+            if (smcFvgAlertState.get(key) !== sig.triggerTime) {
+              smcFvgAlertState.set(key, sig.triggerTime);
+              const { sendTelegramMessage, buildSmcFvgAlertMessage } = await import('./telegram.js');
+              await sendTelegramMessage(buildSmcFvgAlertMessage(symbol, sig));
+            }
+          }
+        } catch (e) {
+          console.error(`[SMC FVG ALERT] Lỗi ${symbol}:`, e.message);
+        }
+      }
+
+      // CẢNH BÁO BÙNG NỔ: Chỉ gửi khi người dùng chủ động cấu hình ENABLE_BREAKOUT_ALERTS=true
+      if (process.env.ENABLE_BREAKOUT_ALERTS === 'true') {
         try {
           const n = closedH1.length;
           if (n >= 21) {
@@ -605,11 +668,11 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
             const movePct = ((last.close - last.open) / last.open) * 100;
             if (volMult >= 2.5 && Math.abs(movePct) >= 1.0) {
               const prev = breakoutAlertState.get(symbol);
-              if (!prev || (Date.now() - prev) > 2 * 60 * 60 * 1000) {
+              if (!prev || (Date.now() - prev) > 4 * 60 * 60 * 1000) { // Cooldown 4 tiếng
                 breakoutAlertState.set(symbol, Date.now());
                 const dir = movePct >= 0 ? '🟢 bơm' : '🔴 xả';
                 const { sendTelegramMessage } = await import('./telegram.js');
-                await sendTelegramMessage(`⚡ <b>BÙNG NỔ ${symbol}</b>\nNến H1 ${dir} ${movePct.toFixed(1)}% với volume ${volMult.toFixed(1)}× trung bình. Giá ~${currentPrice}.\n<i>Chỉ cảnh báo quan sát — bot KHÔNG tự đu momentum (đã test: lỗ nặng).</i>`);
+                await sendTelegramMessage(`⚡ <b>BÙNG NỔ ${symbol}</b>\nNến H1 ${dir} ${movePct.toFixed(1)}% với volume ${volMult.toFixed(1)}× trung bình. Giá ~${currentPrice}.\n<i>Chỉ cảnh báo quan sát — bot KHÔNG tự đu momentum.</i>`);
               }
             }
           }
@@ -622,6 +685,14 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
     }
   }
 
+  if (boxDigest.length > 0) { // một tin gộp cho tất cả coin sát biên hộp trong lượt quét này
+    try {
+      const { sendTelegramMessage, buildBoxDigestMessage } = await import('./telegram.js');
+      await sendTelegramMessage(buildBoxDigestMessage(boxDigest));
+    } catch (e) { console.error('[BOX ALERT] Lỗi gửi tin gộp:', e.message); }
+    boxDigest = [];
+  }
+
   return candidateSignals;
 }
 
@@ -632,6 +703,13 @@ async function scanUniverseForCandidates(btcH4, btcH1) {
  */
 // Mở vị thế thật (tách riêng để dùng chung cho cả 2 đường: vào ngay khi
 // entryDelayBars=0, và finalize từ pendingSignals khi entryDelayBars>0).
+// Bối cảnh lớn (toàn lịch sử) + link biểu đồ đính kèm tin Telegram; lỗi lấy dữ liệu thì tin vẫn đi, chỉ thiếu phần này.
+async function signalContext(symbol) {
+  const coin = symbol.replace('-USDT', '');
+  const m = await getMacroContext(coin);
+  return { ...(m && m.summary ? { macroSummary: m.summary } : {}), ...(process.env.VIEWER_URL ? { viewerUrl: `${process.env.VIEWER_URL.replace(/\/$/, '')}/?coin=${coin}` } : {}) };
+}
+
 async function openPositionNow(instId, symbol, signal, score, reasons) {
   const newPos = {
     id: `${instId}-${Date.now()}`,
@@ -655,7 +733,7 @@ async function openPositionNow(instId, symbol, signal, score, reasons) {
 
   activePositions.push(newPos);
   savePositions();
-  await notifyNewSignal(signal);
+  await notifyNewSignal({ ...signal, ...(await signalContext(symbol)) });
 }
 
 async function pickAndExecuteWinners(candidateSignals) {
@@ -739,6 +817,10 @@ async function pickAndExecuteWinners(candidateSignals) {
           detectedAt: Date.now()
         });
         savePendingSignals();
+        // Báo NGAY lúc phát hiện; bot vẫn quan sát thêm entryDelayBars nến rồi mới tự vào lệnh giả lập.
+        if (process.env.ENABLE_EARLY_ALERT !== 'false') {
+          await notifyEarlySignal({ ...signal, qualityScore: winner.score, ...(await signalContext(symbol)) }, CONFIG.entryDelayBars * 15);
+        }
         continue;
       }
 
@@ -794,6 +876,7 @@ async function processPendingSignals() {
 
       if (invalidated) {
         console.log(`[PENDING HỦY] ${symbol} ${signal.direction}: SL/TP gốc đã bị chạm trước khi kịp xác nhận -> huỷ, không vào lệnh.`);
+        await notifyPendingCancelled(signal, 'SL/TP gốc đã bị chạm trước khi kịp xác nhận');
         changed = true;
         continue;
       }
@@ -838,6 +921,7 @@ async function processPendingSignals() {
         : (finalEntry - signal.takeProfit) / riskDist;
       if (rr < 1.0) {
         console.log(`[PENDING HỦY] ${symbol} ${signal.direction}: RR sau khi chờ chỉ còn ${rr.toFixed(2)} (<1.0, giá đã chạy xa) -> huỷ, không vào lệnh.`);
+        await notifyPendingCancelled(signal, `RR sau khi chờ chỉ còn ${rr.toFixed(2)} (<1.0), giá đã chạy xa`);
         changed = true;
         continue;
       }
@@ -845,6 +929,7 @@ async function processPendingSignals() {
       const finalSignal = {
         ...signal,
         entry: finalEntry,
+        entryTime: Date.now(),
         sizing: calculatePositionSize(finalEntry, signal.stopLoss, CONFIG.riskUsd, CONFIG.leverage),
         riskReward: parseFloat(rr.toFixed(2))
       };
@@ -880,8 +965,8 @@ export async function runScanCycle() {
 
   // 1. Tải nến Đầu Tàu BTC (H4 & 1H) để kích hoạt Bộ Chỉ Huy Đầu Tàu
   const [rawBtcH4, rawBtcH1] = await Promise.all([
-    fetchOkxCandles('BTC-USDT-SWAP', '4H', 40),
-    fetchOkxCandles('BTC-USDT-SWAP', '1H', 30)
+    fetchOkxCandles('BTC-USDT-SWAP', '4H', 300),
+    fetchOkxCandles('BTC-USDT-SWAP', '1H', 300)
   ]);
   const btcH4 = rawBtcH4.filter(c => c.confirm === 1);
   const btcH1 = rawBtcH1.filter(c => c.confirm === 1);
@@ -1038,8 +1123,24 @@ async function main() {
 
   console.log(`[RUNTIME] Khởi động Bot Live Scanner (Chu kỳ: ${CONFIG.pollIntervalSec}s)...`);
   
+  startStateApi(() => ({ positions: activePositions, pending: pendingSignals.map(({ symbol, signal, score, detectedAt }) => ({ symbol, direction: signal.direction, entry: signal.entry, stopLoss: signal.stopLoss, takeProfit: signal.takeProfit, score, detectedAt })), history: readHistory(TRADE_HISTORY_FILE) }));
+
+  // Làm nóng bộ nhớ đệm bối cảnh lớn nền (không chặn vòng quét): tín hiệu đầu tiên không phải chờ tải lịch sử.
+  (async () => { for (const c of CONFIG.watchlist) await getMacroContext(c.replace('-USDT-SWAP', '').replace('-USDT', '')); })();
+
   // Khởi động Trợ lý AI Tương tác 2 Chiều trên Telegram (Gemini 3.8 Flash Vision)
   startTelegramListener({ fetchOkxCandles, getActivePositions: () => activePositions, getPendingSignals: () => pendingSignals });
+
+  try {
+    const { sendTelegramMessage } = await import('./telegram.js');
+    await sendTelegramMessage(`🟢 <b>BOT LIVE SCANNER ĐÃ KHỞI CHẠY THÀNH CÔNG!</b>\n` +
+      `• <b>Danh mục theo dõi:</b> ${CONFIG.watchlist.map(s => s.replace('-USDT-SWAP', '').replace('-USDT', '')).join(', ')}\n` +
+      `• <b>Chiến lược kích hoạt:</b> Kane Sonic R + SMC Sweep (SL/TP thuần, phiên 07-24 UTC, chờ xác nhận 60 phút)\n` +
+      `• <b>Chu kỳ quét:</b> Mỗi ${CONFIG.pollIntervalSec}s trực tiếp từ OKX\n` +
+      `• <b>Trợ lý AI Gemini 3.8:</b> Đang trực tuyến, sẵn sàng giải đáp lệnh & soi chart.`);
+  } catch (err) {
+    console.warn('[TELEGRAM] Không thể gửi thông báo khởi động:', err.message);
+  }
 
   await safeRunScanCycle();
 

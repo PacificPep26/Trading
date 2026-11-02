@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Scenario Viewer</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.0.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root { color-scheme: dark; --bg:#0b0e14; --panel:#131722; --line:#222a3a; --text:#d1d4dc; --muted:#8a93a6; --up:#26a69a; --down:#ef5350; --accent:#2962ff; --warn:#f59e0b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+  h1 { font-size:16px; margin:0 8px 0 0; letter-spacing:.04em; }
+  .seg { display:flex; gap:4px; }
+  button { background:#1b2130; color:var(--text); border:1px solid var(--line); padding:6px 12px; border-radius:6px; font:inherit; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+  .price { font:600 18px ui-monospace,Consolas,monospace; margin-left:auto; }
+  .chip { padding:2px 10px; border-radius:99px; border:1px solid var(--line); color:var(--muted); font-size:12px; }
+  .chip.bad { color:var(--down); border-color:var(--down); } .chip.good { color:var(--up); border-color:var(--up); } .chip.warn { color:var(--warn); border-color:var(--warn); }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:12px; padding:12px 16px; }
+  #chart { height:calc(100vh - 150px); min-height:420px; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  aside { display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .card h2 { margin:0 0 8px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .card ol { margin:8px 0 0; padding-left:20px; } .card li { margin:4px 0; }
+  .pos { border-left:3px solid var(--accent); padding:6px 10px; margin:8px 0; background:#0f1420; border-radius:0 6px 6px 0; }
+  .pos.long { border-color:var(--up); } .pos.short { border-color:var(--down); }
+  .mono { font-family:ui-monospace,Consolas,monospace; } .pos-r { float:right; font-weight:600; }
+  .up { color:var(--up); } .down { color:var(--down); } .muted { color:var(--muted); font-size:12px; }
+  .lg { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--muted); } .lg i { display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:2px; vertical-align:-1px; }
+  @media (max-width: 960px) { main { grid-template-columns:1fr; } #chart { height:62vh; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>BOT SCENARIO VIEWER</h1>
+  <div class="seg" id="coins" role="group" aria-label="Chọn coin"></div>
+  <div class="seg" id="bars" role="group" aria-label="Khung thời gian"></div>
+  <span class="chip" id="trend"></span><span class="chip" id="radar"></span>
+  <span class="price" id="price"></span>
+</header>
+<main>
+  <div id="chart" role="img" aria-label="Biểu đồ nến với vùng cản, hỗ trợ và lệnh của bot"></div>
+  <aside>
+    <section class="card"><h2>Kịch bản</h2><div id="headline"></div><ol id="steps"></ol></section>
+    <section class="card"><h2>Bối cảnh lớn (toàn lịch sử)</h2><div id="macro"></div></section>
+    <section class="card"><h2>Lệnh của bot</h2><div id="botbox"></div></section>
+    <section class="card"><h2>Chú giải</h2>
+      <div class="lg"><span><i style="background:#ef535066"></i>Kháng cự</span><span><i style="background:#26a69a66"></i>Hỗ trợ</span><span><i style="background:#26a69a99"></i>Lãi (TP)</span><span><i style="background:#ef5350aa"></i>Lỗ (SL)</span></div>
+      <p class="muted">Nến và vùng tính trực tiếp từ OKX bằng đúng engine của bot. Lệnh là lệnh paper thật của bot. Không có dữ liệu mẫu. Giờ hiển thị: Việt Nam.</p>
+    </section>
+  </aside>
+</main>
+<script>
+(() => {
+  const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
+  const qs = new URLSearchParams(location.search);
+  let coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null;
+  const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
+  const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
+    if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
+    const d = new Date(ms);
+    if (bar === '1M') return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
+    const day = Math.floor(ms / 86400000) * 86400;
+    return bar === '1D' ? day : day - ((d.getUTCDay() + 6) % 7) * 86400;
+  };
+  const $ = (id) => document.getElementById(id);
+  const fmt = (v) => v >= 1000 ? v.toLocaleString('en-US',{maximumFractionDigits:1}) : v >= 1 ? v.toFixed(3) : v.toFixed(4);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtT = (ms) => new Date(ms).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+
+  const chart = LightweightCharts.createChart($('chart'), {
+    autoSize: true,
+    layout: { background: { type: 'solid', color: '#131722' }, textColor: '#d1d4dc', fontFamily: 'ui-monospace,Consolas,monospace' },
+    grid: { vertLines: { color: '#1c2230' }, horzLines: { color: '#1c2230' } },
+    rightPriceScale: { borderColor: '#2a2e39' }, timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 14 }
+  });
+  const candles = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350',
+    autoscaleInfoProvider: (orig) => { const r = orig(); if (!r || !extra.length) return r; return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...extra), maxValue: Math.max(r.priceRange.maxValue, ...extra) } }; } });
+  const vol = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat:{type:'volume'}, priceScaleId:'', lastValueVisible:false, priceLineVisible:false });
+  vol.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+
+  // Vùng ngang (kháng cự / hỗ trợ) và hộp lệnh (lãi/lỗ) vẽ bằng Drawing Primitives của Lightweight Charts.
+  class Box {
+    constructor(o) { this.o = o; }
+    attached(p) { this.chart = p.chart; this.series = p.series; }
+    detached() {}
+    updateAllViews() {}
+    paneViews() {
+      const o = this.o, self = this;
+      return [{ zOrder: () => o.top ? 'top' : 'bottom', renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context: c, mediaSize }) => {
+        const x0 = o.t0 != null ? (self.chart.timeScale().timeToCoordinate(o.t0) ?? 0) : 0, W = mediaSize.width;
+        for (const r of o.rects) {
+          const a = self.series.priceToCoordinate(r.from), b = self.series.priceToCoordinate(r.to); if (a == null || b == null) continue;
+          const y = Math.min(a, b), h = Math.max(1, Math.abs(b - a));
+          c.fillStyle = r.fill; c.fillRect(x0, y, W - x0, h);
+          c.strokeStyle = r.stroke; c.lineWidth = 1; c.setLineDash(r.dash ? [5, 4] : []); c.strokeRect(x0 + .5, y + .5, W - x0 - 1, h);
+          if (r.label) { c.setLineDash([]); c.fillStyle = r.text; c.font = '11px ui-monospace,Consolas,monospace'; c.textBaseline = 'top'; c.fillText(r.label, Math.max(x0, 0) + 8, y + 3); }
+        }
+      }) }) }];
+    }
+  }
+  const zoneColors = { res: ['#ef535033', '#ef5350', '#ff8a80'], sup: ['#26a69a33', '#26a69a', '#80cbc4'] };
+  const addPrim = (o) => { const p = new Box(o); candles.attachPrimitive(p); prims.push(p); };
+  const clear = () => { prims.forEach(p => candles.detachPrimitive(p)); prims = []; lines.forEach(l => candles.removePriceLine(l)); lines = []; };
+
+  function posBox(t0, dir, entry, sl, tp, label, dash) {
+    const long = dir === 'LONG', win = '#26a69a', loss = '#ef5350';
+    addPrim({ top: true, t0, rects: [
+      { from: entry, to: tp, fill: dash ? '#26a69a14' : '#26a69a26', stroke: win, dash, text: '#b2dfdb', label: `${label} TP ${fmt(tp)}` },
+      { from: entry, to: sl, fill: dash ? '#ef535014' : '#ef535026', stroke: loss, dash, text: '#ffcdd2', label: `SL ${fmt(sl)}` } ] });
+    extra.push(entry, sl, tp);
+    lines.push(candles.createPriceLine({ price: entry, color: '#2962ff', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: `${long ? 'Long' : 'Short'} vào` }));
+  }
+
+  function render(d) {
+    $('price').textContent = fmt(d.price);
+    $('trend').textContent = 'H4: ' + d.trendH4.replace('STRONG_', 'mạnh ').replace('DOWNTREND', 'giảm').replace('UPTREND', 'tăng');
+    $('trend').className = 'chip ' + (/DOWN/.test(d.trendH4) ? 'bad' : /UP/.test(d.trendH4) ? 'good' : '');
+    $('radar').textContent = d.radarStatus === 'APPROACHING_RESISTANCE' ? 'Áp sát kháng cự' : d.radarStatus === 'APPROACHING_SUPPORT' ? 'Áp sát hỗ trợ' : 'Giữa vùng';
+    $('radar').className = 'chip ' + (d.radarStatus === 'NEUTRAL' ? '' : 'warn');
+    chart.priceScale('right').applyOptions({ mode: intraday() ? 0 : 1 }); // khung dài dùng thang log để thấy các chu kỳ
+    candles.setData(d.candles.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
+    vol.setData(d.candles.map(k => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' })));
+    clear(); extra = [];
+    d.zones.forEach(z => { const [fill, stroke, text] = zoneColors[z.kind]; addPrim({ rects: [{ from: z.top, to: z.bottom, fill, stroke, text, label: `${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] }); });
+    d.lines.forEach(l => lines.push(candles.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: l.label })));
+    const lastT = d.candles[d.candles.length - 1][0] + sh();
+    if (d.signal) posBox(lastT, d.signal.direction, d.signal.entry, d.signal.sl, d.signal.tp, 'Tín hiệu (chưa vào)', true);
+    d.bot.positions.forEach(p => posBox(snap(p.openedAt), p.direction, p.entry, p.initialStopLoss, p.takeProfit, 'Lệnh bot', false));
+    if (first) { chart.timeScale().fitContent(); if (intraday()) chart.timeScale().setVisibleLogicalRange({ from: d.candles.length - 120, to: d.candles.length + 14 }); first = false; } // khung ngày/tuần/tháng: hiện toàn bộ lịch sử
+
+    renderMacro(d);
+    $('headline').textContent = d.playbook.headline;
+    $('steps').innerHTML = d.playbook.steps.map(s => `<li>${esc(s)}</li>`).join('');
+    const b = d.bot; let h = '';
+    if (!b.connected) h += `<p class="muted">Chưa kết nối bot (${esc(b.reason || 'không rõ')}). Kịch bản vẫn tính từ OKX.</p>`;
+    b.positions.forEach(p => {
+      const risk = Math.abs(p.entry - p.initialStopLoss), r = ((p.direction === 'LONG' ? d.price - p.entry : p.entry - d.price) / risk);
+      h += `<div class="pos ${p.direction === 'LONG' ? 'long' : 'short'}"><b>${p.direction === 'LONG' ? 'Long' : 'Short'} đang mở</b> <span class="pos-r ${r >= 0 ? 'up' : 'down'}">${r >= 0 ? '+' : ''}${r.toFixed(2)}R</span><br><span class="mono">Vào ${fmt(p.entry)} · SL ${fmt(p.stopLoss)} · TP ${fmt(p.takeProfit)}</span><br><span class="muted">Mở lúc ${fmtT(p.openedAt)}${p.qualityScore ? ' · ' + p.qualityScore + ' điểm' : ''}</span></div>`;
+    });
+    b.pending.forEach(p => { h += `<div class="pos"><b>Đang chờ xác nhận ${p.direction === 'LONG' ? 'Long' : 'Short'}</b><br><span class="mono">Dự kiến ${fmt(p.entry)} · SL ${fmt(p.stopLoss)} · TP ${fmt(p.takeProfit)}</span><br><span class="muted">Phát hiện ${fmtT(p.detectedAt)}</span></div>`; });
+    if (b.connected && !b.positions.length && !b.pending.length) h += '<p class="muted">Bot không có lệnh nào ở coin này.</p>';
+    if (b.history.length) h += '<p class="muted" style="margin-bottom:2px">Lệnh đã đóng gần đây</p>' + b.history.map(t => `<div class="mono">${fmtT(t.closedAt)} ${t.direction === 'LONG' ? 'Long' : 'Short'} <span class="${t.finalR >= 0 ? 'up' : 'down'}">${t.finalR >= 0 ? '+' : ''}${t.finalR}R</span> <span class="muted">${esc(t.outcome)}</span></div>`).join('');
+    if (d.blocked) h += `<p class="muted">Engine đang chặn setup: ${esc(d.blocked.split(':')[0])}.</p>`;
+    $('botbox').innerHTML = h;
+  }
+
+  const TN = (t) => (t > 0 ? '<b class="up">tăng</b>' : t < 0 ? '<b class="down">giảm</b>' : '<b>trung tính</b>');
+  const PH = { BULL: 'TĂNG', LEAN_BULL: 'thiên tăng', RANGE: 'đi ngang/chuyển pha', LEAN_BEAR: 'thiên giảm', BEAR: 'GIẢM' };
+  function renderMacro(d) {
+    const m = d.macro; if (!m) { $('macro').innerHTML = '<p class="muted">Chưa đủ lịch sử để đánh giá bối cảnh lớn.</p>'; return; }
+    const y = (x) => `<tr><td>${x.year}</td><td class="${x.returnPct >= 0 ? 'up' : 'down'}">${x.returnPct >= 0 ? '+' : ''}${x.returnPct.toFixed(0)}%</td><td class="down">-${x.maxDrawdownPct.toFixed(0)}%</td></tr>`;
+    $('macro').innerHTML = `<p style="margin:0 0 6px"><b>Pha: ${PH[m.phase] || m.phase}</b> <span class="muted">(điểm ${m.score > 0 ? '+' : ''}${m.score})</span></p>
+      <p style="margin:0 0 6px">Tháng ${TN(m.trends.m)} · Tuần ${TN(m.trends.w)} · Ngày ${TN(m.trends.d)}<br>${d.price > m.sma200 ? 'Trên' : 'Dưới'} MA200 ngày (${fmt(m.sma200)})</p>
+      <p style="margin:0 0 6px">Đỉnh lịch sử ${fmt(m.ath.price)} · đang cách <b class="down">-${m.drawdownPct.toFixed(0)}%</b></p>
+      <table class="mono" style="width:100%;font-size:12px;border-collapse:collapse"><tr class="muted"><td>Năm</td><td>Cả năm</td><td>Sụt tối đa</td></tr>${m.years.map(y).join('')}</table>
+      <p class="muted">Dữ liệu từ ${new Date(d.firstTs).toISOString().slice(0, 10)}. Chỉ để đọc bối cảnh, không phải tín hiệu vào lệnh.</p>`;
+  }
+
+  async function load() {
+    try {
+      const r = await fetch(`/api/analysis?coin=${coin}&bar=${bar}`), d = await r.json();
+      if (d.error) throw new Error(d.error);
+      render(d);
+    } catch (e) { $('headline').textContent = 'Lỗi tải dữ liệu: ' + e.message; }
+  }
+  function pick(id, list, cur, set) {
+    $(id).innerHTML = list.map(x => `<button data-v="${x}" aria-pressed="${x === cur}">${x}</button>`).join('');
+    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; set(v); first = true; pick(id, list, v, set); load(); };
+  }
+  pick('coins', COINS, coin, v => coin = v); pick('bars', BARS, bar, v => bar = v);
+  load(); timer = setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tua lại bot</title></head><body style="margin:0"><meta name="claude:viewport-fit-sides" content="cover">
+<title>Tua Lại Lệnh</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Concept: màn hình theo dõi lệnh, biểu đồ chiếm trọng tâm, nhật ký quyết định của bot bên cạnh.
+   Màu: nền xám ngả lục, xanh/đỏ đúng quy ước nến OKX, một màu nhấn xanh dương cho hành động của bot, hổ phách cho cảnh báo. */
+:root {
+  --bg: #eef0ec; --panel: #ffffff; --panel2: #f6f7f4; --line: #d9ddd5; --fg: #1d2420; --muted: #66706a;
+  --up: #12875a; --down: #d4423a; --accent: #2b59d6; --warn: #b7791f; --ghost: #9aa39c;
+  --upBg: rgba(18,135,90,.13); --downBg: rgba(212,66,58,.13); --grid: #e4e7e0;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11161a; --panel: #181f24; --panel2: #1d262c; --line: #2b353c; --fg: #e4e9e6; --muted: #8d9993;
+  --up: #2fbf86; --down: #f0605a; --accent: #6d90ff; --warn: #e0a64a; --ghost: #5f6b65;
+  --upBg: rgba(47,191,134,.16); --downBg: rgba(240,96,90,.16); --grid: #222c32; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #11161a; --panel: #181f24; --panel2: #1d262c; --line: #2b353c; --fg: #e4e9e6; --muted: #8d9993;
+  --up: #2fbf86; --down: #f0605a; --accent: #6d90ff; --warn: #e0a64a; --ghost: #5f6b65;
+  --upBg: rgba(47,191,134,.16); --downBg: rgba(240,96,90,.16); --grid: #222c32; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  padding-block: 16px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+h2 { font-size: 12px; font-weight: 600; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.top { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline; justify-content: space-between; }
+.sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--mono); font-size: 11.5px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); white-space: nowrap; }
+.coins { display: flex; flex-wrap: wrap; gap: 6px; }
+button, select { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 11px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.coin[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.coin small { font-family: var(--mono); opacity: .8; margin-left: 5px; font-size: 11px; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; min-width: 0; }
+.stage { padding: 0; overflow: hidden; }
+.chartbox { position: relative; height: 460px; }
+canvas { display: block; width: 100%; height: 100%; }
+.readout { position: absolute; left: 12px; top: 8px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); pointer-events: none; }
+.readout b { color: var(--fg); font-weight: 500; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--panel2); }
+.controls .play { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; min-width: 84px; }
+.controls label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; }
+.slider { width: 100%; padding: 0 12px 10px; background: var(--panel2); }
+.slider input { width: 100%; accent-color: var(--accent); }
+.side { display: grid; gap: 14px; }
+.log { height: 250px; overflow: auto; font-size: 13px; display: grid; align-content: start; gap: 6px; }
+.ev { border-left: 3px solid var(--line); padding: 2px 0 2px 9px; }
+.ev time { font-family: var(--mono); font-size: 11px; color: var(--muted); display: block; }
+.ev.in { border-color: var(--accent); } .ev.win { border-color: var(--up); } .ev.loss { border-color: var(--down); }
+.ev.skip { border-color: var(--warn); } .ev.mute { border-color: var(--ghost); color: var(--muted); }
+.trades { max-height: 220px; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { text-align: left; font-weight: 500; color: var(--muted); padding: 3px 4px; position: sticky; top: 0; background: var(--panel); }
+td { padding: 5px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+tr.row { cursor: pointer; } tr.row:hover td { background: var(--panel2); }
+.pos { color: var(--up); } .neg { color: var(--down); }
+.how { display: grid; gap: 10px; }
+.how ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 78ch; }
+.how p { margin: 0; color: var(--muted); max-width: 78ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); padding: 8px 12px; border-top: 1px solid var(--line); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.stat { text-transform: none; letter-spacing: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--muted); }
+.stat b { color: var(--fg); font-family: var(--mono); font-weight: 500; }
+@media (max-width: 960px) { .main { grid-template-columns: minmax(0, 1fr); } .chartbox { height: 380px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Tua Lại Lệnh</h1>
+      <p class="sub" id="range"></p>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="coins" id="coins" role="group" aria-label="Chọn coin"></div>
+
+  <div class="main">
+    <div class="panel stage">
+      <div class="chartbox"><canvas id="cv" aria-label="Biểu đồ nến M15 với lệnh của bot"></canvas><div class="readout" id="readout"></div></div>
+      <div class="slider"><input type="range" id="seek" min="0" max="100" value="0" aria-label="Vị trí thời gian"></div>
+      <div class="controls">
+        <button id="prevTrade" title="Về trước tín hiệu của lệnh trước">⏮ Lệnh trước</button>
+        <button id="back" title="Lùi 1 nến">◀ 1 nến</button>
+        <button class="play" id="play">▶ Chạy</button>
+        <button id="fwd" title="Tiến 1 nến">1 nến ▶</button>
+        <button id="nextTrade" title="Tới trước tín hiệu của lệnh sau">Lệnh sau ⏭</button>
+        <label>Tốc độ <select id="speed"><option value="0.5">0.5 nến/giây</option><option value="1">1 nến/giây</option><option value="2" selected>2 nến/giây</option><option value="5">5 nến/giây</option><option value="12">12 nến/giây</option><option value="30">30 nến/giây</option></select></label>
+        <label><input type="checkbox" id="live" checked> Nến chạy trong thân (mô phỏng)</label>
+        <label>Hiện <select id="win"><option value="60">60 nến</option><option value="110" selected>110 nến</option><option value="220">220 nến</option></select></label>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent)"></span>Tín hiệu được vào lệnh</span>
+        <span><span class="dot" style="background:var(--warn)"></span>Đủ điểm nhưng hủy khi chờ xác nhận</span>
+        <span><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="showLow"> Điểm thấp (bỏ)</label></span>
+        <span><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="showBlocked"> Bị bộ lọc chặn</label></span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel"><h2>Nhật ký quyết định của bot</h2><div class="log" id="log" aria-live="polite"></div></div>
+      <div class="panel"><h2>Lệnh của coin này <span class="stat" id="stat" style="display:inline-flex;margin-left:6px"></span></h2><div class="trades"><table><thead><tr><th>Giờ VN</th><th>Hướng</th><th>Điểm</th><th>Kết quả</th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+    </div>
+  </div>
+
+  <div class="panel how">
+    <h2>Backtest vào lệnh như thế nào</h2>
+    <ol>
+      <li><b>Nến thật của OKX.</b> Mỗi nến M15 trong biểu đồ là dữ liệu thật tải từ OKX. Bot chỉ được nhìn các nến đã đóng cho tới thời điểm đó, không nhìn trước.</li>
+      <li><b>Tìm setup.</b> Khi một nến M15 đóng, bot chạy các bộ lọc (phiên giao dịch, khiên BTC, chop, xu hướng cấu trúc BOS H4) rồi tìm setup Kane hoặc SMC Sweep. Có setup thì ra một tín hiệu gồm giá vào dự kiến, SL và TP.</li>
+      <li><b>Chấm điểm.</b> Dưới ngưỡng điểm thì bỏ (chấm màu xám). Đủ điểm thì sang bước chờ.</li>
+      <li><b>Chờ xác nhận 4 nến M15 (60 phút).</b> Nếu trong lúc chờ giá đã chạm SL hoặc TP gốc thì hủy (chấm hổ phách). Nếu không, bot vào lệnh tại <b>giá đóng cửa nến thứ 4</b>, như một lệnh thị trường.</li>
+      <li><b>Sau khi vào.</b> Mỗi nến kiểm tra theo râu nến (cao nhất, thấp nhất). Nếu một nến chạm cả SL lẫn TP thì tính SL trước. Không dời SL. Kết quả tính bằng R (1R là mức rủi ro cố định), đã trừ phí hai chiều.</li>
+    </ol>
+    <p>Giới hạn: dữ liệu chỉ có mở, cao, thấp, đóng của mỗi 15 phút, nên việc nến "chạy" trong thân chỉ là mô phỏng (giả định nến xanh đi thấp trước rồi cao, nến đỏ ngược lại). Thứ tự thật của các giá trong 15 phút đó không có trong dữ liệu.</p>
+  </div>
+</div>
+
+<script>
+const DATA = {"meta":{"from":"2021-01-01","to":"2026-10-31","generatedAt":"2026-10-31T16:45:03.290Z","config":{"minScore":75,"entryDelayBars":4,"minRR":2,"session":"7-24 UTC","chopSleep":false,"trendAlign":true,"beManagement":false,"riskUsd":10,"leverage":10}},"coins":{"BTC":{"nTrades":55},"ETH":{"nTrades":56},"SOL":{"nTrades":22},"HYPE":{"nTrades":9},"NEAR":{"nTrades":12},"LINK":{"nTrades":35}}};
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const fmtT = (ts) => new Intl.DateTimeFormat('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(ts).replace(',', '');
+  const fmtP = (v) => (v >= 1000 ? v.toLocaleString('en-US', { maximumFractionDigits: 1 }) : v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(3) : v.toFixed(4));
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const M15 = 900000, WAIT = DATA.meta.config.entryDelayBars || 4;
+  const stratName = (s) => (s || '').replace(/_(LONG|SHORT)$/, '').replace('_REVERSAL', '').replace('KANE_THUAN_TREND', 'Kane thuận xu hướng').replace('SMC_SWEEP', 'SMC quét thanh khoản');
+  const dirName = (d) => (d === 'LONG' ? 'Long' : 'Short');
+  const cfg = DATA.meta.config;
+  $('range').textContent = 'Từ ' + DATA.meta.from.split('-').reverse().join('/') + ' đến ' + DATA.meta.to.split('-').reverse().join('/') + ', nến M15 OKX, giờ Việt Nam';
+  $('chips').innerHTML = [`điểm tối thiểu ${cfg.minScore}`, `chờ ${cfg.entryDelayBars} nến`, `phiên ${cfg.session}`, `chop-sleep ${cfg.chopSleep ? 'bật' : 'tắt'}`, `lọc BOS H4 ${cfg.trendAlign ? 'bật' : 'tắt'}`, `SL/TP ${cfg.beManagement ? 'có co SL' : 'thuần'}`, `rủi ro $${cfg.riskUsd}/lệnh`].map(t => `<span class="chip">${t}</span>`).join('');
+
+  let coin = null, S = null, p = 0, sub = 0, playing = false, last = 0, selTrade = -1;
+  const cv = $('cv'), ctx = cv.getContext('2d');
+
+  function prep(sym) {
+    const c = DATA.coins[sym], idx = new Map(c.candles.map((k, i) => [k[0], i]));
+    const trades = c.trades.map(t => ({ ...t, sIdx: idx.get(t.signalTs), eIdx: idx.get(t.entryTs), xIdx: idx.get(t.exitTs) }));
+    const sigs = c.signals.map(s => ({ ...s, i: idx.get(s.ts) })).filter(s => s.i !== undefined);
+    const ev = new Map(); const add = (i, e) => { if (i === undefined) return; (ev.get(i) || ev.set(i, []).get(i)).push(e); };
+    sigs.forEach(s => {
+      const w = `${dirName(s.dir)} ${stratName(s.strat)}`;
+      if (s.status === 'entered') add(s.i, { cls: 'in', t: s.ts, text: `Tín hiệu ${w}, điểm ${s.score}. Chờ xác nhận ${WAIT} nến (60 phút).` });
+      else if (s.status === 'cancelled') add(s.i, { cls: 'skip', t: s.ts, text: `Tín hiệu ${w}, điểm ${s.score}: hủy vì SL hoặc TP gốc bị chạm trong lúc chờ xác nhận.` });
+      else if (s.status === 'low_score') add(s.i, { cls: 'mute', t: s.ts, low: true, text: `Có setup ${w} nhưng chỉ ${s.score}/100 điểm (cần ${cfg.minScore}). Bỏ.` });
+      else if (s.status === 'blocked') add(s.i, { cls: 'mute', t: s.ts, blocked: true, text: `Setup ${dirName(s.dir)} bị chặn: ${(s.reason || '').split(':')[0]}.` });
+    });
+    trades.forEach((t, k) => {
+      add(t.eIdx, { cls: 'in', t: t.entryTs, text: `Vào ${dirName(t.dir)} tại ${fmtP(t.entry)}. SL ${fmtP(t.sl)}, TP ${fmtP(t.tp)}.` });
+      add(t.xIdx, { cls: t.r > 0 ? 'win' : 'loss', t: t.exitTs, text: `${t.r > 0 ? 'Chốt lời' : 'Cắt lỗ'} tại ${fmtP(t.exitPrice)}: ${t.r > 0 ? '+' : ''}${t.r}R.` });
+    });
+    return { c, trades, sigs, ev, n: c.candles.length };
+  }
+
+  async function loadCoin(sym) { // chế độ site: mỗi coin nằm trong data/<COIN>.json, tải khi bấm
+    if (DATA.coins[sym].candles) return;
+    $('stat').textContent = 'Đang tải dữ liệu ' + sym + '...';
+    const r = await fetch('data/' + sym + '.json'); if (!r.ok) throw new Error('Không tải được ' + sym);
+    Object.assign(DATA.coins[sym], await r.json());
+  }
+  async function setCoin(sym) {
+    playing = false; await loadCoin(sym);
+    coin = sym; S = prep(sym); selTrade = -1;
+    document.querySelectorAll('.coin').forEach(b => b.setAttribute('aria-pressed', b.dataset.sym === sym ? 'true' : 'false'));
+    const first = S.trades.find(t => t.sIdx !== undefined);
+    p = first ? Math.max(5, first.sIdx - 14) : Math.min(120, S.n - 1); sub = 0; playing = false; $('play').textContent = '▶ Chạy';
+    $('seek').max = S.n - 1;
+    const tot = S.trades.reduce((a, t) => a + t.r, 0), w = S.trades.filter(t => t.r > 0).length;
+    $('stat').innerHTML = `<span><b>${S.trades.length}</b> lệnh</span><span><b>${w}</b> thắng</span><span><b class="${tot >= 0 ? 'pos' : 'neg'}">${tot >= 0 ? '+' : ''}${tot.toFixed(1)}R</b></span>`;
+    $('tbody').innerHTML = S.trades.length ? S.trades.map((t, k) => `<tr class="row" data-k="${k}"><td>${fmtT(t.signalTs)}</td><td>${dirName(t.dir)}</td><td>${t.score}</td><td class="${t.r > 0 ? 'pos' : 'neg'}">${t.r > 0 ? '+' : ''}${t.r}R</td></tr>`).join('') : '<tr><td colspan="4" style="color:var(--muted)">Không có lệnh nào trong giai đoạn này.</td></tr>';
+    draw(); renderLog();
+  }
+
+  function renderLog() {
+    const show = [];
+    const lo = Math.max(0, p - 400);
+    for (let i = lo; i <= p; i++) (S.ev.get(i) || []).forEach(e => { if ((e.low && !$('showLow').checked) || (e.blocked && !$('showBlocked').checked)) return; show.push(e); });
+    const html = show.slice(-40).map(e => `<div class="ev ${e.cls}"><time>${fmtT(e.t)}</time>${e.text}</div>`).join('');
+    const box = $('log'); const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+    box.innerHTML = html || '<div class="ev mute">Chưa có sự kiện. Nhấn Chạy hoặc kéo thanh thời gian.</div>';
+    if (stick) box.scrollTop = box.scrollHeight;
+  }
+
+  function partial(k, t) { // nến đang chạy: đi O -> cực trị 1 -> cực trị 2 -> C
+    const [, o, h, l, c] = k, pts = c >= o ? [o, l, h, c] : [o, h, l, c];
+    const seg = Math.min(2, Math.floor(t * 3)), f = t * 3 - seg, a = pts[seg], b = pts[seg + 1], cur = a + (b - a) * f;
+    let hh = o, ll = o; for (let s = 0; s <= seg; s++) { hh = Math.max(hh, pts[s]); ll = Math.min(ll, pts[s]); } hh = Math.max(hh, cur); ll = Math.min(ll, cur);
+    return [k[0], o, hh, ll, cur, k[5]];
+  }
+
+  function draw() {
+    if (!S) return;
+    const box = cv.parentElement, dpr = window.devicePixelRatio || 1, W = box.clientWidth, H = box.clientHeight;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    const K = S.c.candles, N = +$('win').value, live = $('live').checked && sub > 0 && p + 1 < S.n;
+    const lastI = p + (live ? 1 : 0), start = Math.max(0, lastI - N + 1);
+    const vis = K.slice(start, p + 1); if (live) vis.push(partial(K[p + 1], sub));
+    const L = 8, R = 86, T = 28, B = 24, cw = (W - L - R) / N, ch = H - T - B, volH = ch * 0.14;
+    // lệnh đang hiển thị
+    const act = S.trades.filter(t => t.eIdx !== undefined && t.eIdx <= p && t.eIdx >= start - 400 && (t.xIdx === undefined || t.xIdx > p - 6 || k2(t) === selTrade));
+    function k2(t) { return S.trades.indexOf(t); }
+    let lo = Math.min(...vis.map(k => k[3])), hi = Math.max(...vis.map(k => k[2]));
+    act.forEach(t => { if (t.xIdx === undefined || t.xIdx >= start) { lo = Math.min(lo, t.sl); hi = Math.max(hi, t.tp); } });
+    const pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    const x = (i) => L + (i - start + 0.5) * cw, y = (v) => T + (hi - v) / (hi - lo) * (ch - volH - 6);
+    ctx.font = '11px ' + css('--mono'); ctx.textBaseline = 'middle';
+    // lưới + nhãn giá
+    ctx.strokeStyle = css('--grid'); ctx.fillStyle = css('--muted'); ctx.lineWidth = 1; ctx.textAlign = 'left';
+    for (let g = 0; g <= 5; g++) { const v = lo + (hi - lo) * g / 5, yy = y(v); ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(W - R, yy); ctx.stroke(); ctx.fillText(fmtP(v), W - R + 6, yy); }
+    ctx.textAlign = 'center'; const stepT = Math.max(1, Math.round(N / 6));
+    for (let i = start - (start % stepT) + stepT; i <= lastI; i += stepT) { if (i >= start) ctx.fillText(fmtT(K[i][0]), Math.min(x(i), W - R - 30), H - B / 2); }
+    // vùng lãi/lỗ của lệnh
+    const up = css('--up'), down = css('--down'), accent = css('--accent'), warn = css('--warn');
+    act.forEach(t => {
+      const x0 = x(Math.max(t.eIdx, start)), x1 = x(Math.min(t.xIdx ?? lastI, lastI)) + cw / 2, ex = t.xIdx !== undefined && t.xIdx <= p;
+      ctx.fillStyle = css('--upBg'); ctx.fillRect(x0, Math.min(y(t.entry), y(t.tp)), x1 - x0, Math.abs(y(t.tp) - y(t.entry)));
+      ctx.fillStyle = css('--downBg'); ctx.fillRect(x0, Math.min(y(t.entry), y(t.sl)), x1 - x0, Math.abs(y(t.sl) - y(t.entry)));
+      ctx.setLineDash([5, 4]); ctx.lineWidth = 1; ctx.strokeStyle = up; ctx.beginPath(); ctx.moveTo(x0, y(t.tp)); ctx.lineTo(W - R, y(t.tp)); ctx.stroke();
+      ctx.strokeStyle = down; ctx.beginPath(); ctx.moveTo(x0, y(t.sl)); ctx.lineTo(W - R, y(t.sl)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = accent; ctx.beginPath(); ctx.moveTo(x0, y(t.entry)); ctx.lineTo(W - R, y(t.entry)); ctx.stroke();
+      ctx.textAlign = 'left'; ctx.fillStyle = up; ctx.fillText('TP ' + fmtP(t.tp), W - R + 6, y(t.tp) - 9); ctx.fillStyle = down; ctx.fillText('SL ' + fmtP(t.sl), W - R + 6, y(t.sl) + 9);
+      ctx.fillStyle = accent; ctx.fillText('Vào ' + fmtP(t.entry), W - R + 6, y(t.entry) + (t.dir === 'LONG' ? 9 : -9));
+      if (t.sIdx >= start) { ctx.setLineDash([2, 4]); ctx.strokeStyle = accent; ctx.beginPath(); ctx.moveTo(x(t.sIdx), T); ctx.lineTo(x(t.sIdx), H - B); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = accent; ctx.textAlign = 'center'; ctx.fillText('Tín hiệu', x(t.sIdx), T - 10); }
+      if (t.eIdx >= start) { ctx.fillStyle = accent; ctx.textAlign = 'center'; ctx.fillText('Vào lệnh', x(t.eIdx), T - 10 + (t.eIdx - t.sIdx < 8 ? 11 : 0)); }
+      if (ex && t.xIdx >= start) { ctx.beginPath(); ctx.arc(x(t.xIdx), y(t.exitPrice), 5, 0, 6.3); ctx.fillStyle = t.r > 0 ? up : down; ctx.fill(); ctx.textAlign = 'center'; ctx.fillText((t.r > 0 ? '+' : '') + t.r + 'R', x(t.xIdx), y(t.exitPrice) + (t.dir === 'LONG' ? (t.r > 0 ? -12 : 14) : (t.r > 0 ? 14 : -12))); }
+    });
+    // khối lượng + nến
+    const vmax = Math.max(...vis.map(k => k[5])) || 1;
+    vis.forEach((k, j) => {
+      const i = start + j, xx = x(i), bull = k[4] >= k[1], col = bull ? up : down;
+      ctx.globalAlpha = 0.28; ctx.fillStyle = col; const vh = k[5] / vmax * volH; ctx.fillRect(xx - cw * 0.35, H - B - vh, cw * 0.7, vh); ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xx, y(k[2])); ctx.lineTo(xx, y(k[3])); ctx.stroke();
+      const bt = y(Math.max(k[1], k[4])), bh = Math.max(1, Math.abs(y(k[1]) - y(k[4]))); ctx.fillRect(xx - Math.max(1, cw * 0.32), bt, Math.max(2, cw * 0.64), bh);
+    });
+    // chấm tín hiệu
+    S.sigs.forEach(s => {
+      if (s.i < start || s.i > p) return;
+      if ((s.status === 'low_score' && !$('showLow').checked) || (s.status === 'blocked' && !$('showBlocked').checked)) return;
+      const k = K[s.i], below = s.dir === 'LONG', yy = below ? y(k[3]) + 9 : y(k[2]) - 9;
+      ctx.beginPath(); ctx.arc(x(s.i), yy, s.status === 'entered' ? 4.5 : 3.2, 0, 6.3);
+      if (s.status === 'entered') { ctx.fillStyle = accent; ctx.fill(); } else if (s.status === 'cancelled') { ctx.fillStyle = warn; ctx.fill(); } else { ctx.strokeStyle = css('--ghost'); ctx.lineWidth = 1.2; ctx.stroke(); }
+    });
+    // giá hiện tại
+    const cur = vis[vis.length - 1]; ctx.setLineDash([2, 3]); ctx.strokeStyle = css('--muted'); ctx.beginPath(); ctx.moveTo(L, y(cur[4])); ctx.lineTo(W - R, y(cur[4])); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = cur[4] >= cur[1] ? up : down; ctx.fillRect(W - R + 1, y(cur[4]) - 9, R - 2, 18); ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(fmtP(cur[4]), W - R + 5, y(cur[4]));
+    $('readout').innerHTML = `<b>${coin}/USDT</b> M15 &nbsp; ${fmtT(cur[0])} &nbsp; M <b>${fmtP(cur[1])}</b> C <b>${fmtP(cur[2])}</b> T <b>${fmtP(cur[3])}</b> Đ <b>${fmtP(cur[4])}</b>${live ? ' &nbsp;(nến đang chạy)' : ''}`;
+    $('seek').value = p;
+  }
+
+  function step(dir) { sub = 0; p = Math.min(S.n - 1, Math.max(5, p + dir)); draw(); renderLog(); }
+  function jumpTrade(dir) {
+    const list = S.trades.filter(t => t.sIdx !== undefined).map(t => Math.max(5, t.sIdx - 14));
+    const target = dir > 0 ? list.find(v => v > p) : [...list].reverse().find(v => v < p - 1);
+    if (target !== undefined) { p = target; sub = 0; playing = false; $('play').textContent = '▶ Chạy'; draw(); renderLog(); }
+  }
+  function loop(now) {
+    if (!playing) return;
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const spd = +$('speed').value, live = $('live').checked;
+    if (live) { sub += dt * spd; while (sub >= 1) { sub -= 1; p++; if (p >= S.n - 1) { p = S.n - 1; sub = 0; playing = false; $('play').textContent = '▶ Chạy'; break; } renderLog(); } }
+    else { sub += dt * spd; if (sub >= 1) { sub = 0; p = Math.min(S.n - 1, p + Math.floor(1)); renderLog(); if (p >= S.n - 1) { playing = false; $('play').textContent = '▶ Chạy'; } } }
+    draw(); if (playing) requestAnimationFrame(loop);
+  }
+  $('play').onclick = () => { playing = !playing; $('play').textContent = playing ? '⏸ Dừng' : '▶ Chạy'; if (playing) { last = performance.now(); requestAnimationFrame(loop); } };
+  $('back').onclick = () => step(-1); $('fwd').onclick = () => step(1);
+  $('prevTrade').onclick = () => jumpTrade(-1); $('nextTrade').onclick = () => jumpTrade(1);
+  $('seek').oninput = (e) => { p = +e.target.value; sub = 0; draw(); renderLog(); };
+  ['win', 'live', 'showLow', 'showBlocked'].forEach(id => $(id).onchange = () => { draw(); renderLog(); });
+  $('tbody').onclick = (e) => { const tr = e.target.closest('tr.row'); if (!tr) return; const t = S.trades[+tr.dataset.k]; selTrade = +tr.dataset.k; p = Math.max(5, t.sIdx - 14); sub = 0; playing = false; $('play').textContent = '▶ Chạy'; draw(); renderLog(); };
+  window.addEventListener('keydown', (e) => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range') return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); });
+  new ResizeObserver(() => draw()).observe(cv.parentElement);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
+
+  const coins = Object.keys(DATA.coins), nT = (s) => DATA.coins[s].trades ? DATA.coins[s].trades.length : DATA.coins[s].nTrades;
+  $('coins').innerHTML = coins.map(s => `<button class="coin" data-sym="${s}" aria-pressed="false">${s}<small>${nT(s)} lệnh</small></button>`).join('');
+  $('coins').onclick = (e) => { const b = e.target.closest('.coin'); if (b) setCoin(b.dataset.sym); };
+  setCoin(coins.slice().sort((a, b) => nT(b) - nT(a))[0]);
+})();
+</script>
+</body></html>

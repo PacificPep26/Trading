@@ -14,7 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { normalizeCandle, calculateATR } from '../src/indicators.js';
-import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize } from '../src/engine.js';
+import { evaluateMarket, calculateSetupQualityScore, calculatePositionSize, registerTakeProfitHit } from '../src/engine.js';
 import { BOT_CONFIG, UNIVERSE_CONFIG } from '../src/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -140,7 +140,20 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
         ? (favorablePrice - activeTrade.entry) / riskDist
         : (activeTrade.entry - favorablePrice) / riskDist;
 
-      if (!activeTrade.isProfitLocked && curMaxR >= (activeTrade.customBeTriggerR || cfg.beTriggerR)) {
+      // Dynamic 2-Tier Breakeven
+      // Tầng 1: Tại +0.8R -> Co SL về -0.3R (Cắt 70% rủi ro)
+      const step1TriggerR = cfg.beStep1TriggerR || 0.8;
+      if (!activeTrade.tier1Reduced && curMaxR >= step1TriggerR) {
+        activeTrade.tier1Reduced = true;
+        const reduceLossR = Math.abs(cfg.beStep1ReduceLossR !== undefined ? cfg.beStep1ReduceLossR : 0.3);
+        activeTrade.stopLoss = isLong
+          ? activeTrade.entry - (reduceLossR * riskDist)
+          : activeTrade.entry + (reduceLossR * riskDist);
+      }
+
+      // Tầng 2: Tại +1.2R -> Khóa hòa vốn +0.05R
+      const beTriggerR = activeTrade.customBeTriggerR || cfg.beTriggerR || 1.2;
+      if (!activeTrade.isProfitLocked && curMaxR >= beTriggerR) {
         activeTrade.isProfitLocked = true;
         activeTrade.stopLoss = isLong
           ? activeTrade.entry + (cfg.lockProfitR * riskDist)
@@ -202,13 +215,15 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           ? (exitPrice - activeTrade.entry) * activeTrade.sizing.size
           : (activeTrade.entry - exitPrice) * activeTrade.sizing.size;
         const { feeUsd, feeR } = roundtripFee(activeTrade.sizing.notional, 'SL');
-        const grossR = activeTrade.isProfitLocked ? cfg.lockProfitR : -1.0;
+        const grossR = activeTrade.isProfitLocked
+          ? cfg.lockProfitR
+          : (activeTrade.tier1Reduced ? (cfg.beStep1ReduceLossR !== undefined ? cfg.beStep1ReduceLossR : -0.3) : -1.0);
 
         closedTrades.push({
           ...activeTrade,
           exitTime: m15CloseTime,
           exitPrice,
-          outcome: activeTrade.isProfitLocked ? 'LOCK_+1R' : 'SL',
+          outcome: activeTrade.isProfitLocked ? 'LOCK_+1R' : (activeTrade.tier1Reduced ? 'SL_REDUCED' : 'SL'),
           netR: grossR - feeR,
           netUsd: grossPnl - feeUsd
         });
@@ -227,6 +242,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           netR: activeTrade.riskReward - feeR,
           netUsd: grossPnl - feeUsd
         });
+        registerTakeProfitHit(symbol, activeTrade.direction, exitPrice, m15CloseTime);
         activeTrade = null;
       }
     }
@@ -274,6 +290,10 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
           btcH4Candles: visibleBtcH4,
           config: cfg
         });
+        // Nhật ký tín hiệu tùy chọn (cfg.signalLog = []): ghi lại cả tín hiệu bị chặn/bỏ để replay minh bạch
+        if (cfg.signalLog && signal && signal.isBlocked) {
+          cfg.signalLog.push({ ts: currentM15.ts, sym: symbol, direction: signal.direction, status: 'blocked', reason: signal.blockReason });
+        }
 
         // Áp đúng cổng chấm điểm chất lượng Setup như server.js live để backtest
         // phản ánh trung thực điều kiện vào lệnh thực tế (không nhận tín hiệu thô).
@@ -286,7 +306,10 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
             btcH1Candles: visibleBtcH1
           });
           const minScore = cfg.minSetupQualityScore || 75;
+          const logRec = cfg.signalLog ? { ts: currentM15.ts, sym: symbol, direction: signal.direction, strategy: signal.strategy, entry: signal.entry, stopLoss: signal.stopLoss, takeProfit: signal.takeProfit, score: quality.score, reasons: quality.reasons, status: 'low_score' } : null;
+          if (logRec) cfg.signalLog.push(logRec);
           if (quality.score >= minScore) {
+            if (logRec) logRec.status = 'cancelled';
             // ENTRY DELAY (mặc định BẬT, entryDelayBars=4 ~60 phút, xem
             // src/config.js): KHÔNG vào lệnh ngay, mô phỏng chờ N nến M15 rồi
             // mới thật sự khớp lệnh (dùng close nến đó làm entry thật). Nếu
@@ -303,6 +326,10 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
             // Nếu chạm SL trước khi fill -> cũng bỏ. Đo tỷ lệ miss + lợi phí Maker.
             if (cfg.limitEntry && (!cfg.limitEntrySide || cfg.limitEntrySide === signal.direction)) {
               const fillWin = cfg.limitFillBars || delayBars || 4;
+              // limitDepth (0..1): đặt limit sâu hơn giá tín hiệu theo tỷ lệ khoảng cách tới SL (hồi về mới khớp)
+              const limitPx = isLong
+                ? signal.entry - (cfg.limitDepth || 0) * (signal.entry - signal.stopLoss)
+                : signal.entry + (cfg.limitDepth || 0) * (signal.stopLoss - signal.entry);
               let filled = false;
               let consumed = 0;
               for (let d = 1; d <= fillWin; d++) {
@@ -312,19 +339,20 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
                 consumed = d;
                 if (isLong) {
                   if (fb.low <= signal.stopLoss) break;      // bị quét SL trước khi fill
-                  if (fb.low <= signal.entry) { filled = true; break; }
+                  if (fb.low <= limitPx) { filled = true; break; }
                 } else {
                   if (fb.high >= signal.stopLoss) break;
-                  if (fb.high >= signal.entry) { filled = true; break; }
+                  if (fb.high >= limitPx) { filled = true; break; }
                 }
               }
               if (filled) {
                 activeTrade = {
                   ...signal,
-                  entry: signal.entry,
-                  sizing: calculatePositionSize(signal.entry, signal.stopLoss, cfg.riskUsd, cfg.leverage),
+                  entry: limitPx,
+                  sizing: calculatePositionSize(limitPx, signal.stopLoss, cfg.riskUsd, cfg.leverage),
                   riskReward: signal.riskReward,
                   qualityScore: quality.score,
+                  qualityReasons: quality.reasons,
                   entryTime: candlesM15[i + consumed].ts,
                   initialStopLoss: signal.stopLoss,
                   isProfitLocked: false,
@@ -364,6 +392,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
                   sizing: delayBars > 0 ? calculatePositionSize(finalEntry, signal.stopLoss, cfg.riskUsd, cfg.leverage) : signal.sizing,
                   riskReward: delayBars > 0 ? parseFloat(rr.toFixed(2)) : signal.riskReward,
                   qualityScore: quality.score,
+                  qualityReasons: quality.reasons,
                   entryTime: finalEntryTime,
                   initialStopLoss: signal.stopLoss,
                   isProfitLocked: false,
@@ -374,6 +403,7 @@ export async function backtestSymbol(instId, btcH1Candles, btcH4Candles = null, 
                 // chạy trên nến i+1..i+delayBars (TRƯỚC khi vào lệnh) và lock
                 // lãi/thoát "miễn phí" từ biến động trước entry -> thổi phồng.
                 // Quản lý bắt đầu đúng từ nến SAU entry (i+delayBars+1).
+                if (logRec) { logRec.status = 'entered'; logRec.entryTime = finalEntryTime; logRec.entryPrice = finalEntry; }
                 if (delayBars > 0) i += delayBars;
               }
             }
@@ -404,7 +434,9 @@ export function calculateMetrics(trades) {
 
   const wins = trades.filter(t => t.outcome === 'TP');
   const locks = trades.filter(t => t.outcome === 'LOCK_+1R');
-  const losses = trades.filter(t => t.outcome === 'SL');
+  const slReduced = trades.filter(t => t.outcome === 'SL_REDUCED');
+  const fullLosses = trades.filter(t => t.outcome === 'SL');
+  const losses = trades.filter(t => t.outcome === 'SL' || t.outcome === 'SL_REDUCED');
 
   const winRate = (((wins.length + locks.length) / trades.length) * 100).toFixed(1) + '%';
   const grossProfit = trades.filter(t => t.netUsd > 0).reduce((acc, t) => acc + t.netUsd, 0);

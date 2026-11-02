@@ -11,3 +11,8 @@ data/trade_history.json
 
 data/parameter_sweep_results.json
 data/variants_multi_year_results.json
+data/alerts/
+deploy/viewer/src/
+deploy/viewer/node_modules/
+data/cache_long/
+deploy/replay-site/data/

@@ -30,7 +30,7 @@ export const CAPITAL_CONFIG = {
   feeRate: process.env.ORDER_TYPE === 'MARKET' ? 0.0008 : 0.0002,
 
   // Số lượng vị thế mở tối đa cùng một thời điểm (Tránh phân tán Margin)
-  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '2', 10),
+  maxOpenPositions: parseInt(process.env.MAX_OPEN_POSITIONS || '3', 10),
 
   // Giới hạn số lượng vị thế cùng chiều tối đa (Tránh dồn rủi ro một hướng)
   maxDirectionalPositions: parseInt(process.env.MAX_DIRECTIONAL_POSITIONS || '2', 10),
@@ -78,7 +78,11 @@ export const EXIT_CONFIG = {
   minRR: parseFloat(process.env.MIN_RR_RATIO || '2.0'),
 
   // Mốc lãi để kích hoạt dời Stop Loss (Nâng lên +1.4R theo khuyến nghị Chuyên gia để tránh bị quét khi retest)
-  beTriggerR: parseFloat(process.env.BE_TRIGGER_R || '1.4'),
+  // Backtest 2021-26: SL/TP thuần (không co SL, không khóa lãi) PF 1.26 / +52.4R, tốt hơn có co/khóa PF 1.17 / +28.5R
+  // (lệnh thua là thất bại ngay từ đầu, còn co/khóa chỉ cắt lãi của lệnh thắng). Đặt ENABLE_BE_MANAGEMENT=true để bật lại.
+  beStep1TriggerR: process.env.ENABLE_BE_MANAGEMENT === 'true' ? parseFloat(process.env.BE_STEP1_TRIGGER_R || '0.8') : 99,
+  beStep1ReduceLossR: parseFloat(process.env.BE_STEP1_REDUCE_LOSS_R || '-0.3'),
+  beTriggerR: process.env.ENABLE_BE_MANAGEMENT === 'true' ? parseFloat(process.env.BE_TRIGGER_R || '1.2') : 99,
 
   // Mức khóa lợi nhuận dương (Đưa về Hòa Vốn thực tế +0.05R đệm trượt giá, không khóa non 0.5R để giá thở tới 2R)
   lockProfitR: parseFloat(process.env.LOCK_PROFIT_R || '0.05'),
@@ -266,6 +270,30 @@ export const INDICATOR_CONFIG = {
   breakerPivotL: parseInt(process.env.BREAKER_PIVOT_L || '1', 10),
   breakerPivotR: parseInt(process.env.BREAKER_PIVOT_R || '1', 10),
 
+  // S/R FLIP LEVELS (Breaker Retest vào cản chính): Tái dùng findBreakerBlocks,
+  // đưa các zone flip chưa mitigated vào mảng cản/hỗ trợ chính và radar.
+  // Backtest 32 tổ hợp đa năm xác nhận: thắng trên CẢ 2024+ (+61.74R -> +62.43R)
+  // VÀ Full 2021-2026 (PF 0.99 -> 1.00, +3.47R, MaxDD co bớt), không hồi quy. BẬT mặc định.
+  useFlipLevels: process.env.USE_FLIP_LEVELS !== 'false',
+
+  // SMC LIQUIDITY GRAB / TURTLE SOUP (Quét đỉnh/đáy bẫy thanh khoản M15):
+  // Phục kích các cú bơm/xả quét râu qua cản H4 rồi rút râu đảo chiều.
+  // Mặc định TẮT (chạy test-first trước khi kích hoạt).
+  enableLiquidityGrab: process.env.ENABLE_LIQUIDITY_GRAB === 'true',
+
+  // SMC M15 FVG (Fair Value Gap trên khung 15m):
+  // Bổ sung các vùng mất cân bằng cung cầu M15 chưa lấp vào cản đón đầu.
+  // Mặc định TẮT (chạy test-first trước khi kích hoạt).
+  useM15Fvg: process.env.USE_M15_FVG === 'true',
+
+  // D1 MACRO KEY LEVELS: Bổ sung các đỉnh/đáy Fractal D1 (Swing High/Low) vào mảng
+  // cản/hỗ trợ chính resistances và supports khi giá vượt ra ngoài biên độ H4 (OUT_OF_BOUNDS_ONLY).
+  // Đã kiểm chứng Walk-Forward 5 năm: Full 2021-2026 lật từ âm -6.70R lên +12.91R (+19.61R),
+  // PF tăng từ 0.99 lên 1.02, MaxDD giảm 19.05R (từ -82.95R xuống -63.90R), 2024+ đạt +58.43R. BẬT mặc định.
+  useD1MacroLevels: process.env.USE_D1_MACRO_LEVELS !== 'false',
+  useW1MacroLevels: process.env.USE_W1_MACRO_LEVELS !== 'false',
+  d1MacroMode: process.env.D1_MACRO_MODE || 'OUT_OF_BOUNDS_ONLY',
+
   // ENTRY DELAY (xác nhận trễ trước khi vào lệnh thật): backtest xác nhận chờ
   // 4 nến M15 (~60 phút) sau khi tín hiệu đạt chuẩn rồi mới thật sự khớp lệnh
   // (bỏ qua nếu SL/TP gốc đã bị chạm trước, hoặc RR suy giảm <1.0 do giá chạy
@@ -331,6 +359,8 @@ export const BOT_CONFIG = {
   maxOpenPositions: CAPITAL_CONFIG.maxOpenPositions,
 
   minRR: EXIT_CONFIG.minRR,
+  beStep1TriggerR: EXIT_CONFIG.beStep1TriggerR,
+  beStep1ReduceLossR: EXIT_CONFIG.beStep1ReduceLossR,
   beTriggerR: EXIT_CONFIG.beTriggerR,
   lockProfitR: EXIT_CONFIG.lockProfitR,
   beBufferRate: EXIT_CONFIG.beBufferRate,
@@ -361,10 +391,25 @@ export const BOT_CONFIG = {
   breakerBlockMode: INDICATOR_CONFIG.breakerBlockMode,
   breakerPivotL: INDICATOR_CONFIG.breakerPivotL,
   breakerPivotR: INDICATOR_CONFIG.breakerPivotR,
+  useFlipLevels: INDICATOR_CONFIG.useFlipLevels,
+  // Backtest 1 năm (6 coin): các chiến lược này lỗ (PF 0.24-0.78) nên mặc định TẮT; bật bằng env để thử lại.
+  enableBreakoutStrategy: process.env.ENABLE_BREAKOUT_STRATEGY === 'true',
+  enableTradeFlip: process.env.ENABLE_TRADE_FLIP === 'true',
+  enableMacroRangeLong: process.env.ENABLE_MACRO_RANGE_LONG === 'true',
+  enableMacroRangeShort: process.env.ENABLE_MACRO_RANGE_SHORT === 'true',
+  // Chỉ vào lệnh thuận cấu trúc BOS H4 (Long khi tăng, Short khi giảm). Đa năm: DD -38R -> -17R, lãi +57R -> +25R (R/DD ngang nhau).
+  enableTrendAlignFilter: process.env.ENABLE_TREND_ALIGN_FILTER === 'true',
+  enableWyckoffSpring: process.env.ENABLE_WYCKOFF_SPRING === 'true',
+  enableWyckoffBreakout: process.env.ENABLE_WYCKOFF_BREAKOUT === 'true',
+  sessionStartHourUtc: parseInt(process.env.SESSION_START_HOUR_UTC || '7', 10),
+  sessionEndHourUtc: parseInt(process.env.SESSION_END_HOUR_UTC || '24', 10),
+  enableLiquidityGrab: INDICATOR_CONFIG.enableLiquidityGrab,
+  useM15Fvg: INDICATOR_CONFIG.useM15Fvg,
   entryDelayBars: INDICATOR_CONFIG.entryDelayBars,
   minSetupQualityScore: INDICATOR_CONFIG.minSetupQualityScore,
   minH1ADX: REGIME_CONFIG.minH1ADX,
   minAtrCompressionRatio: REGIME_CONFIG.minAtrCompressionRatio,
+  enableChopSleepMode: REGIME_CONFIG.enableChopSleepMode,
   minD1NATR: REGIME_CONFIG.minD1NATR,
   enableDynamicNatr: REGIME_CONFIG.enableDynamicNatr,
   maxDirectionalPositions: CAPITAL_CONFIG.maxDirectionalPositions,
