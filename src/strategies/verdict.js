@@ -24,7 +24,7 @@ export function analyzeVolume(rows, n = 20) {
 const SUPPORTS = { SHORT: 'CLIMAX_UP_REJECT', LONG: 'CLIMAX_DOWN_REJECT' };
 const VETO = { SHORT: 'BREAKOUT_UP', LONG: 'BREAKOUT_DOWN' };
 
-export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = null, branch = null }) {
+export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = null, branch = null, zoneEngine = null }) {
   const notes = [];
   if (blocked) notes.push(`Engine đang chặn setup: ${String(blocked).split(':')[0]}.`);
   if (signal) {
@@ -39,6 +39,7 @@ export function buildVerdict({ signal, blocked, volTf, radarStatus, pattern = nu
     v.notes.push(`Phát hiện ${pattern.name} (${st}), hướng ${dir}, ${rel}. Xem nút "Mô hình".`);
     return v;
   };
+  if (zoneEngine === false && radarStatus && radarStatus !== 'NEUTRAL') notes.push('Vùng của kịch bản chỉ là cụm cấu trúc, không phải vùng thanh khoản engine giao dịch: bot sẽ không vào ở đây dù nến rút râu. Đo lịch sử: vào mọi lần chạm kiểu này đều lỗ (PF 0,67 ở 15m, 0,85 ở 1H, 0,82 ở 4H).');
   const side = radarStatus === 'APPROACHING_RESISTANCE' ? 'SHORT' : radarStatus === 'APPROACHING_SUPPORT' ? 'LONG' : null;
   const kind = volTf ? volTf.kind : 'UNKNOWN';
   if (branch && branch.state && branch.state !== 'APPROACH') notes.push(branch.stateText);

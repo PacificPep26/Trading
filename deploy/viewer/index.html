@@ -197,7 +197,6 @@
     setSeries();
     clear(); extra = [];
     const zt0 = all[Math.max(0, all.length - 400)][0] + sh();
-    d.zones.forEach(z => { const [fill, stroke, text] = zoneColors[z.kind]; addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill, stroke, text, label: `${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] }); });
     scen = d.scenarios || { short: null, long: null };
     const vd = d.verdict, vdir = vd.decision !== 'WAIT' ? vd.decision : vd.favored, fav = vdir && scen[vdir.toLowerCase()] ? vdir : null;
     const pick0 = scenSel !== 'AUTO' ? scenSel : (fav || 'OFF'); // mặc định theo phán quyết của hệ thống, không bắt người xem tự chọn
@@ -208,6 +207,12 @@
     else chart.timeScale().applyOptions({ rightOffset: 14 });
     renderScenario(pick0, chosen);
     loadTrades();
+    // khi đang vẽ kịch bản chỉ giữ vùng nằm trong khoảng giá của kịch bản (đỡ chồng chất); vùng engine luôn rõ nét, vùng cấu trúc mờ hơn
+    const win0 = chosen ? [Math.min(chosen.sl, chosen.tp2, chosen.entry), Math.max(chosen.sl, chosen.tp2, chosen.entry)] : null, padW = win0 ? (win0[1] - win0[0]) * 0.15 : 0;
+    d.zones.filter(z => !win0 || (z.top >= win0[0] - padW && z.bottom <= win0[1] + padW)).forEach(z => {
+      const [fill, stroke, text] = zoneColors[z.kind];
+      addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill: z.engine ? fill : fill.slice(0, 7) + '18', stroke: z.engine ? stroke : stroke + '88', dash: !z.engine, text, label: `${z.engine ? '🤖 vùng bot giao dịch' : 'vùng cấu trúc (bot không vào)'} · ${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] });
+    });
     (showLines ? d.lines : []).forEach(l => lines.push(candles.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: l.label })));
     const lastT = d.candles[d.candles.length - 1][0] + sh();
     if (d.signal) posBox(lastT, d.signal.direction, d.signal.entry, d.signal.sl, d.signal.tp, 'Tín hiệu (chưa vào)', true);
@@ -252,9 +257,9 @@
     $('scbtn').onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v || e.target.disabled) return; scenSel = v; load(); };
     if (!chosen) { $('scinfo').innerHTML = `<p class="muted">${sel === 'OFF' && !lastVerdictDir ? 'Hệ thống chưa chọn kịch bản nào (giá ở giữa vùng hoặc đang phá có khối lượng). Bạn vẫn có thể bấm Short/Long để xem kế hoạch tham khảo.' : 'Chưa có vùng cản/hỗ trợ đủ rõ ở khung này để lập kịch bản.'}</p>`; return; }
     const c = chosen, pc = (v) => `${v >= c.entry ? '+' : ''}${((v - c.entry) / c.entry * 100).toFixed(2)}%`;
-    $('scinfo').innerHTML = `<div class="sc ${c.dir === 'SHORT' ? 'short' : 'long'}"><b>${c.dir === 'SHORT' ? 'SELL' : 'BUY'}</b> ${c.name ? esc(c.name) + ' (' + (c.state === 'BROKEN' ? 'đã thủng cổ' : 'chưa thủng cổ') + ') · cổ ' + fmt(c.pattern.neckline) : 'tại vùng ' + fmt(c.zone.bottom) + '-' + fmt(c.zone.top) + ' <span class="muted">(' + c.zone.touches + ' lần chạm)</span>'}
+    $('scinfo').innerHTML = `<div class="sc ${c.dir === 'SHORT' ? 'short' : 'long'}"><b>${c.dir === 'SHORT' ? 'SELL' : 'BUY'}</b> ${c.zone.engine === false ? '<span class="chip warn">vùng cấu trúc, bot không giao dịch</span> ' : c.zone.engine ? '<span class="chip good">vùng engine của bot</span> ' : ''}${c.name ? esc(c.name) + ' (' + (c.state === 'BROKEN' ? 'đã thủng cổ' : 'chưa thủng cổ') + ') · cổ ' + fmt(c.pattern.neckline) : 'tại vùng ' + fmt(c.zone.bottom) + '-' + fmt(c.zone.top) + ' <span class="muted">(' + c.zone.touches + ' lần chạm)</span>'}
       <table class="mono"><tr><td>Vào</td><td>${fmt(c.entry)}</td></tr><tr><td>SL</td><td class="down">${fmt(c.sl)} (${pc(c.sl)})</td></tr><tr><td>TP1</td><td class="up">${fmt(c.tp1)} (${pc(c.tp1)}) · R ${c.rr1}</td></tr><tr><td>TP2</td><td class="up">${fmt(c.tp2)} (${pc(c.tp2)}) · R ${c.rr2}</td></tr></table>
-      <p style="margin:6px 0 0">${esc(c.trigger)}</p><p class="muted" style="margin:4px 0 0">TP1: ${esc(c.tp1Note)}. ${c.statNote ? '<b>' + esc(c.statNote) + '</b> ' : ''}Đây là kế hoạch từ cấu trúc khung ${bar}, chưa phải tín hiệu của bot${c.statNote ? '' : ' và chưa được backtest riêng'}.</p>${renderBranches(c)}</div>`;
+      <p style="margin:6px 0 0">${esc(c.trigger)}</p><p class="muted" style="margin:4px 0 0">TP1: ${esc(c.tp1Note)}. ${c.statNote ? '<b>' + esc(c.statNote) + '</b> ' : ''}Đây là kế hoạch từ cấu trúc khung ${bar}, chưa phải tín hiệu của bot.</p>${renderBranches(c)}</div>`;
   }
   function setSeries() {
     candles.setData(all.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
@@ -303,6 +308,8 @@
     try {
       const r = await fetch(`/api/analysis?coin=${coin}&bar=${bar}`), d = await r.json();
       if (d.error) throw new Error(d.error);
+      if (window.__build && d.build && window.__build !== d.build) return location.reload(); // có bản mới trên server: tải lại để không chạy mã cũ
+      window.__build = d.build;
       render(d);
       if (qs.get('all') && !window.__autoAll) { window.__autoAll = true; $('all').click(); } // dùng để kiểm thử: ?all=1 tự bấm 'Từ đầu'
     } catch (e) { $('headline').textContent = 'Lỗi tải dữ liệu: ' + e.message; }

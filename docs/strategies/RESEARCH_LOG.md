@@ -184,3 +184,11 @@ Phát hiện: 2 đỉnh (đáy) lệch <= 0.6 ATR, cách nhau 8-120 nến, chi�
 - 4H gộp 5 coin: 744 lệnh, thắng 68%, PF 1.17, +39.5R (BTC 228 lệnh PF 1.51 +29.8R; ETH 166 PF 1.24 +11.8R; SOL 108 PF 0.91; LINK 138 PF 1.02; NEAR 104 PF 1.02).
 - 1H gộp: 3444 lệnh, thắng 64%, PF 0.88, -151.6R (LỖ).
 Kết luận: tỉ lệ thắng cao nhưng R:R gần 1:1 nên lợi thế rất mỏng ở 4H và âm ở 1H; không có tách trong/ngoài mẫu, BTC chiếm phần lớn lãi, mẫu giai đoạn Bitstamp 2014-19 dùng giá spot. KHÔNG đưa vào quyết định của bot; chỉ hiển thị trong viewer như thông tin tham khảo kèm số đo này. Muốn dùng làm tín hiệu cần: đặt tiêu chí trước, chạy qua backtest_multi_year có phí, chia trong/ngoài mẫu, theo dõi paper.
+
+## 14. Quy tắc "kịch bản" của viewer đo trên lịch sử (02/11/2026)
+Quy tắc: mỗi nến đóng, tính vùng cản/hỗ trợ (cụm pivot, gộp vùng) và kế hoạch chỉ từ dữ liệu tới nến đó; kích hoạt khi nến chạm vùng rồi đóng cửa quay lại phía ngoài; vào tại giá đóng; SL/TP1 theo kế hoạch (R:R >= 1); SL ưu tiên; tối đa 120 nến; phí 0.19% khứ hồi. 6 coin, dữ liệu từ lúc có (BTC 2014).
+Tiêu chí đặt trước: >= 200 lệnh, PF sau phí >= 1.2, dương >= 4/6 coin.
+- 15m: 16189 lệnh, thắng 41%, PF 0.67, -3885R (từ 2021: PF 0.66). 1H: 5729 lệnh, PF 0.85, -555R. 4H: 1784 lệnh, PF 0.82, -198R.
+- Chỉ lấy lần có khối lượng xác nhận (climax + râu): 15m 622 lệnh PF 0.61; 1H 200 lệnh PF 0.65; 4H 63 lệnh PF 0.46: còn tệ hơn, không cứu được.
+- Không coin nào dương ở 15m; 4H chỉ NEAR/HYPE dương nhẹ (mẫu 60-156 lệnh).
+Kết luận: BÁC BỎ. Vào lệnh ở mọi lần giá chạm vùng cấu trúc rồi rút râu là chiến lược lỗ, nên việc engine của bot (chỉ vào ở vùng thanh khoản tier 1/2 + điểm chất lượng >= 75) bỏ qua phần lớn các cú chạm là ĐÚNG, không phải lỗi. Ví dụ 30/10/2026 BTC chọt lên vùng 78.544-78.886 (3 lần chạm, râu 64% ở nến 4H 04:00 UTC): engine không phát hiện tín hiệu (kể cả khi bỏ bộ lọc phiên) vì vùng đó không phải vùng thanh khoản của engine. Viewer đánh dấu rõ "vùng engine" và "vùng cấu trúc (bot không vào)".

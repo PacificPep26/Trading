@@ -1398,6 +1398,15 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(planBranches({ sc: null, rows: wave, levels: lv, atr: a }) === null && planBranches({ sc, rows: [], levels: [], atr: 0 }) === null, '37.6: thiếu kịch bản hoặc dữ liệu -> null, không lỗi');
 }
 
+// 38. Minh bạch vùng: vùng cấu trúc (bot không giao dịch) khác vùng thanh khoản engine
+{
+  const { buildVerdict } = await import('../src/strategies/verdict.js');
+  const off = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'CLIMAX_UP_REJECT', relVol: 3 }, radarStatus: 'APPROACHING_RESISTANCE', zoneEngine: false });
+  assert(off.notes.some(n => /không phải vùng thanh khoản/.test(n) && /bot sẽ không vào/.test(n)), '38.1: vùng của kịch bản không phải vùng engine -> phán quyết nói rõ bot sẽ không vào ở đây dù nến rút râu');
+  const on = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'CLIMAX_UP_REJECT', relVol: 3 }, radarStatus: 'APPROACHING_RESISTANCE', zoneEngine: true });
+  assert(!on.notes.some(n => /không phải vùng thanh khoản/.test(n)) && buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL' }).notes.length === 0, '38.2: vùng là vùng engine, hoặc không có thông tin vùng -> không thêm ghi chú thừa');
+}
+
 // Tổng kết
 console.log('\n======================================================');
 console.log(`🎉 TỔNG KẾT KIỂM THỬ: ${passed} PASS, ${failed} FAIL`);
