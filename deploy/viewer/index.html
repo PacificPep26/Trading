@@ -52,6 +52,7 @@
   .br { border-left:2px solid var(--line); padding:4px 8px; margin:6px 0; opacity:.55; font-size:12px; } .br.on { border-color:var(--warn); opacity:1; } .br b { display:block; }
   .sc table { width:100%; font-size:12px; border-collapse:collapse; } .sc td:last-child { text-align:right; }
   .tabs + .pane, .pane { border:0; }
+  #rpbar { position:absolute; bottom:34px; left:50%; transform:translateX(-50%); z-index:4; display:none; align-items:center; gap:4px; background:#1b2130f2; border:1px solid var(--accent); border-radius:8px; padding:4px 6px; white-space:nowrap; } #rpbar.on { display:flex; } #rpbar select { background:#131722; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:3px 4px; font:inherit; } #rpbar button { border-color:var(--line); }
   #histbar { position:absolute; top:6px; left:50%; transform:translateX(-50%); z-index:4; display:none; align-items:center; gap:8px; background:#1b2130ee; border:1px solid var(--warn); border-radius:8px; padding:4px 8px; white-space:nowrap; } #histbar.on { display:flex; } #histbar button { border-color:var(--line); } #histbar a { color:#7aa2ff; text-decoration:none; }
   @media (max-width: 960px) {
     body { overflow:auto; } .app { height:auto; } main { grid-template-columns:1fr; }
@@ -80,7 +81,7 @@
   </div>
 </header>
 <main>
-  <div class="chartwrap"><span class="chip" id="span"></span><div id="histbar"></div><div id="chart" role="img" aria-label="Biểu đồ nến với vùng cản, hỗ trợ và lệnh của bot"></div></div>
+  <div class="chartwrap"><span class="chip" id="span"></span><div id="histbar"></div><div id="rpbar" role="group" aria-label="Điều khiển tua"><button id="rp-back" title="Lùi 1 nến (←)">◀ 1</button><button id="rp-play" title="Chạy/Dừng (Space)">▶ Chạy</button><button id="rp-fwd" title="Tiến 1 nến (→)">1 ▶</button><select id="rp-speed" aria-label="Tốc độ"><option value="1">1 nến/giây</option><option value="2" selected>2 nến/giây</option><option value="5">5 nến/giây</option><option value="10">10 nến/giây</option><option value="30">30 nến/giây</option></select><button id="rp-exit">Thoát tua</button></div><div id="chart" role="img" aria-label="Biểu đồ nến với vùng cản, hỗ trợ và lệnh của bot"></div></div>
   <aside class="panel">
     <nav class="tabs" role="tablist" aria-label="Bảng thông tin">
       <button role="tab" data-tab="verdict" aria-selected="true">Phán quyết<span class="dot" id="dot-verdict"></span></button>
@@ -211,6 +212,7 @@
   let markerPlugin = null;
   let markerText = true;
   function updateMarkers() { // các lệnh backtest cũ của bot: BUY/SELL + kết quả R, chỉ ở vùng nến đã nạp
+    if (rp.on) return; // đang tua: dấu vào/thoát do replayEvents quản lý (không lộ trước kết quả)
     if (!markerPlugin) markerPlugin = LightweightCharts.createSeriesMarkers(candles, []);
     const list = (showSig && tradesByCoin[coin]) || [], lo = all.length ? all[0][0] + sh() : 0;
     const ms = list.map(t => ({ time: snap(t.t), t })).filter(m => m.time >= lo).sort((a, b) => a.time - b.time)
@@ -223,8 +225,74 @@
       ? `<p class="muted" style="margin:0 0 6px">${tradesByCoin[coin].length} lệnh (2021-26, đã trừ phí). Bấm "Xem trên biểu đồ" để nhảy tới đúng thời điểm với đủ bối cảnh, hoặc "Tua từng nến" để xem nến chạy tới TP hay dính SL.</p>` + list.map(t => `<div class="mono" style="margin:4px 0">${fmtT(t.t)} ${t.dir === 'LONG' ? 'BUY' : 'SELL'} <span class="${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R</span> <a href="#" data-focus="${t.t}" style="color:#7aa2ff">Xem trên biểu đồ</a> · <a href="/replay/?coin=${coin}&t=${t.t}" target="_blank" rel="noopener" style="color:#7aa2ff">Tua từng nến ▶</a></div>`).join('')
       : '<p class="muted">Chưa có lệnh backtest cho coin này.</p>';
   }
+  // ---- tua từng nến ngay trên biểu đồ chính (kéo/zoom/cuộn tự do, mọi khung giờ) ----
+  const rp = { on: false, playing: false, cutT: 0, acc: 0, last: 0 };
+  window.__rp = rp; // để kiểm thử
+  const ub = (arr, t) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m][0] <= t) lo = m + 1; else hi = m; } return lo; }; // số nến có giờ <= t
+  const barObj = (k) => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] });
+  const volObj = (k) => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' });
+  function partialBar(k, f) { // nến đang chạy: mở -> cực trị 1 -> cực trị 2 -> đóng (giả định: nến xanh đi thấp trước, nến đỏ đi cao trước)
+    const pts = k[4] >= k[1] ? [k[1], k[3], k[2], k[4]] : [k[1], k[2], k[3], k[4]], seg = Math.min(2, Math.floor(f * 3)), g = f * 3 - seg, cur = pts[seg] + (pts[seg + 1] - pts[seg]) * g;
+    let hi = k[1], lo = k[1]; for (let s = 0; s <= seg; s++) { hi = Math.max(hi, pts[s]); lo = Math.min(lo, pts[s]); } hi = Math.max(hi, cur); lo = Math.min(lo, cur);
+    return { time: k[0] + sh(), open: k[1], high: hi, low: lo, close: cur };
+  }
+  function replayStage() { const t = focusTrade; if (!t) return 0; const s = rp.cutT; return s >= Math.floor((t.x || t.t) / 1000) ? 3 : s >= Math.floor(t.t / 1000) ? 2 : s >= Math.floor((t.sig || t.t) / 1000) ? 1 : 0; }
+  function replayEvents() { // hộp lệnh, dấu vào/thoát và nhật ký chỉ hiện phần ĐÃ xảy ra (không lộ trước kết quả)
+    const t = focusTrade; if (!t) return; const st = replayStage(), long = t.dir === 'LONG';
+    clear(); extra = [];
+    if (st >= 2) posBox(snap(t.t), t.dir, t.entry, t.sl, t.tp, 'Lệnh backtest', false, st >= 3 ? snap(t.x) : undefined);
+    const ev = [];
+    if (st >= 1) ev.push(`${fmtT(t.sig)} · Tín hiệu ${long ? 'Long' : 'Short'}, điểm ${t.score}: chờ xác nhận 60 phút`);
+    if (st >= 2) ev.push(`${fmtT(t.t)} · Vào ${long ? 'Long' : 'Short'} tại ${fmt(t.entry)} · SL ${fmt(t.sl)} · TP ${fmt(t.tp)}`);
+    if (st >= 3) ev.push(`<b class="${t.r > 0 ? 'up' : 'down'}">${fmtT(t.x)} · ${t.r > 0 ? 'Chốt lời' : 'Cắt lỗ'} ${t.r > 0 ? '+' : ''}${t.r}R</b>`);
+    $('rplog').innerHTML = ev.length ? ev.map(x => `<div style="margin:4px 0">${x}</div>`).join('') : 'Chưa có sự kiện: nhấn Chạy hoặc 1 ▶.';
+    if (!markerPlugin) markerPlugin = LightweightCharts.createSeriesMarkers(candles, []);
+    const ms = [];
+    if (st >= 2) ms.push({ time: snap(t.t), position: long ? 'belowBar' : 'aboveBar', color: long ? '#26a69a' : '#ef5350', shape: long ? 'arrowUp' : 'arrowDown', text: long ? 'BUY' : 'SELL' });
+    if (st >= 3) ms.push({ time: snap(t.x), position: long ? 'aboveBar' : 'belowBar', color: t.r > 0 ? '#26a69a' : '#ef5350', shape: 'circle', text: `${t.r > 0 ? '+' : ''}${t.r}R` });
+    markerPlugin.setMarkers(ms.sort((a, b) => a.time - b.time));
+    replayStage.last = st;
+  }
+  function replayStageCheck() { if (replayStage() !== replayStage.last) replayEvents(); }
+  function replayPlayBtn() { $('rp-play').textContent = rp.playing ? '⏸ Dừng' : '▶ Chạy'; }
+  function replayStep(dir) {
+    const n = ub(all, rp.cutT);
+    if (dir > 0) { if (n >= all.length) return false; const k = all[n]; rp.cutT = k[0]; candles.update(barObj(k)); vol.update(volObj(k)); }
+    else { if (n <= 6) return false; rp.cutT = all[n - 2][0]; setSeries(); }
+    replayStageCheck(); return true;
+  }
+  function replayLoop(now) {
+    if (!rp.playing) return;
+    const dt = Math.min(0.1, (now - rp.last) / 1000); rp.last = now; rp.acc += dt * Number($('rp-speed').value);
+    while (rp.acc >= 1) { rp.acc -= 1; if (!replayStep(1)) { rp.playing = false; toast('Hết dữ liệu đã nạp'); break; } }
+    if (rp.playing) { const n = ub(all, rp.cutT); if (n < all.length && rp.acc > 0) { const k = all[n]; candles.update(partialBar(k, rp.acc)); vol.update({ ...volObj(k), value: k[5] * rp.acc }); } requestAnimationFrame(replayLoop); }
+    replayPlayBtn();
+  }
+  function startReplay() { // bắt đầu tua: lùi 14 nến trước tín hiệu, ẩn mọi thứ phía sau
+    const t = focusTrade; if (!t) return;
+    if (!histMode || !all.length) return toast('Đang tải dữ liệu của lệnh này, thử lại sau giây lát.');
+    const i = Math.max(6, ub(all, Math.floor((t.sig || t.t) / 1000)) - 1 - 14);
+    rp.on = true; rp.playing = false; rp.acc = 0; rp.cutT = all[i][0]; replayStage.last = -1;
+    setSeries(); replayEvents(); replayPlayBtn();
+    $('rpbar').classList.add('on');
+    chart.timeScale().setVisibleLogicalRange({ from: i - 280, to: i + 90 }); // rộng như TradingView; muốn xem xa hơn cứ kéo/zoom
+  }
+  function stopReplay() { rp.on = false; rp.playing = false; $('rpbar').classList.remove('on'); setSeries(); if (focusTrade) enterFocus(); }
+  $('rp-play').onclick = () => { rp.playing = !rp.playing; if (rp.playing) { rp.last = performance.now(); requestAnimationFrame(replayLoop); } replayPlayBtn(); };
+  $('rp-fwd').onclick = () => { rp.playing = false; rp.acc = 0; replayStep(1); replayPlayBtn(); };
+  $('rp-back').onclick = () => { rp.playing = false; rp.acc = 0; replayStep(-1); replayPlayBtn(); };
+  $('rp-exit').onclick = stopReplay;
+  window.addEventListener('keydown', (e) => { // phím tắt khi đang tua: Space chạy/dừng, ← → lùi/tiến 1 nến
+    if (!rp.on || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === ' ') { e.preventDefault(); $('rp-play').click(); } else if (e.key === 'ArrowRight') $('rp-fwd').click(); else if (e.key === 'ArrowLeft') $('rp-back').click();
+  });
   // ---- chế độ xem lệnh cũ: nhảy tới đúng thời điểm của lệnh backtest, vẫn đủ khung giờ và cuộn về quá khứ như bình thường ----
-  function exitFocus() { focusTrade = null; histMode = false; first = true; $('histbar').classList.remove('on'); $('focusinfo').innerHTML = ''; load(); }
+  function exitFocus() { rp.on = false; rp.playing = false; $('rpbar').classList.remove('on'); focusTrade = null; histMode = false; first = true; $('histbar').classList.remove('on'); $('focusinfo').innerHTML = ''; load(); }
+  function toast(msg) { // báo ngắn khi có việc không làm được
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#222a3a;color:#fff;padding:8px 14px;border-radius:8px;z-index:50;font-size:13px;box-shadow:0 2px 12px #0008'; document.body.appendChild(t); }
+    t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, 2600);
+  }
   async function enterFocus() {
     const t = focusTrade; if (!t) return;
     const entrySec = Math.floor(t.t / 1000), exitSec = Math.floor((t.x || t.t) / 1000);
@@ -235,15 +303,16 @@
     }
     histMode = true; setSeries(); clear(); extra = [];
     const e0 = snap(t.t), e1 = snap(t.x || t.t);
-    posBox(e0, t.dir, t.entry, t.sl, t.tp, 'Lệnh backtest', false, e1);
+    if (!rp.on) posBox(e0, t.dir, t.entry, t.sl, t.tp, 'Lệnh backtest', false, e1);
     chart.priceScale('right').applyOptions({ mode: logScale ? 1 : 0 });
     const idxOf = (sec) => { const k = all.findIndex(r => r[0] + sh() >= sec); return k < 0 ? all.length - 1 : k; };
     const i0 = idxOf(e0), i1 = idxOf(e1), span = Math.max(40, i1 - i0);
-    chart.timeScale().setVisibleLogicalRange({ from: i0 - span - 30, to: i1 + Math.min(60, span) + 10 });
-    $('histbar').innerHTML = `<b>Đang xem lệnh cũ</b> ${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${fmtT(t.t)} <span class="${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R</span> <button id="hb-back">Quay lại hiện tại</button><a href="/replay/?coin=${coin}&t=${t.t}" target="_blank" rel="noopener">Tua từng nến ▶</a>`;
-    $('histbar').classList.add('on'); $('hb-back').onclick = exitFocus;
+    chart.timeScale().setVisibleLogicalRange({ from: i0 - Math.max(250, span * 3), to: i1 + Math.min(80, span) + 10 });
+    $('histbar').innerHTML = `<b>Đang xem lệnh cũ</b> ${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${fmtT(t.t)} <span class="${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R</span> <button id="hb-play">▶ Tua từng nến</button><button id="hb-back">Quay lại hiện tại</button>`;
+    $('histbar').classList.add('on'); $('hb-back').onclick = exitFocus; $('hb-play').onclick = startReplay;
+    if (qs.get('play') && !window.__autoPlay) { window.__autoPlay = true; startReplay(); }
     const sg = (t.why || []).map(esc).join(' · '), sl = Math.abs(t.entry - t.sl), pct = (v) => `${((v - t.entry) / t.entry * 100).toFixed(2)}%`;
-    $('focusinfo').innerHTML = `<h2>Lệnh đang xem</h2><div class="pos ${t.dir === 'LONG' ? 'long' : 'short'}"><b>${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${esc((t.strat || '').replace(/_(LONG|SHORT)$/, ''))}</b> <span class="pos-r ${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R · ${esc(t.out || '')}</span><br><span class="mono">Vào ${fmt(t.entry)} · SL ${fmt(t.sl)} (${pct(t.sl)}) · TP ${fmt(t.tp)} (${pct(t.tp)})</span><br><span class="muted">Điểm ${t.score}/100 · ${sg}<br>Tín hiệu ${fmtT(t.sig)} · vào ${fmtT(t.t)} · thoát ${fmtT(t.x)}</span></div><p class="muted">Đây là lệnh trong backtest (đã trừ phí). Vùng cản/hỗ trợ và kịch bản bên cạnh chỉ tính cho hiện tại nên đã được ẩn khi xem lệnh cũ.</p>`;
+    $('focusinfo').innerHTML = `<h2>Lệnh đang xem</h2><div class="pos ${t.dir === 'LONG' ? 'long' : 'short'}"><b>${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${esc((t.strat || '').replace(/_(LONG|SHORT)$/, ''))}</b> <span class="pos-r ${t.r > 0 ? 'up' : 'down'}">${t.r > 0 ? '+' : ''}${t.r}R · ${esc(t.out || '')}</span><br><span class="mono">Vào ${fmt(t.entry)} · SL ${fmt(t.sl)} (${pct(t.sl)}) · TP ${fmt(t.tp)} (${pct(t.tp)})</span><br><span class="muted">Điểm ${t.score}/100 · ${sg}<br>Tín hiệu ${fmtT(t.sig)} · vào ${fmtT(t.t)} · thoát ${fmtT(t.x)}</span></div><p class="muted">Đây là lệnh trong backtest (đã trừ phí). Vùng cản/hỗ trợ và kịch bản bên cạnh chỉ tính cho hiện tại nên đã được ẩn khi xem lệnh cũ.</p><h2>Diễn biến</h2><div id="rplog" class="muted">Bấm "Tua từng nến" để xem lệnh diễn ra. Kéo, zoom, cuộn về quá khứ tự do như bình thường.</div>`;
     showTab('orders');
   }
   document.addEventListener('click', (e) => { // bấm "Xem trên biểu đồ" trong danh sách lệnh backtest
@@ -304,7 +373,7 @@
     if (d.signal) posBox(lastT, d.signal.direction, d.signal.entry, d.signal.sl, d.signal.tp, 'Tín hiệu (chưa vào)', true);
     d.bot.pending.forEach(p => posBox(snap(p.detectedAt), p.direction, p.entry, p.stopLoss, p.takeProfit, 'Chờ xác nhận', true));
     d.bot.positions.forEach(p => posBox(snap(p.openedAt), p.direction, p.entry, p.initialStopLoss, p.takeProfit, 'Lệnh bot', false));
-    if (first && !histMode) { chart.timeScale().fitContent(); const n = { '15m': 120, '1H': 120, '4H': 120, '1D': 400, '1W': 260 }[bar]; if (n) chart.timeScale().setVisibleLogicalRange({ from: d.candles.length - n, to: d.candles.length + 14 }); first = false; } // khung ngày/tuần/tháng: hiện toàn bộ lịch sử
+    if (first && !histMode) { chart.timeScale().fitContent(); const n = { '15m': 400, '1H': 400, '4H': 400, '1D': 700, '1W': 400 }[bar]; if (n) chart.timeScale().setVisibleLogicalRange({ from: d.candles.length - n, to: d.candles.length + 14 }); first = false; } // khung ngày/tuần/tháng: hiện toàn bộ lịch sử
 
     renderMacro(d);
     $('headline').textContent = d.playbook.headline;
@@ -349,8 +418,9 @@
       <p style="margin:6px 0 0">${esc(c.trigger)}</p><p class="muted" style="margin:4px 0 0">TP1: ${esc(c.tp1Note)}. ${c.statNote ? '<b>' + esc(c.statNote) + '</b> ' : ''}Đây là kế hoạch từ cấu trúc khung ${bar}, chưa phải tín hiệu của bot.</p>${renderBranches(c)}</div>`;
   }
   function setSeries() {
-    candles.setData(all.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
-    vol.setData(all.map(k => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' })));
+    const view = rp.on ? all.slice(0, ub(all, rp.cutT)) : all; // đang tua: chỉ hiện nến tới mốc hiện tại, phần sau còn ẩn
+    candles.setData(view.map(barObj));
+    vol.setData(view.map(volObj));
     updateMarkers();
     $('span').textContent = `${all.length.toLocaleString('vi-VN')} nến · từ ${new Date(all[0][0] * 1000).toISOString().slice(0, 10)}${hasMore ? ' (còn cũ hơn, cuộn trái để nạp)' : ' (đã tới nến đầu tiên)'}`;
   }
@@ -398,14 +468,14 @@
       if (window.__build && d.build && window.__build !== d.build) return location.reload(); // có bản mới trên server: tải lại để không chạy mã cũ
       window.__build = d.build;
       render(d);
-      if (histMode && focusTrade) { clear(); extra = []; const e0 = snap(focusTrade.t); posBox(e0, focusTrade.dir, focusTrade.entry, focusTrade.sl, focusTrade.tp, 'Lệnh backtest', false, snap(focusTrade.x || focusTrade.t)); }
+      if (histMode && focusTrade && !rp.on) { clear(); extra = []; const e0 = snap(focusTrade.t); posBox(e0, focusTrade.dir, focusTrade.entry, focusTrade.sl, focusTrade.tp, 'Lệnh backtest', false, snap(focusTrade.x || focusTrade.t)); }
       else if (focusTrade && !histMode) enterFocus(); // đổi khung giờ khi đang xem lệnh cũ: nhảy lại đúng lệnh đó ở khung mới
       if (qs.get('all') && !window.__autoAll) { window.__autoAll = true; $('all').click(); } // dùng để kiểm thử: ?all=1 tự bấm 'Từ đầu'
     } catch (e) { $('headline').textContent = 'Lỗi tải dữ liệu: ' + e.message; }
   }
   function pick(id, list, cur, set) {
     $(id).innerHTML = list.map(x => `<button data-v="${x}" aria-pressed="${x === cur}">${x}</button>`).join('');
-    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; if (id === 'coins') { focusTrade = null; $('histbar').classList.remove('on'); $('focusinfo').innerHTML = ''; } histMode = false; set(v); first = true; scenSel = 'AUTO'; setLog(!intraday()); setLines(!intraday()); pick(id, list, v, set); load(); };
+    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; if (id === 'coins') { focusTrade = null; $('histbar').classList.remove('on'); $('focusinfo').innerHTML = ''; } rp.on = false; rp.playing = false; $('rpbar').classList.remove('on'); histMode = false; set(v); first = true; scenSel = 'AUTO'; setLog(!intraday()); setLines(!intraday()); pick(id, list, v, set); load(); };
   }
   pick('coins', COINS, coin, v => coin = v); pick('bars', BARS, bar, v => bar = v);
   function showTab(id) { // chỉ một tab hiện, phần còn lại ẩn: không bắt người xem kéo cả trang

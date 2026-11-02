@@ -92,7 +92,7 @@ tr.row { cursor: pointer; } tr.row:hover td { background: var(--panel2); }
         <button id="nextTrade" title="Tới trước tín hiệu của lệnh sau">Lệnh sau ⏭</button>
         <label>Tốc độ <select id="speed"><option value="0.5">0.5 nến/giây</option><option value="1">1 nến/giây</option><option value="2" selected>2 nến/giây</option><option value="5">5 nến/giây</option><option value="12">12 nến/giây</option><option value="30">30 nến/giây</option></select></label>
         <label><input type="checkbox" id="live" checked> Nến chạy trong thân (mô phỏng)</label>
-        <label>Hiện <select id="win"><option value="60">60 nến</option><option value="110" selected>110 nến</option><option value="220">220 nến</option></select></label>
+        <label>Hiện <select id="win"><option value="60">60 nến</option><option value="110">110 nến</option><option value="220">220 nến</option><option value="500">500 nến</option><option value="1000">1.000 nến</option><option value="2000" selected>2.000 nến</option><option value="5000">5.000 nến</option></select></label>
       </div>
       <div class="legend">
         <span><span class="dot" style="background:var(--accent)"></span>Tín hiệu được vào lệnh</span>
@@ -280,6 +280,10 @@ const DATA = {"meta":{"from":"2021-01-01","to":"2026-10-31","generatedAt":"2026-
   ['win', 'live', 'showLow', 'showBlocked'].forEach(id => $(id).onchange = () => { draw(); renderLog(); });
   $('tbody').onclick = (e) => { const tr = e.target.closest('tr.row'); if (!tr) return; const t = S.trades[+tr.dataset.k]; selTrade = +tr.dataset.k; p = Math.max(5, t.sIdx - 14); sub = 0; playing = false; $('play').textContent = '▶ Chạy'; draw(); renderLog(); };
   window.addEventListener('keydown', (e) => { if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) && e.target.type !== 'range') return; if (e.key === ' ') { e.preventDefault(); $('play').click(); } else if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); });
+  cv.addEventListener('wheel', (e) => { // lăn chuột để phóng to/thu nhỏ số nến đang xem
+    e.preventDefault(); const sel = $('win'), opts = [...sel.options].map(o => +o.value), k = opts.indexOf(+sel.value);
+    const nk = Math.min(opts.length - 1, Math.max(0, k + (e.deltaY > 0 ? 1 : -1))); if (nk !== k) { sel.value = opts[nk]; draw(); }
+  }, { passive: false });
   new ResizeObserver(() => draw()).observe(cv.parentElement);
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => draw());
 

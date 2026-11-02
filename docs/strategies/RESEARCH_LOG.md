@@ -192,3 +192,9 @@ Tiêu chí đặt trước: >= 200 lệnh, PF sau phí >= 1.2, dương >= 4/6 co
 - Chỉ lấy lần có khối lượng xác nhận (climax + râu): 15m 622 lệnh PF 0.61; 1H 200 lệnh PF 0.65; 4H 63 lệnh PF 0.46: còn tệ hơn, không cứu được.
 - Không coin nào dương ở 15m; 4H chỉ NEAR/HYPE dương nhẹ (mẫu 60-156 lệnh).
 Kết luận: BÁC BỎ. Vào lệnh ở mọi lần giá chạm vùng cấu trúc rồi rút râu là chiến lược lỗ, nên việc engine của bot (chỉ vào ở vùng thanh khoản tier 1/2 + điểm chất lượng >= 75) bỏ qua phần lớn các cú chạm là ĐÚNG, không phải lỗi. Ví dụ 30/10/2026 BTC chọt lên vùng 78.544-78.886 (3 lần chạm, râu 64% ở nến 4H 04:00 UTC): engine không phát hiện tín hiệu (kể cả khi bỏ bộ lọc phiên) vì vùng đó không phải vùng thanh khoản của engine. Viewer đánh dấu rõ "vùng engine" và "vùng cấu trúc (bot không vào)".
+
+### 14b. Biến thể có khai báo trước của "chạm vùng rồi rút râu" (02/11/2026)
+Khai báo trước (4 biến thể, báo cáo cả 4; tiêu chí: >= 200 lệnh, PF >= 1.2, dương >= 4/6 coin): A cũ; B + xu hướng H4 (cấu trúc BOS) cùng hướng lệnh; C + râu >= 60% thân nến và khối lượng >= 1.2x trung bình 20 nến; D = B + C. Phí 0.19% khứ hồi, 6 coin, dữ liệu từ lúc có.
+- 15m: A 16189 lệnh PF 0.67; B 7480 lệnh PF 0.69; C 699 lệnh PF 0.54; D 285 lệnh PF 0.50. Không coin nào dương (0/6) ở bất kỳ biến thể nào.
+- 1H: A 5729 PF 0.85; B 2708 PF 0.83; C 242 PF 0.69; D 108 PF 0.68. Chỉ 1/6 coin dương ở D.
+Kết luận: BÁC BỎ cả 4. Lọc xu hướng khung lớn gần như không đổi; lọc chất lượng nến (râu dài + khối lượng) làm TỆ HƠN (PF 0.67 -> 0.50), tức nến rút râu mạnh tại vùng cấu trúc thường là cú quét tiếp diễn chứ không phải đảo chiều. Những lần thắng nhìn thấy bằng mắt (ví dụ BTC 02/11 chạm 78.8k rồi rơi) là có thật nhưng không đủ bù các lần thua khi vào máy móc.
