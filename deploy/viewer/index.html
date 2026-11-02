@@ -42,6 +42,8 @@
   .pane h2 { margin:14px 0 6px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); } .pane h2:first-child { margin-top:0; }
   .pane ol { margin:6px 0 0; padding-left:18px; } .pane li { margin:3px 0; }
   .ev { display:grid; grid-template-columns:48px 14px 1fr auto; gap:0 8px; align-items:baseline; padding:6px 0; border-bottom:1px solid var(--line); } .ev.past { opacity:.45; } .ev.next { background:#f59e0b14; border-radius:6px; padding-left:6px; padding-right:6px; } .ev .im { width:9px; height:9px; border-radius:50%; align-self:center; } .ev .im.High { background:var(--down); } .ev .im.Medium { background:var(--warn); } .ev .im.Low { background:var(--muted); } .day { margin:12px 0 2px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.sig { border-radius:8px; padding:10px 12px; margin:0 0 10px; border:1px solid var(--line); background:var(--panel2); } .sig b { font-size:15px; display:block; margin-bottom:2px; } .sig.on { border-color:var(--up); } .sig.on.short { border-color:var(--down); } .sig.on b { color:var(--up); } .sig.on.short b { color:var(--down); } .sig.off b { color:var(--muted); } .sig.plan { border-color:var(--warn); } .sig.plan b { color:var(--warn); }
+  details > summary { cursor:pointer; color:var(--muted); font-size:12px; margin:6px 0; }
   .pos { border-left:3px solid var(--accent); padding:6px 10px; margin:8px 0; background:var(--panel2); border-radius:0 6px 6px 0; }
   .pos.long { border-color:var(--up); } .pos.short { border-color:var(--down); }
   .mono { font-family:ui-monospace,Consolas,monospace; } .pos-r { float:right; font-weight:600; }
@@ -99,8 +101,12 @@
     <div class="pane" id="pane-scen" role="tabpanel">
       <h2>Kịch bản khung <span id="tfname"></span></h2>
       <button id="zoomsc" style="margin:0 0 8px;border-color:var(--line)" title="Phóng vào vùng giá hiện tại và toàn bộ đường đi của kịch bản">🔍 Phóng vào kịch bản</button>
+      <details style="margin:0 0 10px"><summary class="muted" style="cursor:pointer">Tùy chọn hiển thị thêm (mặc định tắt cho gọn)</summary>
+      <label class="muted" style="display:block;margin:6px 0 6px"><input type="checkbox" id="zchk"> Hiện cả vùng cấu trúc tự dựng (bot không giao dịch)</label>
+      <label class="muted" style="display:block;margin:0 0 6px"><input type="checkbox" id="bothchk"> Vẽ cả kịch bản ngược chiều (mờ) để thấy cả Long và Short</label>
       <label class="muted" style="display:block;margin:0 0 6px"><input type="checkbox" id="structchk"> Lập kế hoạch trên vùng cấu trúc tự dựng (bot KHÔNG giao dịch, đo lịch sử lỗ)</label>
-      <label class="muted" style="display:block;margin:0 0 8px"><input type="checkbox" id="altchk" checked> Vẽ các nhánh khác trên biểu đồ (nếu giá không đi theo kế hoạch)</label>
+      <label class="muted" style="display:block;margin:0 0 8px"><input type="checkbox" id="altchk"> Vẽ các nhánh khác trên biểu đồ (nếu giá không đi theo kế hoạch)</label>
+      </details>
       <div class="seg" id="scbtn" role="group" aria-label="Chọn kịch bản"></div><div id="scinfo"></div>
     </div>
     <div class="pane" id="pane-cal" role="tabpanel"><h2>Lịch kinh tế Mỹ (giờ Việt Nam)</h2><div id="calbox"><p class="muted">Đang tải lịch...</p></div></div>
@@ -122,7 +128,7 @@
 (() => {
   const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
   const qs = new URLSearchParams(location.search);
-  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, structMode = false, showAlt = true, curChosen = null, zoomNext = false, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
+  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, showBoth = false, showStructZones = false, structMode = false, showAlt = false, curChosen = null, zoomNext = false, focusTrade = null, histMode = false, focusInit = false, showLines = false, scenSel = qs.get('scen') || 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
   const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
   const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
     if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
@@ -179,6 +185,7 @@
       return [{ zOrder: () => 'top', renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context: c, mediaSize }) => {
         const ts = self.chart.timeScale(), last = all.length - 1, X = (b) => ts.logicalToCoordinate(last + Math.round(b)), Y = (v) => self.series.priceToCoordinate(v); // làm tròn: thư viện trả 0 nếu vị trí là số lẻ
         const total = sc.path[sc.path.length - 1].bars, x0 = X(0), x1 = X(total + 3); if (x0 == null || x1 == null) return;
+        c.globalAlpha = sc.dim ? 0.38 : 1; // kịch bản ngược chiều vẽ mờ để không lấn át kịch bản được chọn
         const yE = Y(sc.entry), yS = Y(sc.sl), y1 = Y(sc.tp1), y2 = Y(sc.tp2); if ([yE, yS, y1, y2].some(v => v == null)) return;
         const short = sc.dir === 'SHORT', up = '#26a69a', dn = '#ef5350', W = x1 - x0;
         c.fillStyle = dn + '30'; c.fillRect(x0, Math.min(yE, yS), W, Math.abs(yS - yE));
@@ -210,7 +217,7 @@
           c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 3.5, 0, 6.3); c.fill();
           if (['Quét thanh khoản', 'Vào lệnh', 'TP1', 'TP2'].includes(q.label)) { c.fillStyle = '#e5e7eb'; c.textBaseline = 'bottom'; c.fillText(q.label, x + 6, y - 5 + (short ? 0 : 14)); }
         }
-        if (sc.branches && showAlt) { // nhánh thay thế: nếu giá KHÔNG đi theo kế hoạch chính thì có thể đi theo đường nào
+        if (sc.branches && showAlt && !sc.dim) { // nhánh thay thế: nếu giá KHÔNG đi theo kế hoạch chính thì có thể đi theo đường nào
           const T = sc.path[sc.path.length - 1].bars, s = short ? 1 : -1, edge = short ? sc.zone.top : sc.zone.bottom, far = short ? sc.zone.bottom : sc.zone.top, u = Math.abs(sc.sl - edge) || 1;
           const brk = sc.branches.branches.find(b => b.id === 'BREAKOUT').plan, p0 = sc.path[0].price;
           const alts = [
@@ -226,6 +233,7 @@
         }
         const ep = pts.find(q => q[2].label === 'Vào lệnh'), tag = short ? 'SELL' : 'BUY';
         c.fillStyle = short ? dn : up; c.beginPath(); c.roundRect(ep[0] - 40, ep[1] - 9, 36, 18, 3); c.fill(); c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(tag, ep[0] - 35, ep[1] + 0.5);
+        c.globalAlpha = 1;
       }) }) }];
     }
   }
@@ -378,16 +386,17 @@
     renderVerdict(d, fav);
     $('dot-verdict').className = 'dot ' + (d.verdict.source === 'BOT' ? 'bot' : 'wait'); // chấm xanh: bot đang có tín hiệu; chấm vàng: chờ
     const chosen = pick0 === 'SHORT' ? scen.short : pick0 === 'LONG' ? scen.long : pick0 === 'PATTERN' ? scen.pattern : null;
+    const other = pick0 === 'SHORT' ? scen.long : pick0 === 'LONG' ? scen.short : null;
     curChosen = chosen; if (zoomNext) { zoomNext = false; setTimeout(zoomScenario, 50); } // bấm Short/Long/Mô hình thì tự phóng vào kịch bản
-    if (histMode) { /* không đổi rightOffset: giữ nguyên khung nhìn đang xem */ } else if (chosen) { const p = new ScenarioPrim(chosen); candles.attachPrimitive(p); prims.push(p); extra.push(chosen.entry, chosen.sl, chosen.tp1, chosen.tp2); chart.timeScale().applyOptions({ rightOffset: Math.min(66, chosen.path[chosen.path.length - 1].bars + 8) }); }
+    if (histMode) { /* không đổi rightOffset: giữ nguyên khung nhìn đang xem */ } else if (chosen) { const p = new ScenarioPrim(chosen); candles.attachPrimitive(p); prims.push(p); extra.push(chosen.entry, chosen.sl, chosen.tp1, chosen.tp2); if (showBoth && other && !histMode) { const q = new ScenarioPrim({ ...other, dim: true }); candles.attachPrimitive(q); prims.push(q); extra.push(other.entry, other.sl, other.tp1); } chart.timeScale().applyOptions({ rightOffset: Math.min(66, chosen.path[chosen.path.length - 1].bars + 8) }); }
     if (!histMode && !chosen) chart.timeScale().applyOptions({ rightOffset: 14 });
     renderScenario(pick0, chosen);
     loadTrades();
     // khi đang vẽ kịch bản chỉ giữ vùng nằm trong khoảng giá của kịch bản (đỡ chồng chất); vùng engine luôn rõ nét, vùng cấu trúc mờ hơn
     const win0 = chosen ? [Math.min(chosen.sl, chosen.tp2, chosen.entry), Math.max(chosen.sl, chosen.tp2, chosen.entry)] : null, padW = win0 ? (win0[1] - win0[0]) * 0.15 : 0;
-    d.zones.filter(z => !win0 || (z.top >= win0[0] - padW && z.bottom <= win0[1] + padW)).forEach(z => {
+    d.zones.filter(z => (z.engine || showStructZones) && (!win0 || (z.top >= win0[0] - padW && z.bottom <= win0[1] + padW))).forEach(z => {
       const [fill, stroke, text] = zoneColors[z.kind];
-      addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill: z.engine ? fill : fill.slice(0, 7) + '18', stroke: z.engine ? stroke : stroke + '88', dash: !z.engine, text, label: `${z.engine ? '🤖 vùng bot giao dịch' : 'vùng cấu trúc (bot không vào)'} · ${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] });
+      addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill: z.engine ? fill : fill.slice(0, 7) + '18', stroke: z.engine ? stroke : stroke + '88', dash: !z.engine, text, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${fmt(z.bottom)}–${fmt(z.top)} · ${z.touches || ''} lần chạm${z.engine ? '' : ' (cấu trúc, bot không vào)'}` }] });
     });
     (showLines ? d.lines : []).forEach(l => lines.push(candles.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: l.label })));
     const lastT = d.candles[d.candles.length - 1][0] + sh();
@@ -414,19 +423,23 @@
   }
 
   function renderVerdict(d, fav) {
-    const v = d.verdict, vol = d.volume;
+    const v = d.verdict, vol = d.volume, f = fmt, sc = fav ? d.scenarios[fav.toLowerCase()] : null, sg = d.signal;
     const volLine = (t, x) => `<div class="muted" style="margin:3px 0">${t}: ${esc(x.text || '')}</div>`;
-    $('verdict').innerHTML = `<p class="vd ${v.source === 'BOT' ? 'bot' : 'wait'}">${esc(v.headline)}</p>
-      <span class="chip ${v.source === 'BOT' ? 'good' : 'warn'}">${v.source === 'BOT' ? 'Quyết định của BOT' : 'Kế hoạch chờ (bot chưa vào)'}</span>
-      <ul class="ck">${v.checklist.map(c => `<li class="${c.ok ? 'ok' : ''}">${esc(c.text)}</li>`).join('')}</ul>
-      ${v.notes.map(n => `<div class="muted" style="margin:3px 0">${esc(n)}</div>`).join('')}
-      ${volLine('Khối lượng M15 (khung bot quyết)', vol.m15)}${bar !== '15m' ? volLine('Khối lượng khung ' + bar, vol.tf) : ''}
-      <p class="muted" style="margin:6px 0 0">Người quyết định là engine của bot (đã backtest, điểm chất lượng ≥ ngưỡng, có phân tích khối lượng VSA). Phần "kế hoạch chờ" chỉ là điều kiện để theo dõi, chưa được backtest riêng.</p>`;
+    let h;
+    if (v.source === 'BOT' && sg) {
+      const buy = sg.direction === 'LONG';
+      h = `<div class="sig on ${buy ? 'long' : 'short'}"><b>TÍN HIỆU ${buy ? 'BUY' : 'SELL'} ${esc(d.coin)}</b><div class="mono">Vào ${f(sg.entry)} · SL ${f(sg.sl)} · TP ${f(sg.tp)} · R ${sg.rr}</div><div class="muted">Bot chờ xác nhận 60 phút rồi mới vào lệnh.</div></div>`;
+    } else {
+      h = `<div class="sig off"><b>CHƯA CÓ TÍN HIỆU</b><div class="muted">${v.avoid ? 'Giá đang phá vùng có khối lượng: đứng ngoài, không bắt đỉnh/đáy.' : sc ? 'Bot chưa vào lệnh, đang chờ xác nhận ở vùng bên dưới.' : 'Giá đang ở giữa vùng, bot đứng ngoài.'}</div></div>`;
+      if (sc) { const sell = sc.dir === 'SHORT'; h += `<div class="sig plan"><b>Kịch bản chờ: ${sell ? 'SELL' : 'BUY'}</b><div class="mono">Vào ${f(sc.entry)} · SL ${f(sc.sl)} · TP ${f(sc.tp1)} · R ${sc.rr1}</div><div class="muted">Chỉ vào khi nến M15 quét ${sell ? 'lên' : 'xuống'} vùng ${f(sc.zone.bottom)}–${f(sc.zone.top)} rồi đóng cửa quay lại ${sell ? 'dưới' : 'trên'} ${f(sc.entry)}, kèm khối lượng hấp thụ.</div></div>`; }
+    }
+    h += `<details><summary>Vì sao ${v.source === 'BOT' ? 'có tín hiệu' : 'chưa vào lệnh'}? (kiểm tra chi tiết)</summary><ul class="ck">${v.checklist.map(c => `<li class="${c.ok ? 'ok' : ''}">${esc(c.text)}</li>`).join('')}</ul>${v.notes.map(n => `<div class="muted" style="margin:3px 0">${esc(n)}</div>`).join('')}${volLine('Khối lượng M15 (khung bot quyết)', vol.m15)}${bar !== '15m' ? volLine('Khối lượng khung ' + bar, vol.tf) : ''}<p class="muted" style="margin:6px 0 0">Người quyết định là engine của bot (đã backtest, điểm chất lượng ≥ ngưỡng). Kịch bản chờ chỉ là điều kiện để theo dõi.</p></details>`;
+    $('verdict').innerHTML = h;
   }
-  function renderBranches(c) { // nhánh xử lý: giá từ chối / phá thật có khối lượng / phá giả rồi quay đầu; nhánh đang hiệu lực được đánh dấu
+  function renderBranches(c) { // nhánh xử lý khi giá phá vùng (gấp lại cho gọn); nhánh đang hiệu lực được đánh dấu
     const b = c.branches; if (!b) return '';
-    return `<p style="margin:8px 0 2px"><b>Nếu giá phá vùng thì sao?</b></p><p class="muted" style="margin:0 0 4px">Trạng thái hiện tại: ${esc(b.stateText)}</p>` +
-      b.branches.map(x => `<div class="br ${x.id === b.active ? 'on' : ''}"><b>${esc(x.title)}${x.id === b.active ? ' ← đang hiệu lực' : ''}</b>${esc(x.when)}<div class="mono">${x.plan.dir === 'LONG' ? 'BUY' : 'SELL'} · Vào ${fmt(x.plan.entry)} · SL ${fmt(x.plan.sl)} · TP1 ${fmt(x.plan.tp1)} · R ${x.plan.rr1}</div></div>`).join('');
+    return `<details style="margin-top:8px"><summary>Nếu giá phá vùng thì sao? (3 nhánh)</summary><p class="muted" style="margin:0 0 4px">Trạng thái hiện tại: ${esc(b.stateText)}</p>` +
+      b.branches.map(x => `<div class="br ${x.id === b.active ? 'on' : ''}"><b>${esc(x.title)}${x.id === b.active ? ' ← đang hiệu lực' : ''}</b>${esc(x.when)}<div class="mono">${x.plan.dir === 'LONG' ? 'BUY' : 'SELL'} · Vào ${fmt(x.plan.entry)} · SL ${fmt(x.plan.sl)} · TP1 ${fmt(x.plan.tp1)} · R ${x.plan.rr1}</div></div>`).join('') + '</details>';
   }
   function renderScenario(sel, chosen) {
     $('tfname').textContent = bar;
@@ -475,6 +488,8 @@
     chart.timeScale().setVisibleLogicalRange({ from: n - 110, to: n + T + 12 });
   }
   $('zoomsc').onclick = zoomScenario;
+  $('zchk').onchange = (e) => { showStructZones = e.target.checked; load(); };
+  $('bothchk').onchange = (e) => { showBoth = e.target.checked; load(); };
   $('structchk').onchange = (e) => { structMode = e.target.checked; zoomNext = true; load(); };
   $('altchk').onchange = (e) => { showAlt = e.target.checked; load(); };
   $('sig').onclick = () => { showSig = !showSig; $('sig').setAttribute('aria-pressed', String(showSig)); updateMarkers(); };
