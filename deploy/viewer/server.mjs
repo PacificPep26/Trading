@@ -178,6 +178,7 @@ http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   try {
     if (u.pathname === '/') return send(res, 200, fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), 'text/html; charset=utf-8');
+    if (u.pathname === '/favicon.ico') { res.writeHead(204); return res.end(); }
     if (u.pathname === '/replay') { res.writeHead(301, { Location: '/replay/' }); return res.end(); }
     if (u.pathname === '/replay/') return sendGz(res, 'replay/index.html', 'text/html; charset=utf-8');
     const rd = u.pathname.match(/^\/replay\/data\/([A-Z0-9]+)\.json$/); // chỉ đúng mẫu này, không đọc đường dẫn tự do
@@ -187,7 +188,7 @@ http.createServer(async (req, res) => {
       if (!COINS.includes(coin)) return send(res, 400, { error: 'coin không hợp lệ' });
       if (!tradesCache.has(coin)) {
         const f = path.join(ROOT, 'replay', 'data', `${coin}.json`);
-        tradesCache.set(coin, fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')).trades.map(t => ({ t: t.entryTs, x: t.exitTs, dir: t.dir, r: t.r, entry: t.entry, sl: t.sl, tp: t.tp, exit: t.exitPrice })) : []);
+        tradesCache.set(coin, fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')).trades.map(t => ({ t: t.entryTs, x: t.exitTs, dir: t.dir, r: t.r, entry: t.entry, sl: t.sl, tp: t.tp, exit: t.exitPrice, sig: t.signalTs, score: t.score, why: t.why, strat: t.strat, out: t.outcome })) : []);
       }
       return send(res, 200, { trades: tradesCache.get(coin) });
     }

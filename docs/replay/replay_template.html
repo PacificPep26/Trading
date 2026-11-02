@@ -254,9 +254,15 @@ const DATA = /*__DATA__*/null;
   }
 
   function step(dir) { sub = 0; p = Math.min(S.n - 1, Math.max(5, p + dir)); draw(); renderLog(); }
+  function toast(msg) { // báo ngắn khi bấm mà không có gì để làm (ví dụ không còn lệnh sau)
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#222a3a;color:#fff;padding:8px 14px;border-radius:8px;z-index:50;font-size:13px;box-shadow:0 2px 12px #0008'; document.body.appendChild(t); }
+    t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, 2600);
+  }
   function jumpTrade(dir) {
     const list = S.trades.filter(t => t.sIdx !== undefined).map(t => Math.max(5, t.sIdx - 14));
     const target = dir > 0 ? list.find(v => v > p) : [...list].reverse().find(v => v < p - 1);
+    if (target === undefined) return toast(dir > 0 ? 'Đây là lệnh cuối của coin này, không còn lệnh sau.' : 'Đây là lệnh đầu của coin này, không còn lệnh trước.');
     if (target !== undefined) { p = target; sub = 0; playing = false; $('play').textContent = '▶ Chạy'; draw(); renderLog(); }
   }
   function loop(now) {
@@ -287,6 +293,7 @@ const DATA = /*__DATA__*/null;
     const k = S.trades.findIndex(x => Math.abs(x.entryTs - wantT) <= 1800000);
     if (k < 0 || S.trades[k].sIdx === undefined) return;
     selTrade = k; p = Math.max(5, S.trades[k].sIdx - 14); sub = 0; playing = false; draw(); renderLog();
+    if (qs.get('play')) $('play').click(); // ?play=1 tự chạy ngay từ đầu đoạn (dùng để kiểm thử)
   });
 })();
 </script>
