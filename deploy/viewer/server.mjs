@@ -10,6 +10,8 @@ import { generateKeyLevelRadar } from './src/strategies/radar.js';
 import { evaluateMarket } from './src/engine.js';
 import { BOT_CONFIG } from './src/config.js';
 import { loadDailyHistory } from './src/market_history.js';
+import { atr as atrOf, buildLevels, pickKeyLevels, planScenarios } from './src/strategies/scenario_planner.js';
+import { analyzeVolume, buildVerdict } from './src/strategies/verdict.js';
 import { buildMacroContext, resample } from './src/strategies/macro_context.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -25,16 +27,6 @@ async function okx(inst, bar, limit = 300) {
   return j.data.map(normalizeCandle).reverse();
 }
 const closed = (c) => c.filter(x => x.confirm === 1);
-
-// Chỉ giữ vùng cách giá <= 8% để biểu đồ không rối.
-function buildZones(radar, price) {
-  const near = (v) => Math.abs(v - price) / price <= 0.08, z = [], pad = 0.0008;
-  (radar.tier1InducementHighs || []).forEach(t => near(t.avgPrice) && z.push({ kind: 'res', top: t.maxPrice, bottom: t.minPrice, label: `Kháng cự thanh khoản (${t.touchCount} lần chạm)` }));
-  (radar.tier1InducementLows || []).forEach(t => near(t.avgPrice) && z.push({ kind: 'sup', top: t.maxPrice, bottom: t.minPrice, label: `Hỗ trợ thanh khoản (${t.touchCount} lần chạm)` }));
-  if (radar.nearestRes) z.push({ kind: 'res', top: radar.nearestRes * (1 + pad), bottom: radar.nearestRes * (1 - pad), label: 'Cản gần nhất' });
-  if (radar.nearestSup) z.push({ kind: 'sup', top: radar.nearestSup * (1 + pad), bottom: radar.nearestSup * (1 - pad), label: 'Hỗ trợ gần nhất' });
-  return z;
-}
 
 function buildLines(radar, macro) {
   const l = [{ price: radar.ema34, label: 'EMA34 H4', color: '#f59e0b' }, { price: radar.ema89, label: 'EMA89 H4', color: '#a78bfa' }];
@@ -78,7 +70,7 @@ async function botState() {
 
 // ---- Kho nến M15 từ lúc bắt đầu (gói tĩnh trong history/) + phần mới nhất lấy trực tiếp từ OKX; gộp ra 1H/4H theo yêu cầu ----
 const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, INIT = 3000;
-const stores = new Map();
+const stores = new Map(), tradesCache = new Map();
 function store(coin) {
   if (!stores.has(coin)) {
     const f = path.join(ROOT, 'history', `${coin}_15m.json`);
@@ -138,14 +130,20 @@ async function analysis(coin, bar) {
     rows = STEP[bar] ? series(coin, bar) : [];
     if (!rows.length) rows = (await okx(coin, BARS[bar] || '15m')).map(row); // chưa có gói lịch sử: dùng 300 nến gần nhất
   }
-  const initial = longTf ? rows : rows.slice(-INIT);
   const price = m15[m15.length - 1].close;
+  const initial = longTf ? rows : rows.slice(-INIT);
+  // vùng + kịch bản tính từ CHÍNH cấu trúc của khung đang xem (không dùng chung vùng H4 cho mọi khung)
+  const TFCFG = { '15m': [800, 0.04], '1H': [800, 0.08], '4H': [700, 0.12], '1D': [700, 0.3], '1W': [400, 0.6], '1M': [200, 0.9] }[bar];
+  const win = rows.slice(-TFCFG[0]), levels = buildLevels(win, price, { lookback: TFCFG[0], maxDistPct: TFCFG[1] });
+  const scenarios = planScenarios({ rows: win, price, levels, atr: atrOf(win) });
+  const volTf = analyzeVolume(rows), volM15 = analyzeVolume(series(coin, '15m')); // bot quyết định trên M15 nên phán quyết dùng khối lượng M15
   const radar = generateKeyLevelRadar({ symbol: `${coin}-USDT`, candlesH4: closed(h4), curPrice: price, candlesH1: closed(h1) });
   const signal = evaluateMarket({ symbol: `${coin}-USDT`, candlesH4: closed(h4), candlesH1: closed(h1), candlesM15: closed(m15), candlesD1: closed(d1), btcH1Candles: closed(bh1), btcH4Candles: closed(bh4), config: BOT_CONFIG });
   const v = {
     coin, bar, price, generatedAt: Date.now(), trendH4: radar.trendH4, radarStatus: radar.radarStatus,
     candles: initial, firstSec: rows.length ? rows[0][0] : null, total: rows.length,
-    zones: buildZones(radar, price), lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
+    volume: { tf: volTf, m15: volM15 }, verdict: buildVerdict({ signal: signal && !signal.isBlocked ? signal : null, blocked: signal && signal.isBlocked ? signal.blockReason : null, volTf: volM15, radarStatus: radar.radarStatus }),
+    zones: pickKeyLevels(levels, 3).map(z => ({ kind: z.kind, top: z.top, bottom: z.bottom, label: `${z.kind === 'res' ? 'Kháng cự' : 'Hỗ trợ'} ${bar} (${z.touches} lần chạm)` })), scenarios, lines: buildLines(radar, macro), macro, firstTs: hist && hist.length ? hist[0].ts : null, playbook: buildPlaybook(radar, signal),
     signal: signal && !signal.isBlocked ? { direction: signal.direction, entry: signal.entry, sl: signal.stopLoss, tp: signal.takeProfit, rr: signal.riskReward, strategy: signal.strategy } : null,
     blocked: signal && signal.isBlocked ? String(signal.blockReason) : null
   };
@@ -171,6 +169,15 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/replay/') return sendGz(res, 'replay/index.html', 'text/html; charset=utf-8');
     const rd = u.pathname.match(/^\/replay\/data\/([A-Z0-9]+)\.json$/); // chỉ đúng mẫu này, không đọc đường dẫn tự do
     if (rd) return sendGz(res, `replay/data/${rd[1]}.json`, 'application/json');
+    if (u.pathname === '/api/trades') { // các lệnh backtest 2021-26 của bot (cùng cấu hình hiện tại) để đánh dấu BUY/SELL lên biểu đồ
+      const coin = u.searchParams.get('coin');
+      if (!COINS.includes(coin)) return send(res, 400, { error: 'coin không hợp lệ' });
+      if (!tradesCache.has(coin)) {
+        const f = path.join(ROOT, 'replay', 'data', `${coin}.json`);
+        tradesCache.set(coin, fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')).trades.map(t => ({ t: t.entryTs, x: t.exitTs, dir: t.dir, r: t.r, entry: t.entry, sl: t.sl, tp: t.tp, exit: t.exitPrice })) : []);
+      }
+      return send(res, 200, { trades: tradesCache.get(coin) });
+    }
     if (u.pathname === '/api/candles') { // trang nến cũ hơn mốc `before` (giây), để cuộn sang trái là tự nạp thêm như TradingView
       const coin = u.searchParams.get('coin'), bar = u.searchParams.get('bar'), before = Number(u.searchParams.get('before')), limit = Math.min(Number(u.searchParams.get('limit')) || 20000, 50000);
       if (!COINS.includes(coin) || !STEP[bar] || !before) return send(res, 400, { error: 'tham số không hợp lệ' });

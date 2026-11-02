@@ -1278,6 +1278,56 @@ console.log('\n26. Kiểm tra Macro Range Box, Volume Breakout & Trade Flip Engi
   assert(!e0.includes('undefined') && !n0.includes('undefined'), '33.4: tin không chứa chữ undefined');
 }
 
+// 34. Bộ lập kịch bản theo cấu trúc của CHÍNH khung đang xem: vùng cản/hỗ trợ từ pivot, kế hoạch Short/Long có entry-SL-TP1-TP2 và đường đi minh họa
+{
+  const { atr, buildLevels, planScenarios } = await import('../src/strategies/scenario_planner.js');
+  const wave = Array.from({ length: 400 }, (_, i) => { const c = 110 + 10 * Math.sin(2 * Math.PI * i / 40); return [i * 3600, c, c + 0.5, c - 0.5, c, 10]; });
+  const price = 112, a = atr(wave), levels = buildLevels(wave, price);
+  const res = levels.find(z => z.kind === 'res' && z.bottom <= 120.5 && z.top >= 120.5), sup = levels.find(z => z.kind === 'sup' && z.bottom <= 99.5 && z.top >= 99.5);
+  assert(a > 0 && res && sup && res.touches >= 5 && sup.touches >= 5, '34.1: tìm ra vùng kháng cự ~120 và hỗ trợ ~100, mỗi vùng chạm nhiều lần');
+  const { short, long } = planScenarios({ rows: wave, price, levels, atr: a });
+  assert(short && short.entry >= res.bottom && short.entry <= res.top && short.sl > res.top && short.tp1 < short.entry, '34.2: Short: vào trong vùng kháng cự, SL ngoài đỉnh vùng, TP1 thấp hơn entry');
+  assert(Math.abs(short.rr1 - (short.entry - short.tp1) / (short.sl - short.entry)) / short.rr1 < 0.01 && short.rr1 > 0, '34.3: R:R của Short đúng công thức (entry-TP1)/(SL-entry)');
+  assert(long && long.entry >= sup.bottom && long.entry <= sup.top && long.sl < sup.bottom && long.tp1 > long.entry, '34.4: Long: vào trong vùng hỗ trợ, SL dưới đáy vùng, TP1 cao hơn entry');
+  assert(Math.abs(long.rr1 - (long.tp1 - long.entry) / (long.entry - long.sl)) / long.rr1 < 0.01, '34.5: R:R của Long đúng công thức');
+  const names = short.path.map(p => p.label);
+  assert(short.path[0].bars === 0 && short.path[0].price === price && names.includes('Quét thanh khoản') && names.includes('Vào lệnh') && names.includes('TP1') && short.path.every((p, k, arr) => !k || p.bars > arr[k - 1].bars), '34.6: đường đi bắt đầu từ giá hiện tại, có quét thanh khoản/vào lệnh/TP1, thời gian tăng dần');
+  const sweep = short.path.find(p => p.label === 'Quét thanh khoản');
+  assert(sweep.price > short.entry && sweep.price < short.sl, '34.7: điểm quét thanh khoản nằm giữa entry và SL (SL không bị chạm trong kịch bản)');
+  assert(short.tp2 < short.tp1 && long.tp2 > long.tp1 && short.rr2 >= short.rr1 && long.rr2 >= long.rr1, '34.10: TP2 luôn xa entry hơn TP1 (Short thấp hơn, Long cao hơn)');
+  const { pickKeyLevels } = await import('../src/strategies/scenario_planner.js');
+  const thick = levels.every(z => z.top - z.bottom <= 2 * a + 0.3 * a + 1e-9), keys = pickKeyLevels(levels, 3);
+  assert(thick && keys.length <= 7 && keys.some(z => z === res) && keys.some(z => z === sup), '34.11: mỗi vùng dày không quá ~2 ATR và chỉ giữ vài vùng gần giá nhất (không dính chuỗi thành dải khổng lồ)');
+  const down = Array.from({ length: 300 }, (_, i) => { const c = 200 - i * 0.5; return [i * 3600, c, c + 0.4, c - 0.4, c, 10]; });
+  const none = planScenarios({ rows: down, price: down[299][4], levels: buildLevels(down, down[299][4]), atr: atr(down) });
+  assert(none.long === null, '34.8: giá ở đáy dữ liệu, không có hỗ trợ bên dưới -> không bịa kịch bản Long');
+  const empty = planScenarios({ rows: [], price: 1, levels: [], atr: 0 });
+  assert(empty.short === null && empty.long === null && buildLevels([], 1).length === 0, '34.9: dữ liệu rỗng không gây lỗi');
+}
+
+// 35. Phán quyết hệ thống: đọc khối lượng + quyết định thống nhất với engine của bot
+{
+  const { analyzeVolume, buildVerdict } = await import('../src/strategies/verdict.js');
+  const calm = (n) => Array.from({ length: n }, (_, i) => [i * 900, 100, 101, 99, 100, 10]);
+  const mk = (last) => [...calm(30), last, [31 * 900, 100, 100.5, 99.5, 100, 10]]; // nến cuối là nến đang chạy, phân tích nến đóng gần nhất = last
+  assert(analyzeVolume(mk([30 * 900, 100, 106, 99.5, 100.5, 40])).kind === 'CLIMAX_UP_REJECT', '35.1: khối lượng gấp 4 lần + râu trên dài -> climax bị từ chối ở trên (lực bán hấp thụ)');
+  assert(analyzeVolume(mk([30 * 900, 100, 100.5, 94, 99.5, 40])).kind === 'CLIMAX_DOWN_REJECT', '35.2: khối lượng đột biến + râu dưới dài -> climax bị từ chối ở dưới (lực mua hấp thụ)');
+  assert(analyzeVolume(mk([30 * 900, 100, 106, 99.8, 105.8, 40])).kind === 'BREAKOUT_UP', '35.3: khối lượng đột biến + đóng cửa vượt đỉnh 20 nến -> phá lên có khối lượng');
+  assert(analyzeVolume(mk([30 * 900, 100, 100.2, 94, 94.2, 40])).kind === 'BREAKOUT_DOWN', '35.4: khối lượng đột biến + đóng cửa thủng đáy 20 nến -> phá xuống có khối lượng');
+  assert(analyzeVolume(mk([30 * 900, 100, 101, 99, 100, 3])).kind === 'DRYING' && analyzeVolume(calm(5)).kind === 'UNKNOWN', '35.5: khối lượng cạn -> DRYING; thiếu dữ liệu -> UNKNOWN (không đoán)');
+  const sig = { direction: 'SHORT', strategy: 'SMC_SWEEP_REVERSAL_SHORT', entry: 100, stopLoss: 101, takeProfit: 97 };
+  const v1 = buildVerdict({ signal: sig, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL' });
+  assert(v1.decision === 'SHORT' && v1.source === 'BOT', '35.6: bot đang có tín hiệu -> quyết định là hướng của bot, nguồn BOT');
+  const v2 = buildVerdict({ signal: null, blocked: 'CHOP_SLEEP_MODE: ...', volTf: { kind: 'NORMAL' }, radarStatus: 'APPROACHING_RESISTANCE' });
+  assert(v2.decision === 'WAIT' && /CHOP_SLEEP_MODE/.test(v2.notes.join(' ')), '35.7: engine đang chặn -> CHỜ và nêu lý do chặn');
+  const v3 = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'CLIMAX_UP_REJECT', relVol: 3.5 }, radarStatus: 'APPROACHING_RESISTANCE' });
+  assert(v3.decision === 'WAIT' && v3.favored === 'SHORT' && v3.checklist.some(c => c.ok && /khối lượng/i.test(c.text)), '35.8: áp sát kháng cự + climax từ chối ở trên -> ưu tiên canh SHORT, khối lượng được đánh dấu xác nhận');
+  const v4 = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'BREAKOUT_UP', relVol: 3 }, radarStatus: 'APPROACHING_RESISTANCE' });
+  assert(v4.favored === null && v4.avoid === 'SHORT', '35.9: áp sát kháng cự nhưng đang phá lên có khối lượng -> KHÔNG canh Short (tránh bắt đỉnh)');
+  const v5 = buildVerdict({ signal: null, blocked: null, volTf: { kind: 'NORMAL' }, radarStatus: 'NEUTRAL' });
+  assert(v5.decision === 'WAIT' && v5.favored === null, '35.10: giữa vùng, không có gì -> đứng ngoài');
+}
+
 // Tổng kết
 console.log('\n======================================================');
 console.log(`🎉 TỔNG KẾT KIỂM THỬ: ${passed} PASS, ${failed} FAIL`);

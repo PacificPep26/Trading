@@ -29,6 +29,9 @@
   .mono { font-family:ui-monospace,Consolas,monospace; } .pos-r { float:right; font-weight:600; }
   .up { color:var(--up); } .down { color:var(--down); } .muted { color:var(--muted); font-size:12px; }
   .lg { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--muted); } .lg i { display:inline-block; width:10px; height:10px; margin-right:5px; border-radius:2px; vertical-align:-1px; }
+  .vd { font-weight:600; margin:0 0 8px; } .vd.bot { color:var(--up); } .vd.wait { color:var(--warn); } .ck { list-style:none; padding:0; margin:6px 0; } .ck li { margin:5px 0; padding-left:22px; position:relative; } .ck li::before { content:'✗'; position:absolute; left:0; color:var(--down); font-weight:700; } .ck li.ok::before { content:'✓'; color:var(--up); }
+  .sc { margin:8px 0; padding:8px 10px; background:#0f1420; border-radius:6px; border-left:3px solid var(--muted); } .sc.short { border-color:var(--down); } .sc.long { border-color:var(--up); }
+  .sc table { width:100%; font-size:12px; border-collapse:collapse; } .sc td:last-child { text-align:right; }
   @media (max-width: 960px) { main { grid-template-columns:1fr; } #chart { height:62vh; } }
 </style>
 </head>
@@ -38,19 +41,21 @@
   <div class="seg" id="coins" role="group" aria-label="Chọn coin"></div>
   <div class="seg" id="bars" role="group" aria-label="Khung thời gian"></div>
   <span class="chip" id="trend"></span><span class="chip" id="radar"></span>
-  <button id="log" aria-pressed="false" title="Bật/tắt thang giá logarit (nên bật khi xem nhiều năm)">Log</button><button id="all" title="Nạp toàn bộ lịch sử từ nến đầu tiên và thu vừa khung">Từ đầu</button><span class="chip" id="span"></span>
+  <button id="sig" aria-pressed="true" title="Hiện/ẩn các tín hiệu BUY/SELL của bot (backtest 2021-26)">Tín hiệu bot</button><button id="log" aria-pressed="false" title="Bật/tắt thang giá logarit (nên bật khi xem nhiều năm)">Log</button><button id="all" title="Nạp toàn bộ lịch sử từ nến đầu tiên và thu vừa khung">Từ đầu</button><span class="chip" id="span"></span>
   <a class="chip" href="/replay/" style="text-decoration:none">Tua lại lệnh backtest</a>
   <span class="price" id="price"></span>
 </header>
 <main>
   <div id="chart" role="img" aria-label="Biểu đồ nến với vùng cản, hỗ trợ và lệnh của bot"></div>
   <aside>
-    <section class="card"><h2>Kịch bản</h2><div id="headline"></div><ol id="steps"></ol></section>
+    <section class="card" id="verdictcard"><h2>Phán quyết hệ thống</h2><div id="verdict"></div></section>
+    <section class="card"><h2>Kịch bản khung <span id="tfname"></span></h2><div class="seg" id="scbtn" role="group" aria-label="Chọn kịch bản"></div><div id="scinfo"></div></section>
+    <section class="card"><h2>Radar H4 của bot</h2><div id="headline"></div><ol id="steps"></ol></section>
     <section class="card"><h2>Bối cảnh lớn (toàn lịch sử)</h2><div id="macro"></div></section>
     <section class="card"><h2>Lệnh của bot</h2><div id="botbox"></div></section>
     <section class="card"><h2>Chú giải</h2>
       <div class="lg"><span><i style="background:#ef535066"></i>Kháng cự</span><span><i style="background:#26a69a66"></i>Hỗ trợ</span><span><i style="background:#26a69a99"></i>Lãi (TP)</span><span><i style="background:#ef5350aa"></i>Lỗ (SL)</span></div>
-      <p class="muted">Nến và vùng tính trực tiếp từ OKX bằng đúng engine của bot. Lệnh là lệnh paper thật của bot. Không có dữ liệu mẫu. Giờ hiển thị: Việt Nam.</p>
+      <p class="muted">Vùng cản/hỗ trợ và kế hoạch tính từ cấu trúc (pivot) của khung đang xem. Đường vàng/trắng chỉ là MINH HỌA theo kế hoạch, không phải dự báo. Mũi tên BUY/SELL là các lệnh backtest 2021-26 của bot (cùng cấu hình hiện tại, đã trừ phí). Lệnh đang mở là lệnh paper thật. Giờ hiển thị: Việt Nam.</p>
     </section>
   </aside>
 </main>
@@ -58,7 +63,7 @@
 (() => {
   const COINS = ['BTC','ETH','SOL','LINK','NEAR','HYPE'], BARS = ['15m','1H','4H','1D','1W','1M'], VN = 7 * 3600;
   const qs = new URLSearchParams(location.search);
-  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null;
+  let all = [], hasMore = false, loadingOlder = false, logScale = false, coin = COINS.includes(qs.get('coin')) ? qs.get('coin') : 'BTC', bar = BARS.includes(qs.get('bar')) ? qs.get('bar') : '15m', first = true, prims = [], lines = [], extra = [], timer = null, scenSel = 'AUTO', scen = null, lastVerdictDir = null, showSig = true, tradesByCoin = {};
   const STEP = { '15m': 900, '1H': 3600, '4H': 14400 }, intraday = () => !!STEP[bar], sh = () => (intraday() ? VN : 0);
   const snap = (ms) => { // về giờ mở nến chứa thời điểm đó (theo khung đang xem)
     if (intraday()) return Math.floor(ms / 1000 / STEP[bar]) * STEP[bar] + VN;
@@ -78,8 +83,9 @@
     grid: { vertLines: { color: '#1c2230' }, horzLines: { color: '#1c2230' } },
     rightPriceScale: { borderColor: '#2a2e39' }, timeScale: { borderColor: '#2a2e39', timeVisible: true, secondsVisible: false, rightOffset: 14, minBarSpacing: 0.0005 } // cho thu nhỏ rất xa để thấy toàn bộ lịch sử
   });
+  // thang log dùng đơn vị logarit nên autoscale không được cộng giá thường (extra) vào
   const candles = chart.addSeries(LightweightCharts.CandlestickSeries, { upColor:'#26a69a', downColor:'#ef5350', borderVisible:false, wickUpColor:'#26a69a', wickDownColor:'#ef5350',
-    autoscaleInfoProvider: (orig) => { const r = orig(); if (!r || !extra.length) return r; return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...extra), maxValue: Math.max(r.priceRange.maxValue, ...extra) } }; } });
+    autoscaleInfoProvider: (orig) => { const r = orig(); if (!r || !extra.length || logScale) return r; return { ...r, priceRange: { minValue: Math.min(r.priceRange.minValue, ...extra), maxValue: Math.max(r.priceRange.maxValue, ...extra) } }; } });
   const vol = chart.addSeries(LightweightCharts.HistogramSeries, { priceFormat:{type:'volume'}, priceScaleId:'', lastValueVisible:false, priceLineVisible:false });
   vol.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
 
@@ -102,6 +108,56 @@
         }
       }) }) }];
     }
+  }
+  // Kịch bản: hộp SL/TP có nhãn giá, nhãn BUY/SELL tại điểm vào, đường đi minh họa (vị trí tương lai theo chỉ số nến, không theo giờ)
+  class ScenarioPrim {
+    constructor(sc) { this.sc = sc; }
+    attached(p) { this.chart = p.chart; this.series = p.series; }
+    detached() {}
+    updateAllViews() {}
+    paneViews() {
+      const sc = this.sc, self = this;
+      return [{ zOrder: () => 'top', renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context: c, mediaSize }) => {
+        const ts = self.chart.timeScale(), last = all.length - 1, X = (b) => ts.logicalToCoordinate(last + b), Y = (v) => self.series.priceToCoordinate(v);
+        const total = sc.path[sc.path.length - 1].bars, x0 = X(0), x1 = X(total + 3); if (x0 == null || x1 == null) return;
+        const yE = Y(sc.entry), yS = Y(sc.sl), y1 = Y(sc.tp1), y2 = Y(sc.tp2); if ([yE, yS, y1, y2].some(v => v == null)) return;
+        const short = sc.dir === 'SHORT', up = '#26a69a', dn = '#ef5350', W = x1 - x0;
+        c.fillStyle = dn + '30'; c.fillRect(x0, Math.min(yE, yS), W, Math.abs(yS - yE));
+        c.fillStyle = up + '30'; c.fillRect(x0, Math.min(yE, y1), W, Math.abs(y1 - yE));
+        c.fillStyle = up + '14'; c.fillRect(x0, Math.min(y1, y2), W, Math.abs(y2 - y1));
+        const hl = (y, col, dash) => { c.strokeStyle = col; c.lineWidth = 1; c.setLineDash(dash ? [5, 4] : []); c.beginPath(); c.moveTo(x0, y); c.lineTo(x1, y); c.stroke(); c.setLineDash([]); };
+        hl(yE, '#2962ff', false); hl(yS, dn, true); hl(y1, up, true); hl(y2, up, true);
+        const pill = (txt, y, bg) => { c.font = '11px ui-monospace,Consolas,monospace'; const w = c.measureText(txt).width + 12, x = Math.min(x1 + 4, mediaSize.width - w - 2); c.fillStyle = bg; c.beginPath(); c.roundRect(x, y - 9, w, 18, 4); c.fill(); c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(txt, x + 6, y + 0.5); };
+        const pc = (v) => `${v >= sc.entry ? '+' : ''}${((v - sc.entry) / sc.entry * 100).toFixed(2)}%`;
+        pill(`SL ${fmt(sc.sl)} (${pc(sc.sl)})`, yS, '#b71c1c'); pill(`Vào ${fmt(sc.entry)}`, yE, '#2962ff');
+        pill(`TP1 ${fmt(sc.tp1)} · R ${sc.rr1}`, y1, '#1b7f73'); pill(`TP2 ${fmt(sc.tp2)} · R ${sc.rr2}`, y2, '#1b7f73');
+        // đường đi minh họa
+        const pts = sc.path.map(q => [X(q.bars), Y(q.price), q]);
+        if (pts.some(q => q[0] == null || q[1] == null)) return;
+        c.strokeStyle = '#fbbf24'; c.lineWidth = 2; c.lineJoin = 'round'; c.beginPath(); pts.forEach(([x, y], i) => (i ? c.lineTo(x, y) : c.moveTo(x, y))); c.stroke();
+        c.font = '11px ui-monospace,Consolas,monospace';
+        for (const [x, y, q] of pts) {
+          c.fillStyle = '#fff'; c.beginPath(); c.arc(x, y, 3.5, 0, 6.3); c.fill();
+          if (['Quét thanh khoản', 'Vào lệnh', 'TP1', 'TP2'].includes(q.label)) { c.fillStyle = '#e5e7eb'; c.textBaseline = 'bottom'; c.fillText(q.label, x + 6, y - 5 + (short ? 0 : 14)); }
+        }
+        const ep = pts.find(q => q[2].label === 'Vào lệnh'), tag = short ? 'SELL' : 'BUY';
+        c.fillStyle = short ? dn : up; c.beginPath(); c.roundRect(ep[0] - 40, ep[1] - 9, 36, 18, 3); c.fill(); c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.fillText(tag, ep[0] - 35, ep[1] + 0.5);
+      }) }) }];
+    }
+  }
+  let markerPlugin = null;
+  let markerText = true;
+  function updateMarkers() { // các lệnh backtest cũ của bot: BUY/SELL + kết quả R, chỉ ở vùng nến đã nạp
+    if (!markerPlugin) markerPlugin = LightweightCharts.createSeriesMarkers(candles, []);
+    const list = (showSig && tradesByCoin[coin]) || [], lo = all.length ? all[0][0] + sh() : 0;
+    const ms = list.map(t => ({ time: snap(t.t), t })).filter(m => m.time >= lo).sort((a, b) => a.time - b.time)
+      .map(({ time, t }) => ({ time, position: t.dir === 'LONG' ? 'belowBar' : 'aboveBar', color: t.dir === 'LONG' ? '#26a69a' : '#ef5350', shape: t.dir === 'LONG' ? 'arrowUp' : 'arrowDown', text: markerText ? `${t.dir === 'LONG' ? 'BUY' : 'SELL'} ${t.r > 0 ? '+' : ''}${t.r}R` : '' }));
+    markerPlugin.setMarkers(ms);
+  }
+  async function loadTrades() {
+    if (tradesByCoin[coin]) return updateMarkers();
+    try { tradesByCoin[coin] = (await (await fetch(`/api/trades?coin=${coin}`)).json()).trades || []; } catch { tradesByCoin[coin] = []; }
+    updateMarkers();
   }
   const zoneColors = { res: ['#ef535033', '#ef5350', '#ff8a80'], sup: ['#26a69a33', '#26a69a', '#80cbc4'] };
   const addPrim = (o) => { const p = new Box(o); candles.attachPrimitive(p); prims.push(p); };
@@ -130,11 +186,21 @@
     clear(); extra = [];
     const zt0 = all[Math.max(0, all.length - 400)][0] + sh();
     d.zones.forEach(z => { const [fill, stroke, text] = zoneColors[z.kind]; addPrim({ t0: zt0, rects: [{ from: z.top, to: z.bottom, fill, stroke, text, label: `${z.label} ${fmt(z.bottom)}-${fmt(z.top)}` }] }); });
+    scen = d.scenarios || { short: null, long: null };
+    const vd = d.verdict, vdir = vd.decision !== 'WAIT' ? vd.decision : vd.favored, fav = vdir && scen[vdir.toLowerCase()] ? vdir : null;
+    const pick0 = scenSel !== 'AUTO' ? scenSel : (fav || 'OFF'); // mặc định theo phán quyết của hệ thống, không bắt người xem tự chọn
+    lastVerdictDir = fav;
+    renderVerdict(d, fav);
+    const chosen = pick0 === 'SHORT' ? scen.short : pick0 === 'LONG' ? scen.long : null;
+    if (chosen) { const p = new ScenarioPrim(chosen); candles.attachPrimitive(p); prims.push(p); extra.push(chosen.entry, chosen.sl, chosen.tp1, chosen.tp2); chart.timeScale().applyOptions({ rightOffset: Math.min(66, chosen.path[chosen.path.length - 1].bars + 8) }); }
+    else chart.timeScale().applyOptions({ rightOffset: 14 });
+    renderScenario(pick0, chosen);
+    loadTrades();
     d.lines.forEach(l => lines.push(candles.createPriceLine({ price: l.price, color: l.color, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: l.label })));
     const lastT = d.candles[d.candles.length - 1][0] + sh();
     if (d.signal) posBox(lastT, d.signal.direction, d.signal.entry, d.signal.sl, d.signal.tp, 'Tín hiệu (chưa vào)', true);
     d.bot.positions.forEach(p => posBox(snap(p.openedAt), p.direction, p.entry, p.initialStopLoss, p.takeProfit, 'Lệnh bot', false));
-    if (first) { chart.timeScale().fitContent(); if (intraday()) chart.timeScale().setVisibleLogicalRange({ from: d.candles.length - 120, to: d.candles.length + 14 }); first = false; } // khung ngày/tuần/tháng: hiện toàn bộ lịch sử
+    if (first) { chart.timeScale().fitContent(); const n = { '15m': 120, '1H': 120, '4H': 120, '1D': 400, '1W': 260 }[bar]; if (n) chart.timeScale().setVisibleLogicalRange({ from: d.candles.length - n, to: d.candles.length + 14 }); first = false; } // khung ngày/tuần/tháng: hiện toàn bộ lịch sử
 
     renderMacro(d);
     $('headline').textContent = d.playbook.headline;
@@ -152,9 +218,30 @@
     $('botbox').innerHTML = h;
   }
 
+  function renderVerdict(d, fav) {
+    const v = d.verdict, vol = d.volume;
+    const volLine = (t, x) => `<div class="muted" style="margin:3px 0">${t}: ${esc(x.text || '')}</div>`;
+    $('verdict').innerHTML = `<p class="vd ${v.source === 'BOT' ? 'bot' : 'wait'}">${esc(v.headline)}</p>
+      <span class="chip ${v.source === 'BOT' ? 'good' : 'warn'}">${v.source === 'BOT' ? 'Quyết định của BOT' : 'Kế hoạch chờ (bot chưa vào)'}</span>
+      <ul class="ck">${v.checklist.map(c => `<li class="${c.ok ? 'ok' : ''}">${esc(c.text)}</li>`).join('')}</ul>
+      ${v.notes.map(n => `<div class="muted" style="margin:3px 0">${esc(n)}</div>`).join('')}
+      ${volLine('Khối lượng M15 (khung bot quyết)', vol.m15)}${bar !== '15m' ? volLine('Khối lượng khung ' + bar, vol.tf) : ''}
+      <p class="muted" style="margin:6px 0 0">Người quyết định là engine của bot (đã backtest, điểm chất lượng ≥ ngưỡng, có phân tích khối lượng VSA). Phần "kế hoạch chờ" chỉ là điều kiện để theo dõi, chưa được backtest riêng.</p>`;
+  }
+  function renderScenario(sel, chosen) {
+    $('tfname').textContent = bar;
+    $('scbtn').innerHTML = [['SHORT', 'Short', scen.short], ['LONG', 'Long', scen.long], ['OFF', 'Ẩn', true]].map(([v, t, ok]) => `<button data-v="${v}" aria-pressed="${sel === v}" ${ok ? '' : 'disabled'}>${t}${v !== 'OFF' && lastVerdictDir === v ? ' (hệ thống chọn)' : ''}</button>`).join('');
+    $('scbtn').onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v || e.target.disabled) return; scenSel = v; load(); };
+    if (!chosen) { $('scinfo').innerHTML = `<p class="muted">${sel === 'OFF' && !lastVerdictDir ? 'Hệ thống chưa chọn kịch bản nào (giá ở giữa vùng hoặc đang phá có khối lượng). Bạn vẫn có thể bấm Short/Long để xem kế hoạch tham khảo.' : 'Chưa có vùng cản/hỗ trợ đủ rõ ở khung này để lập kịch bản.'}</p>`; return; }
+    const c = chosen, pc = (v) => `${v >= c.entry ? '+' : ''}${((v - c.entry) / c.entry * 100).toFixed(2)}%`;
+    $('scinfo').innerHTML = `<div class="sc ${c.dir === 'SHORT' ? 'short' : 'long'}"><b>${c.dir === 'SHORT' ? 'SELL' : 'BUY'}</b> tại vùng ${fmt(c.zone.bottom)}-${fmt(c.zone.top)} <span class="muted">(${c.zone.touches} lần chạm)</span>
+      <table class="mono"><tr><td>Vào</td><td>${fmt(c.entry)}</td></tr><tr><td>SL</td><td class="down">${fmt(c.sl)} (${pc(c.sl)})</td></tr><tr><td>TP1</td><td class="up">${fmt(c.tp1)} (${pc(c.tp1)}) · R ${c.rr1}</td></tr><tr><td>TP2</td><td class="up">${fmt(c.tp2)} (${pc(c.tp2)}) · R ${c.rr2}</td></tr></table>
+      <p style="margin:6px 0 0">${esc(c.trigger)}</p><p class="muted" style="margin:4px 0 0">TP1: ${esc(c.tp1Note)}. Đây là kế hoạch từ cấu trúc khung ${bar}, chưa phải tín hiệu của bot và chưa được backtest riêng.</p></div>`;
+  }
   function setSeries() {
     candles.setData(all.map(k => ({ time: k[0] + sh(), open: k[1], high: k[2], low: k[3], close: k[4] })));
     vol.setData(all.map(k => ({ time: k[0] + sh(), value: k[5], color: k[4] >= k[1] ? '#26a69a55' : '#ef535055' })));
+    updateMarkers();
     $('span').textContent = `${all.length.toLocaleString('vi-VN')} nến · từ ${new Date(all[0][0] * 1000).toISOString().slice(0, 10)}${hasMore ? ' (còn cũ hơn, cuộn trái để nạp)' : ' (đã tới nến đầu tiên)'}`;
   }
   async function loadOlder(limit = 20000) {
@@ -168,7 +255,10 @@
       if (range) chart.timeScale().setVisibleLogicalRange({ from: range.from + add, to: range.to + add }); // giữ nguyên vị trí đang xem
     } finally { loadingOlder = false; }
   }
-  chart.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (r && r.from < 150) loadOlder(); });
+  chart.timeScale().subscribeVisibleLogicalRangeChange((r) => {
+    if (r && r.from < 150) loadOlder();
+    if (r) { const want = r.to - r.from < 500; if (want !== markerText) { markerText = want; updateMarkers(); } } // thu nhỏ xa thì chỉ hiện mũi tên, gần mới hiện chữ
+  });
   $('all').onclick = async () => { // nạp hết lịch sử rồi thu vừa khung
     $('all').disabled = true; setLog(true); // xem từ đầu thì nên dùng thang log
     if (intraday()) { while (hasMore) { await loadOlder(50000); } }
@@ -176,6 +266,7 @@
   };
   function setLog(v) { logScale = v; $('log').setAttribute('aria-pressed', String(v)); chart.priceScale('right').applyOptions({ mode: v ? 1 : 0 }); }
   $('log').onclick = () => setLog(!logScale);
+  $('sig').onclick = () => { showSig = !showSig; $('sig').setAttribute('aria-pressed', String(showSig)); updateMarkers(); };
   const TN = (t) => (t > 0 ? '<b class="up">tăng</b>' : t < 0 ? '<b class="down">giảm</b>' : '<b>trung tính</b>');
   const PH = { BULL: 'TĂNG', LEAN_BULL: 'thiên tăng', RANGE: 'đi ngang/chuyển pha', LEAN_BEAR: 'thiên giảm', BEAR: 'GIẢM' };
   function renderMacro(d) {
@@ -198,7 +289,7 @@
   }
   function pick(id, list, cur, set) {
     $(id).innerHTML = list.map(x => `<button data-v="${x}" aria-pressed="${x === cur}">${x}</button>`).join('');
-    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; set(v); first = true; setLog(!intraday()); pick(id, list, v, set); load(); };
+    $(id).onclick = (e) => { const v = e.target.dataset && e.target.dataset.v; if (!v) return; set(v); first = true; scenSel = 'AUTO'; setLog(!intraday()); pick(id, list, v, set); load(); };
   }
   pick('coins', COINS, coin, v => coin = v); pick('bars', BARS, bar, v => bar = v);
   setLog(!intraday()); load(); timer = setInterval(load, 30000);
